@@ -1,0 +1,151 @@
+
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: resumeai_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-resumeai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resumeai_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-resumeai}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-resumeai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: resumeai_redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: resumeai_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ─── Backend ──────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # ─── Celery Workers ───────────────────────────────────────────
+  worker_extract:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai_worker_extract
+    command: celery -A workers.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info -n extract@%h
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker_ai:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai_worker_ai
+    command: celery -A workers.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info -n ai@%h
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai_beat
+    command: celery -A workers.celery_app beat --loglevel=info
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+
+  # ─── Flower (Celery Monitoring) ───────────────────────────────
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai_flower
+    command: celery -A workers.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    env_file: .env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+  # ─── Frontend ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resumeai_frontend
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

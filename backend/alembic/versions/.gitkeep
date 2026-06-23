@@ -1,0 +1,2 @@
+# Alembic versions directory placeholder
+# Run: docker compose exec backend alembic revision --autogenerate -m "initial"
