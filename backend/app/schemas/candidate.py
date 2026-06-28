@@ -15,6 +15,7 @@ class CandidateListItem(BaseModel):
     score: Optional[float]
     category: Optional[str]
     summary: Optional[str]
+    pipeline_stage: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -42,6 +43,9 @@ class CandidateDetail(BaseModel):
     recommendation: Optional[str]
     score: Optional[float]
     category: Optional[str]
+    notes: Optional[str] = None
+    pipeline_stage: Optional[str] = None
+    score_breakdown: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
@@ -50,6 +54,14 @@ class CandidateDetail(BaseModel):
 
 class CandidateCategoryUpdate(BaseModel):
     category: str
+
+
+class CandidateNotesUpdate(BaseModel):
+    notes: str
+
+
+class CandidatePipelineUpdate(BaseModel):
+    stage: str
 
 
 class CandidateFilterParams(BaseModel):
@@ -80,6 +92,7 @@ class ExtractionResult(BaseModel):
 
 class ScoringResult(BaseModel):
     score: float
+    score_breakdown: Optional[dict] = None  # {skills_match, experience_match, project_relevance, education_bonus, communication_quality}
     category: str  # strong_match | moderate_match | weak_match | rejected
     summary: str
     strengths: List[str] = []

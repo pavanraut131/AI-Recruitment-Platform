@@ -7,7 +7,7 @@ import structlog
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.storage import ensure_bucket_exists
-from app.api.v1 import campaigns, resumes, candidates
+from app.api.v1 import campaigns, resumes, candidates, stats, parse_jd
 
 configure_logging(debug=settings.DEBUG)
 logger = structlog.get_logger()
@@ -47,8 +47,10 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────
 PREFIX = settings.API_V1_PREFIX
 app.include_router(campaigns.router, prefix=PREFIX)
+app.include_router(parse_jd.router, prefix=PREFIX)
 app.include_router(resumes.router, prefix=PREFIX)
 app.include_router(candidates.router, prefix=PREFIX)
+app.include_router(stats.router, prefix=PREFIX)
 
 
 # ── Health endpoints ──────────────────────────────────────────

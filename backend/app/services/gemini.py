@@ -62,6 +62,13 @@ Candidate Profile:
 Score the candidate and return ONLY a valid JSON object with this exact schema:
 {{
   "score": 85.0,
+  "score_breakdown": {{
+    "skills_match": 35,
+    "experience_match": 25,
+    "project_relevance": 15,
+    "education_bonus": 7,
+    "communication_quality": 3
+  }},
   "category": "strong_match",
   "summary": "2-3 sentence candidate summary",
   "strengths": ["strength 1", "strength 2"],
@@ -69,6 +76,13 @@ Score the candidate and return ONLY a valid JSON object with this exact schema:
   "missing_skills": ["skill not in resume"],
   "recommendation": "Proceed to technical interview / Phone screen first / Not recommended"
 }}
+
+Score breakdown rules (must sum to the overall score):
+- skills_match: 0-40 pts. How many required skills the candidate has.
+- experience_match: 0-30 pts. Does their years/seniority match the role?
+- project_relevance: 0-15 pts. Are their projects relevant to the role?
+- education_bonus: 0-10 pts. Degree relevance and institution quality.
+- communication_quality: 0-5 pts. Clarity and quality of resume writing.
 
 Category rules:
 - score >= 75: "strong_match"

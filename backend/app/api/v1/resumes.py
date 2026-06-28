@@ -6,7 +6,7 @@ from typing import List, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sse_starlette.sse import EventSourceResponse
 import redis.asyncio as aioredis
 import structlog
@@ -153,6 +153,36 @@ async def get_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
     return resume
+
+
+@router.post("/campaigns/{campaign_id}/resumes/retry-failed")
+async def retry_failed_resumes(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-queue all failed and quota_exceeded resumes for a campaign."""
+    result = await db.execute(
+        select(Resume).where(
+            Resume.campaign_id == campaign_id,
+            Resume.status.in_(["failed", "quota_exceeded"])
+        )
+    )
+    resumes_to_retry = result.scalars().all()
+    
+    if not resumes_to_retry:
+        return {"retried": 0}
+        
+    for resume in resumes_to_retry:
+        resume.status = "pending"
+        resume.retry_count = 0
+        resume.error_message = None
+        
+    await db.commit()
+    
+    for resume in resumes_to_retry:
+        extract_resume.apply_async(args=[str(resume.id)], queue="extract_queue")
+        
+    return {"retried": len(resumes_to_retry)}
 
 
 @router.get("/campaigns/{campaign_id}/stream")

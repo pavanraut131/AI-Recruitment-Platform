@@ -41,7 +41,15 @@ class Candidate(Base):
     missing_skills: Mapped[list] = mapped_column(JSONB, default=list)
     recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_breakdown: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # Recruiter workflow fields
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pipeline_stage: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+        # values: screened | phone_call | technical | offer | hired | rejected_manual
+    )
 
     # Raw text
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)

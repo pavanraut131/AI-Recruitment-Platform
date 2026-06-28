@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCampaign } from "@/lib/api";
-import { ArrowLeft, Plus, X, Briefcase, Sparkles, Zap } from "lucide-react";
+import { createCampaign, parseJobDescription } from "@/lib/api";
+import { ArrowLeft, Plus, X, Briefcase, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
+import { toast } from "react-toastify";
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -14,6 +15,10 @@ export default function NewCampaignPage() {
   const [skillInput, setSkillInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [jdText, setJdText] = useState("");
+  const [jdParsing, setJdParsing] = useState(false);
+  const [showJdParser, setShowJdParser] = useState(false);
 
   const addSkill = () => {
     const s = skillInput.trim();
@@ -41,6 +46,24 @@ export default function NewCampaignPage() {
     }
   };
 
+  const handleParseJd = async () => {
+    if (!jdText.trim()) return;
+    setJdParsing(true);
+    try {
+      const result = await parseJobDescription(jdText);
+      if (!role && result.role_title) setRole(result.role_title);
+      if (result.skills?.length > 0) {
+        setSkills(prev => [...new Set([...prev, ...result.skills])]);
+        toast.success(`Extracted ${result.skills.length} skills from job description!`);
+      }
+      setShowJdParser(false);
+    } catch (e) {
+      toast.error("Failed to parse job description. Please try again.");
+    } finally {
+      setJdParsing(false);
+    }
+  };
+
   const presets: Record<string, string[]> = {
     "AI Engineer":    ["Python", "FastAPI", "LLMs", "Vector DBs", "LangChain"],
     "Frontend Dev":   ["React", "TypeScript", "Next.js", "CSS", "REST APIs"],
@@ -50,50 +73,43 @@ export default function NewCampaignPage() {
 
   return (
     <div className="page-wrapper">
-
       {/* Back link */}
-      <Link href="/campaigns"
-        className="inline-flex items-center gap-2 text-sm mb-10 transition-colors"
-        style={{ color: "rgba(255,255,255,0.35)", textDecoration: "none" }}
-        onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-        onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.35)")}>
-        <ArrowLeft size={14} />
+      <Link
+        href="/campaigns"
+        className="inline-flex items-center gap-1.5 text-[12px] font-medium mb-10 transition-colors"
+        style={{ color: "rgba(245,240,232,0.32)", textDecoration: "none" }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "rgba(245,240,232,0.65)"}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "rgba(245,240,232,0.32)"}
+      >
+        <ArrowLeft size={13} strokeWidth={2} />
         Back to Campaigns
       </Link>
 
       {/* Page header */}
-      <div className="slide-up" style={{ marginBottom: "36px" }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: "8px" }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: "linear-gradient(135deg, #7c3aed, #06b6d4)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(124,58,237,0.35)"
-          }}>
-            <Zap size={13} className="text-white" />
-          </div>
-          <span style={{ fontSize: "11px", fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            New Campaign
-          </span>
+      <div className="mb-10 slide-up">
+        <div className="page-eyebrow mb-3">
+          <span style={{ opacity: 0.5 }}>—</span>
+          New Campaign
         </div>
-        <h1 style={{ fontSize: "28px", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.2 }}>
+        <h1 className="text-[30px] font-bold text-[#f5f0e8] tracking-tight leading-tight">
           Create Hiring Campaign
         </h1>
-        <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.38)", marginTop: "8px" }}>
+        <p className="text-[13px] mt-2" style={{ color: "rgba(245,240,232,0.38)" }}>
           Define role requirements to power AI-driven candidate matching
         </p>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
           {/* Campaign Details */}
-          <div className="form-section slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="form-section slide-up" style={{ animationDelay: "0.04s" }}>
             <div className="form-section-title">Campaign Details</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label className="form-label" htmlFor="title">Campaign Title <span style={{ color: "#a78bfa" }}>*</span></label>
+                <label className="form-label" htmlFor="title">
+                  Campaign Title <span style={{ color: "#d97706" }}>*</span>
+                </label>
                 <input
                   id="title"
                   className="input-field"
@@ -105,7 +121,9 @@ export default function NewCampaignPage() {
               </div>
 
               <div>
-                <label className="form-label" htmlFor="role">Target Job Role <span style={{ color: "#a78bfa" }}>*</span></label>
+                <label className="form-label" htmlFor="role">
+                  Target Job Role <span style={{ color: "#d97706" }}>*</span>
+                </label>
                 <input
                   id="role"
                   className="input-field"
@@ -121,7 +139,7 @@ export default function NewCampaignPage() {
                 <textarea
                   id="description"
                   className="input-field"
-                  style={{ resize: "none", minHeight: "110px", lineHeight: "1.6" }}
+                  style={{ resize: "none", minHeight: "100px", lineHeight: "1.6" }}
                   placeholder="Describe the role, responsibilities, and key requirements..."
                   value={description}
                   onChange={e => setDescription(e.target.value)}
@@ -130,53 +148,125 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          {/* JD Auto-Parser */}
+          <div className="form-section slide-up" style={{ animationDelay: "0.07s" }}>
+            <button
+              type="button"
+              onClick={() => setShowJdParser(!showJdParser)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Sparkles size={14} style={{ color: "#d97706" }} />
+                <span className="text-[13.5px] font-semibold text-[#f5f0e8]">
+                  Extract from Job Description
+                </span>
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background: "rgba(217,119,6,0.12)", color: "#d97706", border: "1px solid rgba(217,119,6,0.22)" }}
+                >
+                  AI
+                </span>
+              </div>
+              {showJdParser
+                ? <ChevronUp size={15} style={{ color: "rgba(245,240,232,0.35)" }} />
+                : <ChevronDown size={15} style={{ color: "rgba(245,240,232,0.35)" }} />
+              }
+            </button>
+
+            {showJdParser && (
+              <div
+                className="mt-4 pt-4 flex flex-col gap-3"
+                style={{ borderTop: "1px solid rgba(255,248,235,0.06)" }}
+              >
+                <p className="text-[12px]" style={{ color: "rgba(245,240,232,0.38)" }}>
+                  Paste your full job description and our AI will automatically extract the target role and required technical skills.
+                </p>
+                <textarea
+                  className="input-field"
+                  style={{ resize: "vertical", minHeight: "140px", fontSize: "13px" }}
+                  placeholder="Paste job description here..."
+                  value={jdText}
+                  onChange={e => setJdText(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={handleParseJd}
+                  disabled={jdParsing || !jdText.trim()}
+                  className="btn-primary w-fit"
+                >
+                  <Sparkles size={13} />
+                  {jdParsing ? "Extracting..." : "Extract Skills & Role"}
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Required Skills */}
-          <div className="form-section slide-up" style={{ animationDelay: "0.1s" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "20px" }}>
+          <div className="form-section slide-up" style={{ animationDelay: "0.09s" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "18px" }}>
               <div>
-                <div className="form-section-title" style={{ marginBottom: "4px" }}>Required Skills</div>
-                <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.28)" }}>
-                  AI will use these to score and rank candidates
+                <div className="form-section-title" style={{ marginBottom: "3px" }}>Required Skills</div>
+                <p className="text-[11.5px]" style={{ color: "rgba(245,240,232,0.28)" }}>
+                  AI uses these to score and rank candidates
                 </p>
               </div>
               {skills.length > 0 && (
-                <span style={{
-                  fontSize: "11px", fontWeight: 600, color: "#a78bfa",
-                  background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.22)",
-                  borderRadius: "20px", padding: "3px 10px"
-                }}>
-                  {skills.length} skill{skills.length !== 1 ? "s" : ""} added
+                <span
+                  className="text-[10.5px] font-semibold rounded-full"
+                  style={{
+                    color: "#d97706",
+                    background: "rgba(217,119,6,0.1)",
+                    border: "1px solid rgba(217,119,6,0.2)",
+                    padding: "3px 10px",
+                  }}
+                >
+                  {skills.length} added
                 </span>
               )}
             </div>
 
             {/* Quick presets */}
-            <div style={{ marginBottom: "16px" }}>
-              <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.25)", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
-                Quick add presets
+            <div style={{ marginBottom: "14px" }}>
+              <p
+                className="text-[10px] font-semibold uppercase mb-2.5"
+                style={{ color: "rgba(245,240,232,0.22)", letterSpacing: "0.1em", fontFamily: "var(--font-mono)" }}
+              >
+                Quick presets
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                 {Object.keys(presets).map(preset => (
-                  <button key={preset} type="button"
+                  <button
+                    key={preset}
+                    type="button"
                     onClick={() => setSkills([...new Set([...skills, ...presets[preset]])])}
+                    className="text-[12px] font-medium transition-all"
                     style={{
-                      fontSize: "12px", padding: "6px 14px", borderRadius: "8px",
-                      color: "rgba(167,139,250,0.8)",
-                      background: "rgba(124,58,237,0.08)",
-                      border: "1px solid rgba(124,58,237,0.18)",
-                      cursor: "pointer", transition: "all 0.18s",
-                      fontWeight: 500,
+                      padding: "6px 13px",
+                      borderRadius: "8px",
+                      color: "rgba(245,240,232,0.55)",
+                      background: "rgba(255,248,235,0.04)",
+                      border: "1px solid rgba(255,248,235,0.08)",
+                      cursor: "pointer",
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(124,58,237,0.16)"; e.currentTarget.style.borderColor = "rgba(124,58,237,0.35)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(124,58,237,0.08)"; e.currentTarget.style.borderColor = "rgba(124,58,237,0.18)"; }}>
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.background = "rgba(217,119,6,0.08)";
+                      (e.currentTarget as HTMLElement).style.color = "#d97706";
+                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(217,119,6,0.2)";
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.background = "rgba(255,248,235,0.04)";
+                      (e.currentTarget as HTMLElement).style.color = "rgba(245,240,232,0.55)";
+                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,248,235,0.08)";
+                    }}
+                  >
                     + {preset}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Skill input row */}
-            <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+            {/* Skill input */}
+            <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
               <input
                 className="input-field"
                 style={{ flex: 1 }}
@@ -185,17 +275,31 @@ export default function NewCampaignPage() {
                 onChange={e => setSkillInput(e.target.value)}
                 onKeyDown={handleKeyDown}
               />
-              <button type="button" onClick={addSkill}
+              <button
+                type="button"
+                onClick={addSkill}
                 style={{
-                  width: "42px", height: "42px", borderRadius: "10px",
-                  background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.3)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  cursor: "pointer", flexShrink: 0, transition: "all 0.18s",
-                  color: "#a78bfa"
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "10px",
+                  background: "rgba(217,119,6,0.1)",
+                  border: "1px solid rgba(217,119,6,0.22)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  transition: "all 0.15s",
+                  color: "#d97706",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(124,58,237,0.28)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "rgba(124,58,237,0.15)"; }}>
-                <Plus size={16} />
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(217,119,6,0.18)";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(217,119,6,0.1)";
+                }}
+              >
+                <Plus size={15} strokeWidth={2.5} />
               </button>
             </div>
 
@@ -203,20 +307,38 @@ export default function NewCampaignPage() {
             {skills.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                 {skills.map(skill => (
-                  <span key={skill} style={{
-                    display: "inline-flex", alignItems: "center", gap: "6px",
-                    fontSize: "13px", padding: "6px 12px", borderRadius: "8px",
-                    color: "#c4b5fd",
-                    background: "rgba(124,58,237,0.12)",
-                    border: "1px solid rgba(124,58,237,0.25)",
-                    fontWeight: 500,
-                  }}>
+                  <span
+                    key={skill}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "12.5px",
+                      padding: "5px 12px",
+                      borderRadius: "8px",
+                      color: "#fbbf24",
+                      background: "rgba(217,119,6,0.08)",
+                      border: "1px solid rgba(217,119,6,0.2)",
+                      fontWeight: 500,
+                    }}
+                  >
                     {skill}
-                    <button type="button" onClick={() => removeSkill(skill)}
-                      style={{ display: "flex", color: "rgba(196,181,253,0.5)", cursor: "pointer", background: "none", border: "none", padding: 0, transition: "color 0.15s" }}
-                      onMouseEnter={e => { e.currentTarget.style.color = "#c4b5fd"; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = "rgba(196,181,253,0.5)"; }}>
-                      <X size={12} />
+                    <button
+                      type="button"
+                      onClick={() => removeSkill(skill)}
+                      style={{
+                        display: "flex",
+                        color: "rgba(251,191,36,0.45)",
+                        cursor: "pointer",
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        transition: "color 0.15s",
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#fbbf24"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "rgba(251,191,36,0.45)"; }}
+                    >
+                      <X size={11} strokeWidth={2.5} />
                     </button>
                   </span>
                 ))}
@@ -226,20 +348,34 @@ export default function NewCampaignPage() {
 
           {/* Error */}
           {error && (
-            <div style={{
-              borderRadius: "10px", padding: "12px 16px", fontSize: "13px", color: "#fca5a5",
-              background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)"
-            }}>
+            <div
+              style={{
+                borderRadius: "10px",
+                padding: "12px 16px",
+                fontSize: "13px",
+                color: "#f87171",
+                background: "rgba(239,68,68,0.07)",
+                border: "1px solid rgba(239,68,68,0.18)",
+              }}
+            >
               {error}
             </div>
           )}
 
           {/* Actions */}
-          <div className="slide-up" style={{ display: "flex", gap: "12px", animationDelay: "0.15s", paddingTop: "4px" }}>
-            <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: "center", padding: "13px 24px", fontSize: "14px" }} disabled={loading}>
+          <div
+            className="slide-up"
+            style={{ display: "flex", gap: "10px", animationDelay: "0.12s", paddingTop: "4px" }}
+          >
+            <button
+              type="submit"
+              className="btn-primary"
+              style={{ flex: 1, justifyContent: "center", padding: "12px 24px", fontSize: "13.5px" }}
+              disabled={loading}
+            >
               {loading ? (
                 <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <svg className="animate-spin" style={{ width: 16, height: 16 }} viewBox="0 0 24 24" fill="none">
+                  <svg className="animate-spin" style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
@@ -247,12 +383,16 @@ export default function NewCampaignPage() {
                 </span>
               ) : (
                 <>
-                  <Briefcase size={15} />
+                  <Briefcase size={14} strokeWidth={2} />
                   Create Campaign
                 </>
               )}
             </button>
-            <Link href="/campaigns" className="btn-secondary" style={{ padding: "13px 28px", fontSize: "14px" }}>
+            <Link
+              href="/campaigns"
+              className="btn-secondary"
+              style={{ padding: "12px 24px", fontSize: "13.5px" }}
+            >
               Cancel
             </Link>
           </div>

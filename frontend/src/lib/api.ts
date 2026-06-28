@@ -8,6 +8,16 @@ export const api = axios.create({
 });
 
 // ── Types ────────────────────────────────────────────────────
+export interface GlobalStats {
+  total_campaigns: number;
+  active_campaigns: number;
+  total_resumes: number;
+  total_processed: number;
+  total_processing: number;
+  total_failed: number;
+  total_candidates: number;
+}
+
 export interface Campaign {
   id: string;
   title: string;
@@ -66,9 +76,24 @@ export interface Candidate {
   missing_skills: string[];
   recommendation?: string;
   score?: number;
+  score_breakdown?: {
+    skills_match: number;
+    experience_match: number;
+    project_relevance: number;
+    education_bonus: number;
+    communication_quality: number;
+  };
   category?: string;
+  notes?: string;
+  pipeline_stage?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface JDParseResult {
+  role_title: string;
+  seniority: string;
+  skills: string[];
 }
 
 export interface UploadBatchResponse {
@@ -100,6 +125,8 @@ export const createCampaign = (data: Partial<Campaign>) => api.post<Campaign>("/
 export const updateCampaign = (id: string, data: Partial<Campaign>) => api.put<Campaign>(`/campaigns/${id}`, data).then((r) => r.data);
 export const deleteCampaign = (id: string) => api.delete(`/campaigns/${id}`);
 export const getCampaignStats = (id: string) => api.get<CampaignStats>(`/campaigns/${id}/stats`).then((r) => r.data);
+export const getGlobalStats = () => api.get<GlobalStats>('/stats').then((r) => r.data);
+export const parseJobDescription = (job_description: string) => api.post<JDParseResult>('/campaigns/parse-jd', { job_description }).then((r) => r.data);
 
 // Resumes
 export const uploadResumes = (campaignId: string, files: File[], onProgress?: (pct: number) => void) => {
@@ -114,14 +141,60 @@ export const uploadResumes = (campaignId: string, files: File[], onProgress?: (p
 };
 export const getCampaignResumes = (campaignId: string) =>
   api.get<Resume[]>(`/campaigns/${campaignId}/resumes`).then((r) => r.data);
+export const retryFailedResumes = (campaignId: string) =>
+  api.post<{ retried: number }>(`/campaigns/${campaignId}/resumes/retry-failed`).then((r) => r.data);
 
 // Candidates
-export const getCandidates = (campaignId: string, params?: Record<string, string | number>) =>
-  api.get<Candidate[]>(`/campaigns/${campaignId}/candidates`, { params }).then((r) => r.data);
+export const getCandidates = (campaignId: string, params?: Record<string, string | number>) => {
+  const cleanParams: Record<string, string | number> = {};
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== "" && v !== undefined && v !== null) {
+        cleanParams[k] = v;
+      }
+    });
+  }
+  return api.get<Candidate[]>(`/campaigns/${campaignId}/candidates`, { params: cleanParams }).then((r) => r.data);
+};
 export const getCandidate = (id: string) => api.get<Candidate>(`/candidates/${id}`).then((r) => r.data);
 export const updateCandidateCategory = (id: string, category: string) =>
   api.put<Candidate>(`/candidates/${id}/category`, { category }).then((r) => r.data);
+export const updateCandidateNotes = (id: string, notes: string) =>
+  api.patch<Candidate>(`/candidates/${id}/notes`, { notes }).then((r) => r.data);
+export const updateCandidatePipeline = (id: string, stage: string) =>
+  api.patch<Candidate>(`/candidates/${id}/pipeline`, { stage }).then((r) => r.data);
 export const deleteCandidate = (id: string) => api.delete(`/candidates/${id}`);
+
+export const bulkUpdatePipeline = (campaignId: string, candidate_ids: string[], stage: string) =>
+  api.patch<{ updated: number }>(`/campaigns/${campaignId}/candidates/bulk-pipeline`, { candidate_ids, stage }).then(r => r.data);
+
+export const bulkDeleteCandidates = (campaignId: string, candidate_ids: string[]) =>
+  api.delete<{ deleted: number }>(`/campaigns/${campaignId}/candidates/bulk`, { data: { candidate_ids } }).then(r => r.data);
+
+export const exportCandidatesCsv = (
+  campaignId: string,
+  params?: { category?: string; min_score?: number | string; max_score?: number | string; search?: string; pipeline_stage?: string; }
+) => {
+  const cleanParams: Record<string, string | number> = {};
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== "" && v !== undefined && v !== null) {
+        cleanParams[k] = v;
+      }
+    });
+  }
+  return api.get(`/campaigns/${campaignId}/candidates/export`, {
+    params: cleanParams,
+    responseType: 'blob',
+  }).then((r) => {
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `candidates_${campaignId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+};
 
 // SSE
 export const SSE_URL = (campaignId: string) =>

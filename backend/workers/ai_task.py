@@ -154,6 +154,7 @@ def process_candidate_ai(self, resume_id: str):
 
             # Populate AI scoring fields
             candidate.score = scoring.score
+            candidate.score_breakdown = scoring.score_breakdown
             candidate.category = scoring.category
             candidate.summary = scoring.summary
             candidate.strengths = scoring.strengths
