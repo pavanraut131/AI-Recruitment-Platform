@@ -1,0 +1,1104 @@
+# serializer version: 1
+# name: test_campaign_stats_empty
+  dict({
+    'body': dict({
+      'avg_score': None,
+      'moderate_match': 0,
+      'rejected': 0,
+      'strong_match': 0,
+      'top_skills': list([
+      ]),
+      'total_failed': 0,
+      'total_pending': 0,
+      'total_processed': 0,
+      'total_quota_exceeded': 0,
+      'total_resumes': 0,
+      'weak_match': 0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_campaign_stats_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_campaign_stats_populated
+  dict({
+    'body': dict({
+      'avg_score': 52.5,
+      'moderate_match': 0,
+      'rejected': 1,
+      'strong_match': 2,
+      'top_skills': list([
+        dict({
+          'count': 3,
+          'skill': 'Python',
+        }),
+        dict({
+          'count': 2,
+          'skill': 'FastAPI',
+        }),
+        dict({
+          'count': 1,
+          'skill': 'Docker',
+        }),
+      ]),
+      'total_failed': 1,
+      'total_pending': 3,
+      'total_processed': 6,
+      'total_quota_exceeded': 1,
+      'total_resumes': 11,
+      'weak_match': 1,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_campaign_stats_top_skills_capped_at_ten
+  dict({
+    'body': dict({
+      'avg_score': 82.0,
+      'moderate_match': 0,
+      'rejected': 0,
+      'strong_match': 11,
+      'top_skills': list([
+        dict({
+          'count': 11,
+          'skill': 'S01',
+        }),
+        dict({
+          'count': 10,
+          'skill': 'S02',
+        }),
+        dict({
+          'count': 9,
+          'skill': 'S03',
+        }),
+        dict({
+          'count': 8,
+          'skill': 'S04',
+        }),
+        dict({
+          'count': 7,
+          'skill': 'S05',
+        }),
+        dict({
+          'count': 6,
+          'skill': 'S06',
+        }),
+        dict({
+          'count': 5,
+          'skill': 'S07',
+        }),
+        dict({
+          'count': 4,
+          'skill': 'S08',
+        }),
+        dict({
+          'count': 3,
+          'skill': 'S09',
+        }),
+        dict({
+          'count': 2,
+          'skill': 'S10',
+        }),
+      ]),
+      'total_failed': 0,
+      'total_pending': 0,
+      'total_processed': 11,
+      'total_quota_exceeded': 0,
+      'total_resumes': 11,
+      'weak_match': 0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_campaign_stats_unknown_campaign
+  dict({
+    'body': dict({
+      'avg_score': None,
+      'moderate_match': 0,
+      'rejected': 0,
+      'strong_match': 0,
+      'top_skills': list([
+      ]),
+      'total_failed': 0,
+      'total_pending': 0,
+      'total_processed': 0,
+      'total_quota_exceeded': 0,
+      'total_resumes': 0,
+      'weak_match': 0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_create_campaign
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'LLM tooling team',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'LLMs',
+      ]),
+      'role': 'AI Engineer',
+      'stats': None,
+      'status': 'active',
+      'title': 'AI Engineer Batch 1',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 201,
+  })
+# ---
+# name: test_create_campaign_minimal_payload
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': None,
+      'id': '<uuid:1>',
+      'required_skills': list([
+      ]),
+      'role': 'Dev',
+      'stats': None,
+      'status': 'active',
+      'title': 'Minimal',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 201,
+  })
+# ---
+# name: test_create_campaign_title_too_long_is_a_500
+  dict({
+    'body': dict({
+      'detail': 'Internal server error',
+      'path': 'http://test/api/v1/campaigns',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 500,
+  })
+# ---
+# name: test_create_campaign_validation_error[empty-object]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': dict({
+          }),
+          'loc': list([
+            'body',
+            'title',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+        dict({
+          'input': dict({
+          }),
+          'loc': list([
+            'body',
+            'role',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_campaign_validation_error[missing-role]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': dict({
+            'title': 'Missing role',
+          }),
+          'loc': list([
+            'body',
+            'role',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_campaign_validation_error[no-body]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_campaign_validation_error[skills-not-a-list]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': 'Python',
+          'loc': list([
+            'body',
+            'required_skills',
+          ]),
+          'msg': 'Input should be a valid list',
+          'type': 'list_type',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_campaign_validation_error[title-not-a-string]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': 123,
+          'loc': list([
+            'body',
+            'title',
+          ]),
+          'msg': 'Input should be a valid string',
+          'type': 'string_type',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_delete_campaign_cascades_to_resumes_and_candidates
+  dict({
+    'get_after_delete': 404,
+    'response': dict({
+      'content': '',
+      'status_code': 204,
+    }),
+    'rows_left': dict({
+      'campaigns': 1,
+      'candidates': 1,
+      'resumes': 1,
+    }),
+    'stored_object_keys_left': 1,
+  })
+# ---
+# name: test_delete_campaign_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_delete_campaign_not_found
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_get_campaign_includes_stats
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': dict({
+        'avg_score': 52.5,
+        'moderate_match': 0,
+        'rejected': 1,
+        'strong_match': 2,
+        'top_skills': list([
+          dict({
+            'count': 3,
+            'skill': 'Python',
+          }),
+          dict({
+            'count': 2,
+            'skill': 'FastAPI',
+          }),
+          dict({
+            'count': 1,
+            'skill': 'Docker',
+          }),
+        ]),
+        'total_failed': 1,
+        'total_pending': 3,
+        'total_processed': 6,
+        'total_quota_exceeded': 1,
+        'total_resumes': 11,
+        'weak_match': 1,
+      }),
+      'status': 'active',
+      'title': 'Backend Engineer - Q1 Hiring',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_get_campaign_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_get_campaign_not_found
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_get_campaign_without_resumes
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': dict({
+        'avg_score': None,
+        'moderate_match': 0,
+        'rejected': 0,
+        'strong_match': 0,
+        'top_skills': list([
+        ]),
+        'total_failed': 0,
+        'total_pending': 0,
+        'total_processed': 0,
+        'total_quota_exceeded': 0,
+        'total_resumes': 0,
+        'weak_match': 0,
+      }),
+      'status': 'active',
+      'title': 'Backend Engineer - Q1 Hiring',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_empty
+  dict({
+    'body': list([
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_negative_paging_is_a_500[?limit=-1]
+  dict({
+    'body': dict({
+      'detail': 'Internal server error',
+      'path': 'http://test/api/v1/campaigns?limit=-1',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 500,
+  })
+# ---
+# name: test_list_campaigns_negative_paging_is_a_500[?skip=-1]
+  dict({
+    'body': dict({
+      'detail': 'Internal server error',
+      'path': 'http://test/api/v1/campaigns?skip=-1',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 500,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[?limit=0]
+  dict({
+    'body': list([
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[?limit=2]
+  dict({
+    'body': list([
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:1>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'archived',
+        'title': 'Newest',
+        'updated_at': '<datetime>',
+      }),
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:2>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'closed',
+        'title': 'Middle',
+        'updated_at': '<datetime>',
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[?skip=1&limit=1]
+  dict({
+    'body': list([
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:1>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'closed',
+        'title': 'Middle',
+        'updated_at': '<datetime>',
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[?skip=10]
+  dict({
+    'body': list([
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[?skip=1]
+  dict({
+    'body': list([
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:1>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'closed',
+        'title': 'Middle',
+        'updated_at': '<datetime>',
+      }),
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:2>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'active',
+        'title': 'Oldest',
+        'updated_at': '<datetime>',
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_order_and_pagination[]
+  dict({
+    'body': list([
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:1>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'archived',
+        'title': 'Newest',
+        'updated_at': '<datetime>',
+      }),
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:2>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'closed',
+        'title': 'Middle',
+        'updated_at': '<datetime>',
+      }),
+      dict({
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:3>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'stats': None,
+        'status': 'active',
+        'title': 'Oldest',
+        'updated_at': '<datetime>',
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_validation_error[?limit=1.5]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': '1.5',
+          'loc': list([
+            'query',
+            'limit',
+          ]),
+          'msg': 'Input should be a valid integer, unable to parse string as an integer',
+          'type': 'int_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_campaigns_validation_error[?skip=abc]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': 'abc',
+          'loc': list([
+            'query',
+            'skip',
+          ]),
+          'msg': 'Input should be a valid integer, unable to parse string as an integer',
+          'type': 'int_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_parse_jd[fenced-json]
+  dict({
+    'gemini_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd[gemini-error]
+  dict({
+    'gemini_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd[invalid-json]
+  dict({
+    'gemini_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd[json-missing-keys]
+  dict({
+    'gemini_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd[plain-json]
+  dict({
+    'gemini_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd_validation_error[missing-job-description]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': dict({
+          }),
+          'loc': list([
+            'body',
+            'job_description',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_parse_jd_validation_error[no-body]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_parse_jd_validation_error[null-job-description]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+            'job_description',
+          ]),
+          'msg': 'Input should be a valid string',
+          'type': 'string_type',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_parse_jd_without_api_key
+  dict({
+    'gemini_calls': 0,
+    'response': dict({
+      'body': dict({
+        'detail': 'Gemini API key not configured',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_update_campaign[all-fields]
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': None,
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Go',
+        'Kubernetes',
+      ]),
+      'role': 'Platform Engineer',
+      'stats': None,
+      'status': 'closed',
+      'title': 'Platform Engineer - Q2',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_campaign[empty-object]
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': None,
+      'status': 'active',
+      'title': 'Backend Engineer - Q1 Hiring',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_campaign[partial-title]
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': None,
+      'status': 'active',
+      'title': 'Renamed',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_campaign[unknown-field-ignored]
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': None,
+      'status': 'active',
+      'title': 'Backend Engineer - Q1 Hiring',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_campaign[unknown-status-accepted]
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': 'Build and run the Python services behind our recruiting product.',
+      'id': '<uuid:1>',
+      'required_skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+      ]),
+      'role': 'Backend Engineer',
+      'stats': None,
+      'status': 'banana',
+      'title': 'Backend Engineer - Q1 Hiring',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_campaign_db_constraint_is_a_500[null-title]
+  dict({
+    'body': dict({
+      'detail': 'Internal server error',
+      'path': 'http://test/api/v1/campaigns/<uuid:1>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 500,
+  })
+# ---
+# name: test_update_campaign_db_constraint_is_a_500[status-too-long]
+  dict({
+    'body': dict({
+      'detail': 'Internal server error',
+      'path': 'http://test/api/v1/campaigns/<uuid:1>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 500,
+  })
+# ---
+# name: test_update_campaign_not_found
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_update_campaign_validation_error[no-body]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_campaign_validation_error[skills-not-a-list]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': 'Python',
+          'loc': list([
+            'body',
+            'required_skills',
+          ]),
+          'msg': 'Input should be a valid list',
+          'type': 'list_type',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---

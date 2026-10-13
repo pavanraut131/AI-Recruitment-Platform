@@ -1,0 +1,137 @@
+# serializer version: 1
+# name: test_stream_event_for_each_resume_status
+  dict({
+    'events': list([
+      dict({
+        'data': dict({
+          'campaign_id': '<uuid:1>',
+        }),
+        'event': 'connected',
+      }),
+      dict({
+        'data': dict({
+          'filename': 'jane_doe_resume.pdf',
+          'resume_id': '<uuid:2>',
+          'status': 'extracting',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'error': 'Could not extract meaningful text from PDF',
+          'resume_id': '<uuid:2>',
+          'status': 'failed',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'candidate_name': 'Jane Doe',
+          'category': 'strong_match',
+          'filename': 'jane_doe_resume.pdf',
+          'resume_id': '<uuid:2>',
+          'score': 82.0,
+          'status': 'done',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'error': 'Not a resume — no candidate information could be extracted',
+          'resume_id': '<uuid:2>',
+          'status': 'failed',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'error': 'Gemini returned invalid JSON',
+          'resume_id': '<uuid:2>',
+          'status': 'failed',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'error': 'Gemini API daily quota reached (20 req/day on free tier). This resume was not processed. Quota resets at midnight PT. Upgrade to a paid Gemini API key to remove this limit.',
+          'resume_id': '<uuid:2>',
+          'status': 'quota_exceeded',
+        }),
+        'event': 'resume_update',
+      }),
+    ]),
+    'headers': dict({
+      'cache-control': 'no-cache',
+      'connection': 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_stream_forwards_events_of_other_campaigns
+  dict({
+    'events': list([
+      dict({
+        'data': dict({
+          'campaign_id': '<uuid:1>',
+        }),
+        'event': 'connected',
+      }),
+      dict({
+        'data': dict({
+          'filename': 'other.pdf',
+          'resume_id': '<uuid:2>',
+          'status': 'extracting',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'error': 'x',
+          'resume_id': 'not-a-resume-id',
+          'status': 'failed',
+        }),
+        'event': 'resume_update',
+      }),
+    ]),
+    'watched_campaign': '<uuid:1>',
+  })
+# ---
+# name: test_stream_invalid_campaign_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_stream_unknown_campaign_still_connects
+  dict({
+    'events': list([
+      dict({
+        'data': dict({
+          'campaign_id': '<uuid:1>',
+        }),
+        'event': 'connected',
+      }),
+    ]),
+    'status_code': 200,
+  })
+# ---

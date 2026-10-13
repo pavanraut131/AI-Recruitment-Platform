@@ -1,0 +1,1018 @@
+# serializer version: 1
+# name: test_get_resume
+  dict({
+    'body': dict({
+      'campaign_id': '<uuid:1>',
+      'error_message': 'Could not extract text',
+      'file_size_bytes': 48213,
+      'id': '<uuid:2>',
+      'original_filename': 'jane_doe_resume.pdf',
+      'retry_count': 2,
+      'status': 'failed',
+      'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:2>/jane_doe_resume.pdf',
+      'updated_at': '<datetime>',
+      'uploaded_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_get_resume_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'resume_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_get_resume_not_found
+  dict({
+    'body': dict({
+      'detail': 'Resume not found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_list_campaign_resumes
+  dict({
+    'body': list([
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': 'quota_exceeded error message',
+        'file_size_bytes': 48213,
+        'id': '<uuid:2>',
+        'original_filename': 'quota_exceeded.pdf',
+        'retry_count': 0,
+        'status': 'quota_exceeded',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:2>/quota_exceeded.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': 'failed error message',
+        'file_size_bytes': 48213,
+        'id': '<uuid:3>',
+        'original_filename': 'failed.pdf',
+        'retry_count': 3,
+        'status': 'failed',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:3>/failed.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': None,
+        'file_size_bytes': 48213,
+        'id': '<uuid:4>',
+        'original_filename': 'done.pdf',
+        'retry_count': 0,
+        'status': 'done',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:4>/done.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': None,
+        'file_size_bytes': 48213,
+        'id': '<uuid:5>',
+        'original_filename': 'processing.pdf',
+        'retry_count': 0,
+        'status': 'processing',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:5>/processing.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': None,
+        'file_size_bytes': 48213,
+        'id': '<uuid:6>',
+        'original_filename': 'extracting.pdf',
+        'retry_count': 0,
+        'status': 'extracting',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:6>/extracting.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'error_message': None,
+        'file_size_bytes': 48213,
+        'id': '<uuid:7>',
+        'original_filename': 'pending.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:1>/resumes/<uuid:7>/pending.pdf',
+        'updated_at': '<datetime>',
+        'uploaded_at': '<datetime>',
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_campaign_resumes_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_campaign_resumes_unknown_campaign
+  dict({
+    'body': list([
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_retry_failed_resumes
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'resume_filename': 'failed.pdf',
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:2>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'resume_filename': 'quota_exceeded.pdf',
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'retried': 2,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'resume_rows': list([
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '874af92cdcbaa9150c4516b7fca7a42c5faba570226b4d33886257eb549f9e56',
+        'file_size_bytes': 48213,
+        'id': '<uuid:4>',
+        'original_filename': 'done.pdf',
+        'retry_count': 0,
+        'status': 'done',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:4>/done.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '94acfdf8301aa31ae0171f58cf5d26c19885f731b46e0d449952856fa7e7ddab',
+        'file_size_bytes': 48213,
+        'id': '<uuid:1>',
+        'original_filename': 'failed.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:1>/failed.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:5>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '3b0b3468c2da8e5a8cb415f8700970d0c7831169c9903a4efe336dbd9ee6d123',
+        'file_size_bytes': 48213,
+        'id': '<uuid:6>',
+        'original_filename': 'other_failed.pdf',
+        'retry_count': 3,
+        'status': 'failed',
+        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:6>/other_failed.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '3b3ff61ad5fcde9f0532ad9da4e2f70055892e843ff6836389c6c25388689fb0',
+        'file_size_bytes': 48213,
+        'id': '<uuid:7>',
+        'original_filename': 'pending.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:7>/pending.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '7bfc823add802328fff1f2661920284321a4895e50c6a5f798f242a9e59c6df7',
+        'file_size_bytes': 48213,
+        'id': '<uuid:8>',
+        'original_filename': 'processing.pdf',
+        'retry_count': 0,
+        'status': 'processing',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:8>/processing.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '62a9dc89a62dcac46f3be9a15c7513151077287661dedaa7b9629d9bc5eaca1e',
+        'file_size_bytes': 48213,
+        'id': '<uuid:2>',
+        'original_filename': 'quota_exceeded.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:2>/quota_exceeded.pdf',
+      }),
+    ]),
+  })
+# ---
+# name: test_retry_failed_resumes_invalid_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_retry_failed_resumes_nothing_to_retry
+  dict({
+    'celery_calls': 0,
+    'response': dict({
+      'body': dict({
+        'retried': 0,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_retry_failed_resumes_unknown_campaign
+  dict({
+    'body': dict({
+      'retried': 0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_upload_accepted
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:2>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:3>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted_files': 3,
+        'batch_id': '<uuid:4>',
+        'campaign_id': '<uuid:5>',
+        'message': 'Processing 3 resumes asynchronously',
+        'rejected_files': list([
+        ]),
+        'resume_ids': list([
+          '<uuid:1>',
+          '<uuid:2>',
+          '<uuid:3>',
+        ]),
+        'total_files': 3,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+    'resume_rows': list([
+      dict({
+        'campaign_id': '<uuid:5>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '9934e2460b1138e3d6466652aca1dc84be7e1df05b86a445c2d47cd47c0160ac',
+        'file_size_bytes': 17,
+        'id': '<uuid:1>',
+        'original_filename': 'alice.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:1>/alice.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:5>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'c0d6e9b3f1099ad02c86377a07163b73c46fcf7c076d2f98c11e325e302d62f6',
+        'file_size_bytes': 15,
+        'id': '<uuid:2>',
+        'original_filename': 'BOB_UPPERCASE.PDF',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:2>/BOB_UPPERCASE.PDF',
+      }),
+      dict({
+        'campaign_id': '<uuid:5>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'a379fbbc558d9881912aec436640229d896d1b5d2204f4e9f93388b84199f028',
+        'file_size_bytes': 17,
+        'id': '<uuid:3>',
+        'original_filename': 'name with spaces.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:3>/name with spaces.pdf',
+      }),
+    ]),
+    'stored_objects': list([
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:5>/resumes/<uuid:1>/alice.pdf',
+        'size': 17,
+        'starts_with': b'%PDF-1.4',
+      }),
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:5>/resumes/<uuid:2>/BOB_UPPERCASE.PDF',
+        'size': 15,
+        'starts_with': b'%PDF-1.4',
+      }),
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:5>/resumes/<uuid:3>/name with spaces.pdf',
+        'size': 17,
+        'starts_with': b'%PDF-1.4',
+      }),
+    ]),
+  })
+# ---
+# name: test_upload_duplicates
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:2>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:3>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+      dict({
+        'args': list([
+          '<uuid:4>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted_files': 4,
+        'batch_id': '<uuid:5>',
+        'campaign_id': '<uuid:6>',
+        'message': 'Processing 4 resumes asynchronously',
+        'rejected_files': list([
+          dict({
+            'filename': 'again_done.pdf',
+            'reason': 'Duplicate file (already processed successfully)',
+          }),
+          dict({
+            'filename': 'again_pending.pdf',
+            'reason': 'Duplicate file (currently in progress)',
+          }),
+          dict({
+            'filename': 'again_processing.pdf',
+            'reason': 'Duplicate file (currently in progress)',
+          }),
+          dict({
+            'filename': 'again_failed_then_done.pdf',
+            'reason': 'Duplicate file (already processed successfully)',
+          }),
+          dict({
+            'filename': 'twice_in_batch_2.pdf',
+            'reason': 'Duplicate file (currently in progress)',
+          }),
+        ]),
+        'resume_ids': list([
+          '<uuid:1>',
+          '<uuid:2>',
+          '<uuid:3>',
+          '<uuid:4>',
+        ]),
+        'total_files': 9,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+    'resume_rows': list([
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '89d95d3cdb5e157fdd79a0a69ee5b4b833e5f150e6f19898a8c6779621ea5fd5',
+        'file_size_bytes': 18,
+        'id': '<uuid:1>',
+        'original_filename': 'again_failed.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:1>/again_failed.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'e667b106fa22b58e6439ce32842ecc402f98b412b2e61e52c57f611f66ba828c',
+        'file_size_bytes': 26,
+        'id': '<uuid:3>',
+        'original_filename': 'again_other_campaign.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:3>/again_other_campaign.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'c682b366eb57c25de8279f9807b361a46f65a76389d69b656a7d05ba96456bb5',
+        'file_size_bytes': 26,
+        'id': '<uuid:2>',
+        'original_filename': 'again_quota_exceeded.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:2>/again_quota_exceeded.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '2b10791ea9e26eccd5311bf0bb5241593c817298ee8fb6de0845af3a01105930',
+        'file_size_bytes': 48213,
+        'id': '<uuid:7>',
+        'original_filename': 'existing_done.pdf',
+        'retry_count': 0,
+        'status': 'done',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:7>/existing_done.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '89d95d3cdb5e157fdd79a0a69ee5b4b833e5f150e6f19898a8c6779621ea5fd5',
+        'file_size_bytes': 48213,
+        'id': '<uuid:8>',
+        'original_filename': 'existing_failed.pdf',
+        'retry_count': 0,
+        'status': 'failed',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:8>/existing_failed.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '39df2ca7b1fc71829cd188094718ab13f6890c9f480f630a930bc6e4bc890807',
+        'file_size_bytes': 48213,
+        'id': '<uuid:9>',
+        'original_filename': 'existing_failed_then_done_done.pdf',
+        'retry_count': 0,
+        'status': 'done',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:9>/existing_failed_then_done_done.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '39df2ca7b1fc71829cd188094718ab13f6890c9f480f630a930bc6e4bc890807',
+        'file_size_bytes': 48213,
+        'id': '<uuid:10>',
+        'original_filename': 'existing_failed_then_done_failed.pdf',
+        'retry_count': 0,
+        'status': 'failed',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:10>/existing_failed_then_done_failed.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:11>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'e667b106fa22b58e6439ce32842ecc402f98b412b2e61e52c57f611f66ba828c',
+        'file_size_bytes': 48213,
+        'id': '<uuid:12>',
+        'original_filename': 'existing_other_campaign.pdf',
+        'retry_count': 0,
+        'status': 'done',
+        'storage_path': 'campaigns/<uuid:11>/resumes/<uuid:12>/existing_other_campaign.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '40862cbf1b30b7fcbb4e48b1113b12bd36b3a2ffeb8a8e8bda06f37a51c661fe',
+        'file_size_bytes': 48213,
+        'id': '<uuid:13>',
+        'original_filename': 'existing_pending.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:13>/existing_pending.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '0d261adf12a1701c22ecf519a5790444c685086e26e8ac196af547de9d621a25',
+        'file_size_bytes': 48213,
+        'id': '<uuid:14>',
+        'original_filename': 'existing_processing.pdf',
+        'retry_count': 0,
+        'status': 'processing',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:14>/existing_processing.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'c682b366eb57c25de8279f9807b361a46f65a76389d69b656a7d05ba96456bb5',
+        'file_size_bytes': 48213,
+        'id': '<uuid:15>',
+        'original_filename': 'existing_quota_exceeded.pdf',
+        'retry_count': 0,
+        'status': 'quota_exceeded',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:15>/existing_quota_exceeded.pdf',
+      }),
+      dict({
+        'campaign_id': '<uuid:6>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'f78dcd01a72eef027de1ffd3f3ce3f0e935d912bc04b809f7747a1113d091904',
+        'file_size_bytes': 17,
+        'id': '<uuid:4>',
+        'original_filename': 'twice_in_batch_1.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:4>/twice_in_batch_1.pdf',
+      }),
+    ]),
+    'stored_objects': list([
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:6>/resumes/<uuid:1>/again_failed.pdf',
+        'size': 18,
+        'starts_with': b'%PDF-1.4',
+      }),
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:6>/resumes/<uuid:2>/again_quota_exceeded.pdf',
+        'size': 26,
+        'starts_with': b'%PDF-1.4',
+      }),
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:6>/resumes/<uuid:3>/again_other_campaign.pdf',
+        'size': 26,
+        'starts_with': b'%PDF-1.4',
+      }),
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:6>/resumes/<uuid:4>/twice_in_batch_1.pdf',
+        'size': 17,
+        'starts_with': b'%PDF-1.4',
+      }),
+    ]),
+  })
+# ---
+# name: test_upload_invalid_campaign_id
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          }),
+          'input': 'not-a-uuid',
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'type': 'uuid_parsing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_upload_only_invalid_files
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted_files': 0,
+        'batch_id': '<uuid:1>',
+        'campaign_id': '<uuid:2>',
+        'message': 'Processing 0 resumes asynchronously',
+        'rejected_files': list([
+          dict({
+            'filename': 'resume.docx',
+            'reason': 'Only PDF files are accepted',
+          }),
+        ]),
+        'resume_ids': list([
+        ]),
+        'total_files': 1,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+    'resume_rows': list([
+    ]),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_rejects_invalid_files
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted_files': 1,
+        'batch_id': '<uuid:2>',
+        'campaign_id': '<uuid:3>',
+        'message': 'Processing 1 resumes asynchronously',
+        'rejected_files': list([
+          dict({
+            'filename': 'resume.docx',
+            'reason': 'Only PDF files are accepted',
+          }),
+          dict({
+            'filename': 'notes.txt',
+            'reason': 'Only PDF files are accepted',
+          }),
+          dict({
+            'filename': 'fake.pdf',
+            'reason': 'Invalid PDF file',
+          }),
+          dict({
+            'filename': 'empty.pdf',
+            'reason': 'Invalid PDF file',
+          }),
+        ]),
+        'resume_ids': list([
+          '<uuid:1>',
+        ]),
+        'total_files': 5,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+    'resume_rows': list([
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': '481f461ef445c703d3a701bfb1f79d858a3f7c8b213128560ea12e5690ccf551',
+        'file_size_bytes': 17,
+        'id': '<uuid:1>',
+        'original_filename': 'valid.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:1>/valid.pdf',
+      }),
+    ]),
+    'stored_objects': list([
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:3>/resumes/<uuid:1>/valid.pdf',
+        'size': 17,
+        'starts_with': b'%PDF-1.4',
+      }),
+    ]),
+  })
+# ---
+# name: test_upload_size_limit
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted_files': 1,
+        'batch_id': '<uuid:2>',
+        'campaign_id': '<uuid:3>',
+        'message': 'Processing 1 resumes asynchronously',
+        'rejected_files': list([
+          dict({
+            'filename': 'too_large.pdf',
+            'reason': 'File exceeds 10MB limit',
+          }),
+        ]),
+        'resume_ids': list([
+          '<uuid:1>',
+        ]),
+        'total_files': 2,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+    'resume_rows': list([
+      dict({
+        'campaign_id': '<uuid:3>',
+        'celery_task_id': None,
+        'error_message': None,
+        'file_hash': 'a37f9eaafe7afdb5b1cd9d92168a6cc4894167bf35c8e02828292258acf354cb',
+        'file_size_bytes': 10485760,
+        'id': '<uuid:1>',
+        'original_filename': 'at_limit.pdf',
+        'retry_count': 0,
+        'status': 'pending',
+        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:1>/at_limit.pdf',
+      }),
+    ]),
+    'stored_objects': list([
+      dict({
+        'content_type': 'application/pdf',
+        'key': 'campaigns/<uuid:3>/resumes/<uuid:1>/at_limit.pdf',
+        'size': 10485760,
+        'starts_with': b'%PDF-1.4',
+      }),
+    ]),
+  })
+# ---
+# name: test_upload_too_many_files
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Maximum 50 files per upload batch',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 400,
+    }),
+    'resume_rows': list([
+    ]),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_unknown_campaign
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Campaign not found',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 404,
+    }),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_unknown_campaign_is_checked_before_file_count
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_upload_validation_error[files-as-form-field]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'ctx': dict({
+            'error': dict({
+            }),
+          }),
+          'input': 'not a file',
+          'loc': list([
+            'body',
+            'files',
+            0,
+          ]),
+          'msg': "Value error, Expected UploadFile, received: <class 'str'>",
+          'type': 'value_error',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_upload_validation_error[no-body]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+            'files',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_upload_validation_error[wrong-field-name]
+  dict({
+    'body': dict({
+      'detail': list([
+        dict({
+          'input': None,
+          'loc': list([
+            'body',
+            'files',
+          ]),
+          'msg': 'Field required',
+          'type': 'missing',
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 422,
+  })
+# ---
