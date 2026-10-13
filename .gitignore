@@ -54,3 +54,6 @@ htmlcov/
 # Env
 .env.local
 .env.production
+
+# Claude Code local state (agent worktrees, settings)
+.claude/
