@@ -92,7 +92,9 @@ class ExtractionResult(BaseModel):
 
 class ScoringResult(BaseModel):
     score: float
-    score_breakdown: dict | None = None  # {skills_match, experience_match, project_relevance, education_bonus, communication_quality}
+    score_breakdown: dict | None = (
+        None  # {skills_match, experience_match, project_relevance, education_bonus, communication_quality}
+    )
     category: str  # strong_match | moderate_match | weak_match | rejected
     summary: str
     strengths: list[str] = []

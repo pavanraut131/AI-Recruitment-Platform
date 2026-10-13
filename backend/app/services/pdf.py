@@ -65,11 +65,12 @@ def _extract_with_pymupdf(pdf_bytes: bytes) -> str | None:
 def clean_text(text: str) -> str:
     """Remove excessive whitespace and normalize text."""
     import re
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r'[ \t]+', ' ', text)
+
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
 
 def is_valid_pdf(content: bytes) -> bool:
     """Check if bytes represent a valid PDF by checking the magic bytes."""
-    return content[:4] == b'%PDF'
+    return content[:4] == b"%PDF"

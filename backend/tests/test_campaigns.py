@@ -37,9 +37,7 @@ async def setup_db():
 
 @pytest_asyncio.fixture
 async def client():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 
@@ -87,7 +85,9 @@ async def test_list_campaigns(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_campaign(client: AsyncClient):
-    created = (await client.post("/api/v1/campaigns", json={"title": "Test", "role": "Engineer"})).json()
+    created = (
+        await client.post("/api/v1/campaigns", json={"title": "Test", "role": "Engineer"})
+    ).json()
     resp = await client.get(f"/api/v1/campaigns/{created['id']}")
     assert resp.status_code == 200
     assert resp.json()["title"] == "Test"
@@ -121,7 +121,9 @@ async def test_delete_campaign(client: AsyncClient):
 # ── Campaign stats ────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_campaign_stats(client: AsyncClient):
-    created = (await client.post("/api/v1/campaigns", json={"title": "Stats", "role": "Dev"})).json()
+    created = (
+        await client.post("/api/v1/campaigns", json={"title": "Stats", "role": "Dev"})
+    ).json()
     resp = await client.get(f"/api/v1/campaigns/{created['id']}/stats")
     assert resp.status_code == 200
     stats = resp.json()

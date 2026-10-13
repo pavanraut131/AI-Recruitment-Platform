@@ -5,6 +5,7 @@ Worker 1: PDF Extraction
 - Saves raw_text to Candidate record
 - Enqueues AI processing task
 """
+
 import uuid
 
 import structlog
@@ -115,7 +116,9 @@ def extract_resume(self, resume_id: str):
             resume = db.query(Resume).filter(Resume.id == uuid.UUID(resume_id)).first()
             resume.status = "processing"
 
-            existing = db.query(Candidate).filter(Candidate.resume_id == uuid.UUID(resume_id)).first()
+            existing = (
+                db.query(Candidate).filter(Candidate.resume_id == uuid.UUID(resume_id)).first()
+            )
             if not existing:
                 candidate = Candidate(
                     resume_id=uuid.UUID(resume_id),
@@ -130,6 +133,7 @@ def extract_resume(self, resume_id: str):
 
         # Enqueue AI task
         from workers.ai_task import process_candidate_ai
+
         process_candidate_ai.apply_async(args=[resume_id], queue="ai_queue")
         log.info("ai_task_enqueued")
 
@@ -163,10 +167,12 @@ def _gemini_vision_ocr(pdf_bytes: bytes) -> str:
         pix = page.get_pixmap(dpi=150)
         img_bytes = pix.tobytes("png")
 
-        response = model.generate_content([
-            "Extract all text from this resume page. Return only the extracted text, no formatting.",
-            {"mime_type": "image/png", "data": img_bytes},
-        ])
+        response = model.generate_content(
+            [
+                "Extract all text from this resume page. Return only the extracted text, no formatting.",
+                {"mime_type": "image/png", "data": img_bytes},
+            ]
+        )
         all_text.append(response.text)
 
     doc.close()

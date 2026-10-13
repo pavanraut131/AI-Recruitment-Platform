@@ -4,10 +4,11 @@ Revision ID: 5618884e3aec
 Revises: 19e4a9fb3e33
 Create Date: 2026-06-26 10:51:54.864628
 """
+
 from collections.abc import Sequence
 
-revision: str = '5618884e3aec'
-down_revision: str | None = '19e4a9fb3e33'
+revision: str = "5618884e3aec"
+down_revision: str | None = "19e4a9fb3e33"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

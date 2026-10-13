@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 class Candidate(Base):
     __tablename__ = "candidates"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     resume_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False, unique=True
+        UUID(as_uuid=True),
+        ForeignKey("resumes.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     campaign_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
@@ -54,16 +55,15 @@ class Candidate(Base):
     # Recruiter workflow fields
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     pipeline_stage: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30),
+        nullable=True,
         # values: screened | phone_call | technical | offer | hired | rejected_manual
     )
 
     # Raw text
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

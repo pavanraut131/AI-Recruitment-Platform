@@ -6,6 +6,7 @@ Worker 2: AI Processing
 - Saves full Candidate record
 - Publishes SSE update
 """
+
 import uuid
 
 import structlog
@@ -31,6 +32,7 @@ def _publish_sse_event(resume_id: str, status: str, extra: dict = None):
     import json
 
     import redis
+
     r = redis.Redis.from_url(settings.REDIS_URL)
     payload = {"resume_id": resume_id, "status": status, **(extra or {})}
     r.publish(f"resume:status:{resume_id}", json.dumps(payload))
@@ -89,9 +91,9 @@ def process_candidate_ai(self, resume_id: str):
                 log.error("resume_not_found")
                 return
 
-            candidate = db.query(Candidate).filter(
-                Candidate.resume_id == uuid.UUID(resume_id)
-            ).first()
+            candidate = (
+                db.query(Candidate).filter(Candidate.resume_id == uuid.UUID(resume_id)).first()
+            )
             if not candidate or not candidate.raw_text:
                 raise ValueError("No raw text found for candidate")
 
@@ -106,7 +108,9 @@ def process_candidate_ai(self, resume_id: str):
         # ── Step 1: Extract structured info ──────────────────────
         log.info("calling_gemini_extraction")
         extraction = extract_candidate_info(raw_text)
-        log.info("extraction_complete", name=extraction.name, skills_count=len(extraction.skills or []))
+        log.info(
+            "extraction_complete", name=extraction.name, skills_count=len(extraction.skills or [])
+        )
 
         # ── Step 1b: Validate it's actually a resume ──────────────
         if not is_resume_content(extraction):
@@ -115,7 +119,9 @@ def process_candidate_ai(self, resume_id: str):
                 resume = db.query(Resume).filter(Resume.id == uuid.UUID(resume_id)).first()
                 if resume:
                     resume.status = "failed"
-                    resume.error_message = "File does not appear to be a resume (no candidate info found)"
+                    resume.error_message = (
+                        "File does not appear to be a resume (no candidate info found)"
+                    )
                     db.commit()
             _publish_sse_event(
                 resume_id,
@@ -137,9 +143,9 @@ def process_candidate_ai(self, resume_id: str):
 
         # ── Step 3: Persist results ───────────────────────────────
         with SyncSession() as db:
-            candidate = db.query(Candidate).filter(
-                Candidate.resume_id == uuid.UUID(resume_id)
-            ).first()
+            candidate = (
+                db.query(Candidate).filter(Candidate.resume_id == uuid.UUID(resume_id)).first()
+            )
 
             # Populate extraction fields
             candidate.name = extraction.name

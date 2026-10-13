@@ -4,10 +4,11 @@ Revision ID: 8eb46ea4e585
 Revises: c6fd241b18eb
 Create Date: 2026-06-19 09:49:02.528206
 """
+
 from collections.abc import Sequence
 
-revision: str = '8eb46ea4e585'
-down_revision: str | None = 'c6fd241b18eb'
+revision: str = "8eb46ea4e585"
+down_revision: str | None = "c6fd241b18eb"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

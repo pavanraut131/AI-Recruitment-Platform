@@ -66,6 +66,7 @@ async def readiness_check():
     checks = {}
     try:
         import redis
+
         r = redis.Redis.from_url(settings.REDIS_URL)
         r.ping()
         checks["redis"] = "ok"
@@ -74,6 +75,7 @@ async def readiness_check():
 
     try:
         from app.core.database import engine
+
         async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
         checks["postgres"] = "ok"

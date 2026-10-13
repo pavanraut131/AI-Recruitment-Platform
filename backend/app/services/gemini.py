@@ -104,7 +104,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 @retry(
     stop=stop_after_attempt(3),
-    wait=wait_fixed(65),          # Gemini free-tier rate limit resets in ~60s
+    wait=wait_fixed(65),  # Gemini free-tier rate limit resets in ~60s
     retry=retry_if_exception_type(ResourceExhausted),
     reraise=True,
 )
@@ -135,7 +135,7 @@ def extract_candidate_info(resume_text: str) -> ExtractionResult:
 
 @retry(
     stop=stop_after_attempt(3),
-    wait=wait_fixed(65),          # Gemini free-tier rate limit resets in ~60s
+    wait=wait_fixed(65),  # Gemini free-tier rate limit resets in ~60s
     retry=retry_if_exception_type(ResourceExhausted),
     reraise=True,
 )

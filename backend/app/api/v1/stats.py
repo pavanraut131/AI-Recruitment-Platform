@@ -2,6 +2,7 @@
 Global stats endpoint — aggregate counts across all campaigns.
 Used by the dashboard to populate the top-level stat cards.
 """
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -24,9 +25,9 @@ class GlobalStats(BaseModel):
     closed_campaigns: int = 0
     archived_campaigns: int = 0
     total_resumes: int = 0
-    total_processed: int = 0       # status = done
-    total_processing: int = 0      # status IN (pending, extracting, processing)
-    total_failed: int = 0          # status IN (failed, quota_exceeded)
+    total_processed: int = 0  # status = done
+    total_processing: int = 0  # status IN (pending, extracting, processing)
+    total_failed: int = 0  # status IN (failed, quota_exceeded)
     total_candidates: int = 0
 
 

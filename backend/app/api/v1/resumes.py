@@ -60,10 +60,12 @@ async def bulk_upload_resumes(
 
         # Validate size
         if len(content) > MAX_FILE_SIZE:
-            rejected.append({
-                "filename": file.filename,
-                "reason": f"File exceeds {settings.MAX_FILE_SIZE_MB}MB limit",
-            })
+            rejected.append(
+                {
+                    "filename": file.filename,
+                    "reason": f"File exceeds {settings.MAX_FILE_SIZE_MB}MB limit",
+                }
+            )
             continue
 
         # Validate PDF magic bytes
@@ -81,13 +83,20 @@ async def bulk_upload_resumes(
             .order_by(Resume.uploaded_at.desc())
         )
         existing_resume = existing_result.scalars().first()
-        
+
         if existing_resume:
             if existing_resume.status == "done":
-                rejected.append({"filename": file.filename, "reason": "Duplicate file (already processed successfully)"})
+                rejected.append(
+                    {
+                        "filename": file.filename,
+                        "reason": "Duplicate file (already processed successfully)",
+                    }
+                )
                 continue
             elif existing_resume.status in ("pending", "extracting", "processing"):
-                rejected.append({"filename": file.filename, "reason": "Duplicate file (currently in progress)"})
+                rejected.append(
+                    {"filename": file.filename, "reason": "Duplicate file (currently in progress)"}
+                )
                 continue
             # If status is failed or quota_exceeded, we allow re-upload (creates new Resume row)
 
@@ -139,9 +148,7 @@ async def list_campaign_resumes(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Resume)
-        .where(Resume.campaign_id == campaign_id)
-        .order_by(Resume.uploaded_at.desc())
+        select(Resume).where(Resume.campaign_id == campaign_id).order_by(Resume.uploaded_at.desc())
     )
     return result.scalars().all()
 
@@ -163,25 +170,24 @@ async def retry_failed_resumes(
     """Re-queue all failed and quota_exceeded resumes for a campaign."""
     result = await db.execute(
         select(Resume).where(
-            Resume.campaign_id == campaign_id,
-            Resume.status.in_(["failed", "quota_exceeded"])
+            Resume.campaign_id == campaign_id, Resume.status.in_(["failed", "quota_exceeded"])
         )
     )
     resumes_to_retry = result.scalars().all()
-    
+
     if not resumes_to_retry:
         return {"retried": 0}
-        
+
     for resume in resumes_to_retry:
         resume.status = "pending"
         resume.retry_count = 0
         resume.error_message = None
-        
+
     await db.commit()
-    
+
     for resume in resumes_to_retry:
         extract_resume.apply_async(args=[str(resume.id)], queue="extract_queue")
-        
+
     return {"retried": len(resumes_to_retry)}
 
 
@@ -191,6 +197,7 @@ async def stream_campaign_status(campaign_id: uuid.UUID):
     SSE endpoint — streams real-time processing updates for a campaign.
     Frontend subscribes and receives events as each resume finishes.
     """
+
     async def event_generator() -> AsyncGenerator:
         r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
         pubsub = r.pubsub()

@@ -1,7 +1,8 @@
 """Reset stuck/failed resumes and re-enqueue them."""
+
 import sys
 
-sys.path.insert(0, '/app')
+sys.path.insert(0, "/app")
 
 from sqlalchemy import create_engine, text
 
@@ -10,10 +11,12 @@ from workers.extract_task import extract_resume
 
 engine = create_engine(settings.SYNC_DATABASE_URL)
 with engine.connect() as conn:
-    result = conn.execute(text(
-        "UPDATE resumes SET status='pending', retry_count=0, error_message=NULL "
-        "WHERE status IN ('extracting', 'processing', 'failed') RETURNING id, original_filename"
-    ))
+    result = conn.execute(
+        text(
+            "UPDATE resumes SET status='pending', retry_count=0, error_message=NULL "
+            "WHERE status IN ('extracting', 'processing', 'failed') RETURNING id, original_filename"
+        )
+    )
     rows = result.fetchall()
     conn.commit()
     print(f"Reset {len(rows)} stuck resumes:")
