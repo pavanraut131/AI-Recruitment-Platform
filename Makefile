@@ -33,12 +33,26 @@ shell-backend:
 shell-db:
 	docker compose exec postgres psql -U resumeai -d resumeai
 
-# ── Testing ──────────────────────────────────────────────────
-test:
-	docker compose exec backend pytest -v
+# ── Backend quality & tests (run on the host via uv) ─────────
+# `uv run` syncs backend/.venv from uv.lock (incl. the dev group) before each command.
+# Override the uv command if it isn't on PATH, e.g. `make lint UV="python -m uv"`.
+.PHONY: lint format typecheck test
+UV ?= uv
+BACKEND_RUN = $(UV) run --directory backend
 
-test-local:
-	cd backend && pip install aiosqlite && pytest -v
+lint:
+	$(BACKEND_RUN) ruff check .
+	$(BACKEND_RUN) ruff format --check .
+
+format:
+	$(BACKEND_RUN) ruff check --fix .
+	$(BACKEND_RUN) ruff format .
+
+typecheck:
+	$(BACKEND_RUN) mypy app workers
+
+test:
+	$(BACKEND_RUN) pytest -v
 
 # ── Frontend ─────────────────────────────────────────────────
 frontend-install:
