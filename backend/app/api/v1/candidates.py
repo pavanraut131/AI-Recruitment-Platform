@@ -6,11 +6,11 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import and_, column, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.sql import LIKE_ESCAPE, escape_like
 from app.models.candidate import Candidate
 from app.models.resume import Resume
 from app.schemas.candidate import (
@@ -60,14 +60,29 @@ def _build_candidate_filters(
     if min_experience is not None:
         filters.append(Candidate.years_of_experience >= min_experience)
     if search:
+        search_pattern = f"%{escape_like(search)}%"
         filters.append(
             or_(
-                Candidate.name.ilike(f"%{search}%"),
-                Candidate.email.ilike(f"%{search}%"),
+                Candidate.name.ilike(search_pattern, escape=LIKE_ESCAPE),
+                Candidate.email.ilike(search_pattern, escape=LIKE_ESCAPE),
             )
         )
     if skill:
-        filters.append(Candidate.skills.cast(JSONB).astext.ilike(f"%{skill}%"))
+        # Any skill contains the term, case-insensitively:
+        #   EXISTS (SELECT 1 FROM jsonb_array_elements_text(candidates.skills) AS skill
+        #           WHERE skill.value ILIKE :pattern ESCAPE '\')
+        # Matching each element (rather than `skills::text`) keeps the JSON syntax (quotes,
+        # commas, brackets) out of the match. An empty array has no elements: never matches.
+        skill_elem = (
+            func.jsonb_array_elements_text(Candidate.skills)
+            .table_valued(column("value"))
+            .alias("skill")
+        )
+        filters.append(
+            exists()
+            .select_from(skill_elem)
+            .where(skill_elem.c.value.ilike(f"%{escape_like(skill)}%", escape=LIKE_ESCAPE))
+        )
     if pipeline_stage:
         filters.append(Candidate.pipeline_stage == pipeline_stage)
     return filters

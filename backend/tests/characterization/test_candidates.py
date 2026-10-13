@@ -136,7 +136,7 @@ def _csv_data(resp: Any) -> dict[str, Any]:
         pytest.param("?min_experience=3", id="min-experience-inclusive"),
         pytest.param("?search=ALI", id="search-name-case-insensitive"),
         pytest.param("?search=sample.org", id="search-email"),
-        # LIKE wildcards are not escaped: "_" matches any single character.
+        # LIKE wildcards are escaped (B2): "_" matches a literal underscore only.
         pytest.param("?search=_", id="search-like-wildcard"),
         pytest.param("?pipeline_stage=screened", id="pipeline-stage"),
         pytest.param("?page_size=2", id="page-size"),
@@ -163,15 +163,21 @@ async def test_list_candidates(
         pytest.param("?skill=python", id="skill"),
         pytest.param("?skill=", id="skill-empty-is-no-filter"),
         pytest.param("?skill=java&category=weak_match", id="skill-with-other-filters"),
+        pytest.param("?skill=fAsTaPi", id="skill-mixed-case"),
+        pytest.param("?skill=java", id="skill-substring-of-element"),
+        pytest.param("?skill=rust", id="skill-no-match"),
+        # LIKE wildcards are escaped: "_" matches a literal underscore only (no skill has one).
+        pytest.param("?skill=_", id="skill-like-wildcard-escaped"),
+        # The term is matched per array element, never against the JSON text ('", "').
+        pytest.param("?skill=%22", id="skill-json-syntax-not-matched"),
     ],
 )
-async def test_list_candidates_skill_filter_is_a_500(
-    raw_client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion, query: str
+async def test_list_candidates_skill_filter(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion, query: str
 ) -> None:
-    # BUG (recorded): any non-empty `skill` raises AttributeError while building the query
-    # (`Cast` has no `.astext`), so the skill filter always returns the generic 500.
+    # Any skill contains the term, case-insensitively (B2; was always a 500 before).
     campaign = await _seed_pool(db_session)
-    resp = await raw_client.get(f"{API}/campaigns/{campaign.id}/candidates{query}")
+    resp = await client.get(f"{API}/campaigns/{campaign.id}/candidates{query}")
     assert response_data(resp) == snapshot
 
 
