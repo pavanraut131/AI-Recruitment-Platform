@@ -1,4 +1,4 @@
-.PHONY: up down build logs migrate shell-backend shell-frontend test lint
+.PHONY: up down build logs migrate shell-backend shell-frontend test lint setup
 
 # ── Docker Compose ───────────────────────────────────────────
 up:
@@ -54,13 +54,13 @@ clean:
 	find . -name "*.pyc" -delete 2>/dev/null || true
 
 # ── Quick start ──────────────────────────────────────────────
-setup: up
-	@echo "Waiting for services to be healthy..."
-	@sleep 15
-	$(MAKE) migrate-gen msg="initial"
+# `--wait` blocks until every service with a healthcheck is healthy
+# (and the rest are running), failing if any becomes unhealthy.
+setup:
+	docker compose up --build -d --wait
 	$(MAKE) migrate-up
 	@echo ""
-	@echo "✅ ResumeAI is ready!"
+	@echo "✅ ResumeAI is ready! (ports below are the defaults; see .env)"
 	@echo "   Frontend:  http://localhost:3000"
 	@echo "   API Docs:  http://localhost:8000/docs"
 	@echo "   Flower:    http://localhost:5555"
