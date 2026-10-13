@@ -55,6 +55,7 @@ dev = [
     # Lint / format / type check
     "ruff==0.17.0",
     "mypy==2.4.0",
+    "import-linter==2.15",  # module boundaries (spec EPIC-00 §3), run as `lint-imports`
     "pre-commit==4.7.0",
     # Type stubs for mypy
     "celery-types==0.26.0",
@@ -115,6 +116,61 @@ known-first-party = ["app", "workers"]
 # The local `alembic/` migrations folder would otherwise make ruff treat the library as first-party.
 known-third-party = ["alembic"]
 
+# ── import-linter ────────────────────────────────────────────
+# Module boundaries from spec EPIC-00 §3 / ADR 0001. Run with `uv run lint-imports`.
+# Module expressions that match nothing (e.g. a module with no service.py yet) are not errors, so
+# these contracts start biting as soon as the files they describe exist.
+[tool.importlinter]
+root_packages = ["app", "workers"]
+
+[[tool.importlinter.contracts]]
+id = "module-layers"
+name = "Module layers: ingestion -> hiring -> talent"
+type = "layers"
+containers = ["app.modules"]
+layers = ["ingestion", "hiring", "talent"]
+
+[[tool.importlinter.contracts]]
+id = "leaf-modules"
+name = "talent and ai import no other module"
+type = "forbidden"
+source_modules = ["app.modules.talent", "app.modules.ai"]
+# A module importing itself is not a violation (import-linter skips overlapping pairs).
+forbidden_modules = ["app.modules.*"]
+
+[[tool.importlinter.contracts]]
+id = "platform-independent"
+name = "platform does not import modules"
+type = "forbidden"
+source_modules = ["app.platform"]
+forbidden_modules = ["app.modules"]
+
+[[tool.importlinter.contracts]]
+id = "devtools-unimported"
+name = "Nothing imports devtools"
+type = "protected"
+protected_modules = ["app.devtools"]
+allowed_importers = ["app.devtools"]
+
+[[tool.importlinter.contracts]]
+id = "public-interfaces"
+name = "Modules import only each other's service and schemas"
+type = "forbidden"
+source_modules = ["app.modules.*"]
+# Every module is forbidden to every other module (a module's own internals are skipped as an
+# overlapping pair) ...
+forbidden_modules = ["app.modules.*"]
+# ... except for these two public submodules. Ignored imports are dropped from this contract's
+# copy of the graph, so a chain through another module's service (service -> its own models)
+# isn't reported as an indirect import either.
+ignore_imports = [
+    "app.modules.** -> app.modules.*.service",
+    "app.modules.** -> app.modules.*.schemas",
+]
+# The allowlist above matches nothing until the first cross-module import exists.
+unmatched_ignore_imports_alerting = "none"
+broken_contract_guidance = "Import another module only through its public interface: app.modules.<name>.service, or the schemas it exposes in app.modules.<name>.schemas. Never its models, repository, router, tasks or other internals."
+
 # ── mypy ─────────────────────────────────────────────────────
 [tool.mypy]
 python_version = "3.11"
@@ -139,12 +195,29 @@ warn_required_dynamic_aliases = true
 module = ["fitz", "google", "google.generativeai"]
 ignore_missing_imports = true
 
+# STRICT: the modular-monolith code (spec EPIC-00 §3) is held to `mypy --strict` from the start.
+# `strict = true` is a global-only option (in an override it switches strict on everywhere), so
+# these are the per-module flags `--strict` enables (warn_redundant_casts is already global).
+[[tool.mypy.overrides]]
+module = ["app.modules", "app.modules.*", "app.platform", "app.platform.*"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_unused_ignores = true
+warn_return_any = true
+implicit_reexport = false
+strict_equality = true
+extra_checks = true
+
 # BASELINE: modules that had type errors when mypy was introduced (E0-02).
 # Remove entries as modules are fixed; never add new ones.
 [[tool.mypy.overrides]]
 module = [
     "app.api.v1.resumes",    # Celery apply_async(args=list) and Optional filename
-    "app.core.database",     # get_db async generator annotated with the wrong return type
     "workers.ai_task",       # implicit Optional default; unchecked Optional ORM rows
     "workers.extract_task",  # implicit Optional default; unchecked Optional ORM rows; apply_async args
 ]
