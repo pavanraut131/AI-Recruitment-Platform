@@ -107,9 +107,13 @@ make test               # or, from backend/: uv run pytest
 ```
 Tests need only **Docker** running. The session starts a throwaway `pgvector/pgvector:pg16`
 container with [testcontainers](https://testcontainers.com/), runs `alembic upgrade head` on it,
-and wraps every test in a transaction that is rolled back. Celery dispatch and MinIO are replaced
-with in-memory fakes; no Redis, MinIO or Gemini access is needed. Coverage is printed after each
-run. Fixtures are documented at the top of `backend/tests/conftest.py`.
+and wraps every test in a transaction that is rolled back. Celery dispatch, MinIO, Redis and
+Gemini are replaced with in-memory fakes; no Redis, MinIO or Gemini access is needed. Coverage is
+printed after each run. Fixtures are documented at the top of `backend/tests/conftest.py`.
+
+`backend/tests/characterization/` holds snapshot tests that record what every API endpoint
+returns today; they define the API contract. Read its
+[README](backend/tests/characterization/README.md) before running `--snapshot-update`.
 
 ### Frontend
 ```bash
