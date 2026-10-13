@@ -23,7 +23,7 @@ When a ticket depends on another ticket whose PR hasn't merged yet:
 ## Local checks before pushing
 
 ```bash
-make lint        # ruff check + ruff format --check
+make lint        # ruff check + ruff format --check + lint-imports (module boundaries)
 make typecheck   # mypy
 make test        # pytest
 pre-commit install   # once per clone; runs the hooks on every commit
