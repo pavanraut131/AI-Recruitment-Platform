@@ -1,50 +1,54 @@
 import csv
 import io
 import uuid
-from typing import List, Optional
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from pydantic import BaseModel
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
-import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.candidate import Candidate
 from app.models.resume import Resume
 from app.schemas.candidate import (
-    CandidateListItem, CandidateDetail,
-    CandidateCategoryUpdate, CandidateNotesUpdate, CandidatePipelineUpdate,
+    CandidateCategoryUpdate,
+    CandidateDetail,
+    CandidateListItem,
+    CandidateNotesUpdate,
+    CandidatePipelineUpdate,
 )
-from pydantic import BaseModel
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["candidates"])
 
 VALID_CATEGORIES = {"strong_match", "moderate_match", "weak_match", "rejected"}
-VALID_PIPELINE_STAGES = {
-    "screened", "phone_call", "technical", "offer", "hired", "rejected_manual"
-}
+VALID_PIPELINE_STAGES = {"screened", "phone_call", "technical", "offer", "hired", "rejected_manual"}
+
 
 class BulkPipelineUpdate(BaseModel):
-    candidate_ids: List[uuid.UUID]
+    candidate_ids: list[uuid.UUID]
     stage: str
 
+
 class BulkDeleteRequest(BaseModel):
-    candidate_ids: List[uuid.UUID]
+    candidate_ids: list[uuid.UUID]
 
 
 # ── Helper ────────────────────────────────────────────────────
 
+
 def _build_candidate_filters(
     campaign_id: uuid.UUID,
-    skill: Optional[str],
-    category: Optional[str],
-    min_score: Optional[float],
-    max_score: Optional[float],
-    min_experience: Optional[float],
-    search: Optional[str],
-    pipeline_stage: Optional[str],
+    skill: str | None,
+    category: str | None,
+    min_score: float | None,
+    max_score: float | None,
+    min_experience: float | None,
+    search: str | None,
+    pipeline_stage: str | None,
 ) -> list:
     filters = [Candidate.campaign_id == campaign_id]
     if category:
@@ -63,9 +67,7 @@ def _build_candidate_filters(
             )
         )
     if skill:
-        filters.append(
-            Candidate.skills.cast(JSONB).astext.ilike(f"%{skill}%")
-        )
+        filters.append(Candidate.skills.cast(JSONB).astext.ilike(f"%{skill}%"))
     if pipeline_stage:
         filters.append(Candidate.pipeline_stage == pipeline_stage)
     return filters
@@ -73,23 +75,30 @@ def _build_candidate_filters(
 
 # ── List candidates ───────────────────────────────────────────
 
-@router.get("/campaigns/{campaign_id}/candidates", response_model=List[CandidateListItem])
+
+@router.get("/campaigns/{campaign_id}/candidates", response_model=list[CandidateListItem])
 async def list_candidates(
     campaign_id: uuid.UUID,
-    skill: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
-    min_score: Optional[float] = Query(None, ge=0, le=100),
-    max_score: Optional[float] = Query(None, ge=0, le=100),
-    min_experience: Optional[float] = Query(None, ge=0),
-    search: Optional[str] = Query(None),
-    pipeline_stage: Optional[str] = Query(None),
+    skill: str | None = Query(None),
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    min_experience: float | None = Query(None, ge=0),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     filters = _build_candidate_filters(
-        campaign_id, skill, category, min_score, max_score,
-        min_experience, search, pipeline_stage,
+        campaign_id,
+        skill,
+        category,
+        min_score,
+        max_score,
+        min_experience,
+        search,
+        pipeline_stage,
     )
     offset = (page - 1) * page_size
     result = await db.execute(
@@ -105,14 +114,15 @@ async def list_candidates(
 # ── CSV Export ────────────────────────────────────────────────
 # NOTE: must be declared before /{candidate_id} to avoid routing conflict
 
+
 @router.get("/campaigns/{campaign_id}/candidates/export")
 async def export_candidates_csv(
     campaign_id: uuid.UUID,
-    category: Optional[str] = Query(None),
-    min_score: Optional[float] = Query(None, ge=0, le=100),
-    max_score: Optional[float] = Query(None, ge=0, le=100),
-    search: Optional[str] = Query(None),
-    pipeline_stage: Optional[str] = Query(None),
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -120,13 +130,17 @@ async def export_candidates_csv(
     Applies the same filters as the list endpoint.
     """
     filters = _build_candidate_filters(
-        campaign_id, None, category, min_score, max_score,
-        None, search, pipeline_stage,
+        campaign_id,
+        None,
+        category,
+        min_score,
+        max_score,
+        None,
+        search,
+        pipeline_stage,
     )
     result = await db.execute(
-        select(Candidate)
-        .where(and_(*filters))
-        .order_by(Candidate.score.desc().nullslast())
+        select(Candidate).where(and_(*filters)).order_by(Candidate.score.desc().nullslast())
     )
     candidates = result.scalars().all()
 
@@ -134,40 +148,56 @@ async def export_candidates_csv(
         return " | ".join(str(v) for v in (values or []))
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=[
-        "Name", "Email", "Phone", "Score", "Category", "Pipeline Stage",
-        "Years Experience", "Skills", "Missing Skills", "Strengths",
-        "Recommendation", "LinkedIn URL", "GitHub URL",
-    ])
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "Name",
+            "Email",
+            "Phone",
+            "Score",
+            "Category",
+            "Pipeline Stage",
+            "Years Experience",
+            "Skills",
+            "Missing Skills",
+            "Strengths",
+            "Recommendation",
+            "LinkedIn URL",
+            "GitHub URL",
+        ],
+    )
     writer.writeheader()
     for c in candidates:
-        writer.writerow({
-            "Name": c.name or "",
-            "Email": c.email or "",
-            "Phone": c.phone or "",
-            "Score": f"{c.score:.0f}" if c.score is not None else "",
-            "Category": c.category or "",
-            "Pipeline Stage": c.pipeline_stage or "",
-            "Years Experience": f"{c.years_of_experience:.1f}" if c.years_of_experience is not None else "",
-            "Skills": _join(c.skills),
-            "Missing Skills": _join(c.missing_skills),
-            "Strengths": _join(c.strengths),
-            "Recommendation": c.recommendation or "",
-            "LinkedIn URL": c.linkedin_url or "",
-            "GitHub URL": c.github_url or "",
-        })
+        writer.writerow(
+            {
+                "Name": c.name or "",
+                "Email": c.email or "",
+                "Phone": c.phone or "",
+                "Score": f"{c.score:.0f}" if c.score is not None else "",
+                "Category": c.category or "",
+                "Pipeline Stage": c.pipeline_stage or "",
+                "Years Experience": f"{c.years_of_experience:.1f}"
+                if c.years_of_experience is not None
+                else "",
+                "Skills": _join(c.skills),
+                "Missing Skills": _join(c.missing_skills),
+                "Strengths": _join(c.strengths),
+                "Recommendation": c.recommendation or "",
+                "LinkedIn URL": c.linkedin_url or "",
+                "GitHub URL": c.github_url or "",
+            }
+        )
 
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=candidates_{campaign_id}.csv"
-        },
+        headers={"Content-Disposition": f"attachment; filename=candidates_{campaign_id}.csv"},
     )
 
 
 # ── Get / Update individual candidates ───────────────────────
+
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
 async def get_candidate(candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
@@ -241,9 +271,7 @@ async def update_candidate_pipeline(
 
 @router.get("/resumes/{resume_id}/candidate", response_model=CandidateDetail)
 async def get_candidate_by_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Candidate).where(Candidate.resume_id == resume_id)
-    )
+    result = await db.execute(select(Candidate).where(Candidate.resume_id == resume_id))
     candidate = result.scalar_one_or_none()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not yet processed")
@@ -251,6 +279,7 @@ async def get_candidate_by_resume(resume_id: uuid.UUID, db: AsyncSession = Depen
 
 
 # ── Bulk Actions ──────────────────────────────────────────────
+
 
 @router.patch("/campaigns/{campaign_id}/candidates/bulk-pipeline")
 async def bulk_update_pipeline(
@@ -298,9 +327,7 @@ async def bulk_delete_candidates(
         await db.delete(c)
 
     if resume_ids:
-        resume_result = await db.execute(
-            select(Resume).where(Resume.id.in_(resume_ids))
-        )
+        resume_result = await db.execute(select(Resume).where(Resume.id.in_(resume_ids)))
         for r in resume_result.scalars().all():
             await db.delete(r)
 

@@ -1,16 +1,15 @@
 import uuid
-from typing import List
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.campaign import Campaign
-from app.models.resume import Resume
 from app.models.candidate import Candidate
-from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, CampaignStats
-import structlog
+from app.models.resume import Resume
+from app.schemas.campaign import CampaignCreate, CampaignResponse, CampaignStats, CampaignUpdate
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -26,7 +25,7 @@ async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(ge
     return campaign
 
 
-@router.get("", response_model=List[CampaignResponse])
+@router.get("", response_model=list[CampaignResponse])
 async def list_campaigns(
     skip: int = 0,
     limit: int = 20,
@@ -118,7 +117,7 @@ async def _compute_stats(campaign_id: uuid.UUID, db: AsyncSession) -> CampaignSt
     )
     skill_counts: dict = {}
     for (skills,) in skills_result:
-        for skill in (skills or []):
+        for skill in skills or []:
             skill_counts[skill] = skill_counts.get(skill, 0) + 1
 
     top_skills = sorted(
@@ -133,7 +132,9 @@ async def _compute_stats(campaign_id: uuid.UUID, db: AsyncSession) -> CampaignSt
         total_resumes=total,
         total_processed=status_map.get("done", 0),
         total_failed=status_map.get("failed", 0),
-        total_pending=status_map.get("pending", 0) + status_map.get("extracting", 0) + status_map.get("processing", 0),
+        total_pending=status_map.get("pending", 0)
+        + status_map.get("extracting", 0)
+        + status_map.get("processing", 0),
         total_quota_exceeded=quota_exceeded,
         avg_score=round(sum(avg_scores) / len(avg_scores), 2) if avg_scores else None,
         strong_match=cat_map.get("strong_match", 0),

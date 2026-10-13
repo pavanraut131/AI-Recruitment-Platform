@@ -87,8 +87,9 @@ docker compose exec backend alembic upgrade head
 ### Backend
 ```bash
 cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+uv sync                 # creates .venv from uv.lock (incl. dev tools); install uv: https://docs.astral.sh/uv/
+source .venv/bin/activate
+pre-commit install      # optional: run ruff + mypy on every commit (make lint / format / typecheck / test)
 
 # Start services locally (need redis + postgres + minio running)
 uvicorn app.main:app --reload --port 8000

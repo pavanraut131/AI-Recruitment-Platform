@@ -1,0 +1,38 @@
+# Install once with `uv run --directory backend pre-commit install`.
+# Run on everything with `uv run --directory backend pre-commit run --all-files`.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+        # TODO(E0-05): drop this exclude when the CI workflow is rewritten; the current
+        # file has invalid YAML (unquoted `...:memory:` value).
+        exclude: ^\.github/workflows/ci\.yml$
+
+  # Keep `rev` in sync with the ruff version pinned in backend/pyproject.toml / uv.lock.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      # Runs in the project environment (backend/.venv, synced from uv.lock), not an isolated
+      # one, so mypy sees the real dependencies and stubs. Checks the whole package, not just
+      # staged files. uv itself comes from additional_dependencies, so it needn't be on PATH.
+      - id: mypy
+        name: mypy
+        entry: uv run --directory backend mypy app workers
+        language: python
+        additional_dependencies: ["uv==0.12.23"]
+        files: ^backend/.*\.py$
+        pass_filenames: false

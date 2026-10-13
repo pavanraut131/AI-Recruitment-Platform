@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import structlog
 
+from app.api.v1 import campaigns, candidates, parse_jd, resumes, stats
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.storage import ensure_bucket_exists
-from app.api.v1 import campaigns, resumes, candidates, stats, parse_jd
 
 configure_logging(debug=settings.DEBUG)
 logger = structlog.get_logger()
@@ -65,6 +66,7 @@ async def readiness_check():
     checks = {}
     try:
         import redis
+
         r = redis.Redis.from_url(settings.REDIS_URL)
         r.ping()
         checks["redis"] = "ok"
@@ -73,6 +75,7 @@ async def readiness_check():
 
     try:
         from app.core.database import engine
+
         async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
         checks["postgres"] = "ok"

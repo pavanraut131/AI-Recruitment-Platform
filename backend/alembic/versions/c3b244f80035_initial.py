@@ -4,15 +4,13 @@ Revision ID: c3b244f80035
 Revises: 8eb46ea4e585
 Create Date: 2026-06-19 11:04:57.473053
 """
-from typing import Sequence, Union
-from alembic import op
-import sqlalchemy as sa
 
+from collections.abc import Sequence
 
-revision: str = 'c3b244f80035'
-down_revision: Union[str, None] = '8eb46ea4e585'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "c3b244f80035"
+down_revision: str | None = "8eb46ea4e585"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

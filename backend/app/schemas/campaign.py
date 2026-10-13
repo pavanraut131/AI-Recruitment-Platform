@@ -1,22 +1,22 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel, field_validator
+
+from pydantic import BaseModel
 
 
 class CampaignCreate(BaseModel):
     title: str
     role: str
-    description: Optional[str] = None
-    required_skills: List[str] = []
+    description: str | None = None
+    required_skills: list[str] = []
 
 
 class CampaignUpdate(BaseModel):
-    title: Optional[str] = None
-    role: Optional[str] = None
-    description: Optional[str] = None
-    required_skills: Optional[List[str]] = None
-    status: Optional[str] = None
+    title: str | None = None
+    role: str | None = None
+    description: str | None = None
+    required_skills: list[str] | None = None
+    status: str | None = None
 
 
 class CampaignStats(BaseModel):
@@ -25,23 +25,23 @@ class CampaignStats(BaseModel):
     total_failed: int = 0
     total_pending: int = 0
     total_quota_exceeded: int = 0
-    avg_score: Optional[float] = None
+    avg_score: float | None = None
     strong_match: int = 0
     moderate_match: int = 0
     weak_match: int = 0
     rejected: int = 0
-    top_skills: List[dict] = []
+    top_skills: list[dict] = []
 
 
 class CampaignResponse(BaseModel):
     id: uuid.UUID
     title: str
     role: str
-    description: Optional[str]
-    required_skills: List[str]
+    description: str | None
+    required_skills: list[str]
     status: str
     created_at: datetime
     updated_at: datetime
-    stats: Optional[CampaignStats] = None
+    stats: CampaignStats | None = None
 
     model_config = {"from_attributes": True}

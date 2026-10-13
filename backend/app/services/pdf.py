@@ -1,11 +1,11 @@
 import io
+
 import structlog
-from typing import Optional
 
 logger = structlog.get_logger()
 
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> Optional[str]:
+def extract_text_from_pdf(pdf_bytes: bytes) -> str | None:
     """
     Extract text from PDF bytes.
     Strategy:
@@ -29,7 +29,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> Optional[str]:
     return None
 
 
-def _extract_with_pdfplumber(pdf_bytes: bytes) -> Optional[str]:
+def _extract_with_pdfplumber(pdf_bytes: bytes) -> str | None:
     """Use pdfplumber for native PDF text extraction."""
     try:
         import pdfplumber
@@ -46,7 +46,7 @@ def _extract_with_pdfplumber(pdf_bytes: bytes) -> Optional[str]:
         return None
 
 
-def _extract_with_pymupdf(pdf_bytes: bytes) -> Optional[str]:
+def _extract_with_pymupdf(pdf_bytes: bytes) -> str | None:
     """Use PyMuPDF (fitz) as secondary extraction method."""
     try:
         import fitz  # PyMuPDF
@@ -65,11 +65,12 @@ def _extract_with_pymupdf(pdf_bytes: bytes) -> Optional[str]:
 def clean_text(text: str) -> str:
     """Remove excessive whitespace and normalize text."""
     import re
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r'[ \t]+', ' ', text)
+
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
 
 def is_valid_pdf(content: bytes) -> bool:
     """Check if bytes represent a valid PDF by checking the magic bytes."""
-    return content[:4] == b'%PDF'
+    return content[:4] == b"%PDF"
