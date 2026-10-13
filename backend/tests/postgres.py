@@ -2,9 +2,9 @@
 
 Used by the ``pytest_sessionstart`` / ``pytest_sessionfinish`` hooks in ``tests/conftest.py``.
 
-Why a hook and not a session fixture: ``app.core.config`` builds ``Settings()`` at import time
+Why a hook and not a session fixture: ``app.platform.config`` builds ``Settings()`` at import time
 (``DATABASE_URL``, ``SYNC_DATABASE_URL`` and ``GEMINI_API_KEY`` are required) and
-``app.core.database`` creates the async engine from ``settings.DATABASE_URL`` at import time.
+``app.platform.database`` creates the async engine from ``settings.DATABASE_URL`` at import time.
 So the container must be running and the environment must point at it *before anything imports
 ``app``*, which includes test-module collection. ``pytest_sessionstart`` runs before collection;
 a session fixture would run after it.

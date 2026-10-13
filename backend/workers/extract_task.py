@@ -13,12 +13,12 @@ from celery import Task
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core import storage
-from app.core.config import settings
 from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.platform import storage
+from app.platform.celery_app import celery_app
+from app.platform.config import settings
 from app.services.pdf import clean_text, extract_text_from_pdf, is_valid_pdf
-from workers.celery_app import celery_app
 
 logger = structlog.get_logger()
 

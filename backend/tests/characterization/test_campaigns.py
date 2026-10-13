@@ -366,7 +366,7 @@ async def test_parse_jd_without_api_key(
     monkeypatch: pytest.MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
-    from app.core.config import settings
+    from app.platform.config import settings
 
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
     resp = await client.post(f"{API}/campaigns/parse-jd", json={"job_description": JD})

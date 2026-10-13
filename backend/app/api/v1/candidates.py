@@ -10,9 +10,9 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.platform.database import get_db
 from app.schemas.candidate import (
     CandidateCategoryUpdate,
     CandidateDetail,

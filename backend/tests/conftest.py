@@ -33,8 +33,10 @@ Fixtures
     ``fake_storage`` (function, autouse)
         :class:`tests.fakes.InMemoryStorage`. Replaces ``upload_file``, ``download_file``,
         ``delete_file``, ``get_presigned_url`` and ``ensure_bucket_exists`` in
-        ``app.core.storage`` (and the direct import in ``app.main``). ``get_s3_client`` is made to
-        raise, so any path that bypasses the fake fails loudly instead of reaching the network.
+        ``app.platform.storage`` (and the direct import in ``app.main``). ``get_s3_client`` is
+        made to raise, so any path that bypasses the fake fails loudly instead of reaching the
+        network. Patch where the code looks the names up: the ``app.core.storage`` shim only
+        re-binds them at import, so patching it would not reach the app.
     ``fake_redis`` (function, autouse)
         :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the workers'
         ``_publish_sse_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
@@ -80,7 +82,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 # ── Database ──────────────────────────────────────────────────
 @pytest.fixture(scope="session")
 def db_engine() -> AsyncEngine:
-    from app.core.config import settings
+    from app.platform.config import settings
 
     return create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
 
@@ -102,7 +104,7 @@ async def db_session(db_connection: AsyncConnection) -> AsyncIterator[AsyncSessi
     session = AsyncSession(
         bind=db_connection,
         join_transaction_mode="create_savepoint",
-        expire_on_commit=False,  # same as app.core.database.AsyncSessionLocal
+        expire_on_commit=False,  # same as app.platform.database.AsyncSessionLocal
     )
     try:
         yield session
@@ -120,7 +122,7 @@ def app() -> FastAPI:
 
 @pytest_asyncio.fixture
 async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
-    from app.core.database import get_db
+    from app.platform.database import get_db
 
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db_session
@@ -156,8 +158,8 @@ def celery_calls(monkeypatch: pytest.MonkeyPatch) -> CeleryRecorder:
 @pytest.fixture(autouse=True)
 def fake_storage(monkeypatch: pytest.MonkeyPatch) -> InMemoryStorage:
     from app import main as app_main
-    from app.core import storage
-    from app.core.config import settings
+    from app.platform import storage
+    from app.platform.config import settings
 
     fake = InMemoryStorage(bucket=settings.MINIO_BUCKET_NAME)
     for name in (
@@ -193,7 +195,7 @@ def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
 def fake_gemini(monkeypatch: pytest.MonkeyPatch) -> FakeGemini:
     import google.generativeai as genai
 
-    from app.core.config import settings
+    from app.platform.config import settings
     from app.services import gemini
 
     fake = FakeGemini()

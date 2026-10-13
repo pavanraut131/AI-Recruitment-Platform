@@ -6,7 +6,7 @@ sys.path.insert(0, "/app")
 
 from sqlalchemy import create_engine, text
 
-from app.core.config import settings
+from app.platform.config import settings
 from workers.extract_task import extract_resume
 
 engine = create_engine(settings.SYNC_DATABASE_URL)

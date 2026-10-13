@@ -1,7 +1,7 @@
 """In-memory stand-ins for external services, installed by autouse fixtures in ``conftest.py``.
 
 - :class:`CeleryRecorder` records task dispatch instead of sending it to a broker.
-- :class:`InMemoryStorage` replaces the MinIO functions in ``app.core.storage``.
+- :class:`InMemoryStorage` replaces the MinIO functions in ``app.platform.storage``.
 - :class:`FakeGemini` replaces ``google.generativeai.GenerativeModel``.
 - :class:`FakeRedis` gives every ``redis.Redis.from_url`` / ``redis.asyncio.Redis.from_url`` call a
   fakeredis client on one shared in-memory server, so pub/sub works across sync and async clients.
@@ -70,7 +70,7 @@ class StoredObject:
 
 
 class InMemoryStorage:
-    """Same function signatures and observable behaviour as ``app.core.storage``."""
+    """Same function signatures and observable behaviour as ``app.platform.storage``."""
 
     def __init__(self, bucket: str) -> None:
         self.bucket = bucket
