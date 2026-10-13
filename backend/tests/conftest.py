@@ -35,12 +35,19 @@ Fixtures
         ``delete_file``, ``get_presigned_url`` and ``ensure_bucket_exists`` in
         ``app.core.storage`` (and the direct import in ``app.main``). ``get_s3_client`` is made to
         raise, so any path that bypasses the fake fails loudly instead of reaching the network.
+    ``fake_redis`` (function, autouse)
+        :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the workers'
+        ``_publish_sse_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
+        fakeredis clients on one in-memory server per test, so a sync ``publish`` reaches an async
+        subscriber. Set ``fake_redis.server.connected = False`` to simulate Redis being down.
+    ``fake_gemini`` (function, autouse)
+        :class:`tests.fakes.FakeGemini`. Replaces ``google.generativeai.GenerativeModel`` (used by
+        ``/campaigns/parse-jd`` and the OCR fallback) and the module-level model in
+        ``app.services.gemini``. Calls raise until the test scripts a response with
+        ``fake_gemini.respond_with(...)``; no test can reach the Gemini API.
 
-Not covered here (yet)
-    Redis: the SSE endpoint (``/campaigns/{id}/stream``) and ``/health/ready`` connect to Redis;
-    ``REDIS_URL`` points at a closed port, so they fail fast. A Redis fake belongs to E0-04.
-    Gemini: ``genai.configure`` runs at import with a dummy key; tests that hit endpoints which call
-    Gemini must stub ``app.services.gemini`` themselves.
+Test data
+    ``tests/factories.py`` builds campaigns, resumes and candidates through ``db_session``.
 """
 
 from __future__ import annotations
@@ -55,7 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, c
 from sqlalchemy.pool import NullPool
 
 from tests import postgres
-from tests.fakes import CeleryRecorder, InMemoryStorage
+from tests.fakes import CeleryRecorder, FakeGemini, FakeRedis, InMemoryStorage
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -167,4 +174,29 @@ def fake_storage(monkeypatch: pytest.MonkeyPatch) -> InMemoryStorage:
         raise RuntimeError("tests must not reach real object storage; use the fake_storage fixture")
 
     monkeypatch.setattr(storage, "get_s3_client", no_real_s3)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
+    import redis
+    import redis.asyncio
+
+    fake = FakeRedis()
+    # Plain functions on the class: `redis.Redis.from_url(url, **kw)` calls them unbound.
+    monkeypatch.setattr(redis.Redis, "from_url", fake.sync_client)
+    monkeypatch.setattr(redis.asyncio.Redis, "from_url", fake.async_client)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def fake_gemini(monkeypatch: pytest.MonkeyPatch) -> FakeGemini:
+    import google.generativeai as genai
+
+    from app.core.config import settings
+    from app.services import gemini
+
+    fake = FakeGemini()
+    monkeypatch.setattr(genai, "GenerativeModel", fake.GenerativeModel)
+    monkeypatch.setattr(gemini, "_model", fake.GenerativeModel(settings.GEMINI_MODEL))
     return fake
