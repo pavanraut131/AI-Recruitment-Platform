@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import {
   Upload, FileText, CheckCircle, XCircle, Clock, Loader2,
   AlertCircle, Zap, X
@@ -82,9 +82,8 @@ export default function UploadZone({ campaignId, onProcessingComplete: _onProces
     accept: { "application/pdf": [".pdf"] },
     maxFiles: 50,
     maxSize: 10 * 1024 * 1024,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onDropRejected: (rejections: any[]) => {
-      const msgs = rejections.map((r: any) => r.errors.map((e: any) => e.message).join(", ")).join("; ");
+    onDropRejected: (rejections: FileRejection[]) => {
+      const msgs = rejections.map((r) => r.errors.map((e) => e.message).join(", ")).join("; ");
       setError(`Some files rejected: ${msgs}`);
     },
   });
