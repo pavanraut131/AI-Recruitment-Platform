@@ -1,6 +1,6 @@
 # Sprint 1 · Safety net & working CI
 
-**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-14 → 2026-10-20  ·  **Status:** planned
+**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-14 → 2026-10-20  ·  **Status:** in review
 
 ## Sprint goal
 
@@ -12,20 +12,20 @@ This sprint changes **no product behaviour**. Everything here is groundwork that
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| E0-01 | Fix the local dev environment | S | todo |
-| E0-02 | Python tooling: uv, ruff, mypy, pre-commit | M | todo |
-| E0-03 | Postgres test harness with testcontainers | M | todo |
-| E0-04 | Characterization tests for the current API | L | todo |
-| E0-05 | Rewrite CI | M | todo |
-| E0-06 | ADRs for E0's key decisions | S | todo |
-| E0-07 | PR template and branch protection guide | S | todo |
+| E0-01 | Fix the local dev environment | S | review (#2) |
+| E0-02 | Python tooling: uv, ruff, mypy, pre-commit | M | review (#6) |
+| E0-03 | Postgres test harness with testcontainers | M | review (#7) |
+| E0-04 | Characterization tests for the current API | L | review (#9) |
+| E0-05 | Rewrite CI | M | review (#8) |
+| E0-06 | ADRs for E0's key decisions | S | review (#4) |
+| E0-07 | PR template and branch protection guide | S | review (#5) |
 
 Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in anywhere. 04 depends on 03, and 05 depends on 02 and 03.
 
 ---
 
 ### E0-01 · Fix the local dev environment
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `e0-01-dev-env-fixes`
+**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-01-dev-env-fixes`
 
 **Goal:** A fresh clone runs with `cp .env.example .env && make setup`, with no workarounds. This removes the three problems we hit on day one.
 
@@ -45,7 +45,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-02 · Python tooling: uv, ruff, mypy, pre-commit
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-02-python-tooling`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-02-python-tooling`
 
 **Goal:** One reproducible way to install, lint, format and type-check the backend, enforced the same way locally and in CI.
 
@@ -62,7 +62,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-03 · Postgres test harness with testcontainers
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-03-postgres-test-harness`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-03-postgres-test-harness`
 
 **Goal:** Tests run against real Postgres, matching production, instead of SQLite. SQLite cannot run the `JSONB`/`UUID` models, so the current tests cannot pass.
 
@@ -80,7 +80,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-04 · Characterization tests for the current API
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e0-04-characterization-tests`
+**Status:** review  ·  **Size:** L  ·  **Branch:** `e0-04-characterization-tests`
 
 **Goal:** Record exactly what every endpoint returns **today**, so the restructure and the Person/Application switch can be proven not to change the API.
 
@@ -103,7 +103,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-05 · Rewrite CI
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-05-ci-rewrite`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-05-ci-rewrite`
 
 **Goal:** CI actually runs (today it watches `main`/`develop`, which don't exist) and gates every PR.
 
@@ -126,7 +126,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-06 · ADRs for E0's key decisions
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `e0-06-adrs`
+**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-06-adrs`
 
 **Goal:** Record the reasoning behind E0's main decisions while it's fresh.
 
@@ -141,13 +141,13 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-07 · PR template and branch protection guide
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `e0-07-pr-template`
+**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-07-pr-template`
 
 **Goal:** Every PR follows the definition of done, and `master` can't be broken by a direct push.
 
 **Acceptance criteria**
 - [ ] `.github/pull_request_template.md` with sections for: ticket ID, what changed and why, how it was tested, the definition-of-done checklist, and snapshot changes (if any).
-- [ ] The README has a "Contributing" section listing the steps to enable branch protection on `master`: require PRs and require the five CI checks.
+- [ ] A root `CONTRIBUTING.md` lists the steps to enable branch protection on `master`: require PRs and require the five CI checks. *(Changed from a README section during implementation, to avoid conflicts with E0-01's README edits. GitHub links CONTRIBUTING.md automatically.)*
 - [ ] Branch protection is enabled on GitHub by the repo owner after E0-05 merges.
 
 **Concept to learn:** Repository governance, even for a solo project.
@@ -161,7 +161,27 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 - **E0-10:** Move upload, resumes, SSE and the workers into `ingestion`, and Gemini into `ai`. Add `FakeAIService` and the `AI_PROVIDER` setting.
 - **E0-11:** `talent/identity.py`: email and phone normalisation with table-driven and Hypothesis property tests.
 - **E0-12:** `devtools/seed.py`: a Faker seed generator with deliberate duplicates and an expected-results manifest.
-- Plus any bugs found during E0-04.
+### Bugs found by E0-04 (recorded as-is in the characterization snapshots; full list in PR #9)
+
+Fix these **after** E0-09/E0-10 move the code into modules, so each fix becomes a deliberate, explained snapshot change. Exception: B1 and B2 can be fixed earlier because the endpoints are completely broken.
+
+| ID | Bug | Severity |
+|---|---|---|
+| B1 | `POST /campaigns/parse-jd` always returns 500: the prompt's literal `{ }` breaks `PROMPT.format()` | High: feature unusable |
+| B2 | Candidate list `skill` filter always returns 500 (`.astext` on a Cast) | High: feature unusable |
+| B3 | SSE stream doesn't filter by campaign, so clients receive every campaign's events | High: data leak once tenancy exists |
+| B4 | python-multipart 0.0.9 parses large uploads very slowly (~30 s CPU per 10 MB), a possible DoS. Upgrade it. | High |
+| B5 | Unvalidated campaign fields and negative `skip`/`limit` cause 500s instead of 422 | Medium |
+| B6 | Deletes never remove PDFs from object storage | Medium |
+| B7 | Unknown campaign ids return 200 with empty results on several endpoints | Medium |
+| B8 | CSV export ignores `skill`/`min_experience`; `search` doesn't escape LIKE wildcards | Medium |
+| B9 | `avg_score` is a mean of per-category means | Low |
+| B10 | `/api/v1/health` not mounted; invalid category/stage gives 400 not 422; error message order random; same 404 for unknown vs unprocessed resume; `batch_id` never stored; 500 body echoes the URL | Low |
+
+### Other follow-ups
+
+- Upgrade Node 20 (end of life) to 22/24 in both `frontend/Dockerfile` and CI together.
+- Coverage gate (≥ 80 % on `app/modules/`) once the modules exist.
 
 **Later in E0 (Sprints 3–4):** expand migration and dual writes, `resolve_person` with advisory locks and the concurrency test, backfill and verification, switching the API to the new tables, the contract migration, the live-stack rehearsal, and the coverage gate.
 
