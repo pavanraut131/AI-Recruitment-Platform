@@ -2,90 +2,172 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master]
+  # Every PR, whatever its base: PRs are often stacked on other feature branches.
   pull_request:
-    branches: [main]
 
+# One run per branch/PR; a new push cancels the run it makes outdated.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Job ids are the required status checks for branch protection (see CONTRIBUTING.md).
+# Renaming one means updating the branch protection rule too.
 jobs:
-  backend-test:
-    name: Backend Tests
+  backend-quality:
+    name: backend-quality
     runs-on: ubuntu-latest
-
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL: sqlite+aiosqlite:///:memory:
-      SYNC_DATABASE_URL: sqlite:///:memory:
-      REDIS_URL: redis://localhost:6379/0
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      CELERY_RESULT_BACKEND: redis://localhost:6379/1
-      GEMINI_API_KEY: test_key
-      MINIO_ENDPOINT: localhost:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin_secret
-      MINIO_BUCKET_NAME: test-resumes
-      MINIO_USE_SSL: "false"
-
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      # setup-uv publishes no floating major tag, so pin the exact release.
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
+          version: "0.12.23" # keep in sync with backend/Dockerfile and .pre-commit-config.yaml
           python-version: "3.11"
-          cache: pip
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
-      - name: Install system dependencies
-        run: sudo apt-get install -y poppler-utils tesseract-ocr
+      - name: Install dependencies
+        run: uv sync --frozen
 
-      - name: Install Python dependencies
-        working-directory: backend
-        run: |
-          pip install -r requirements.txt
-          pip install aiosqlite pytest-asyncio
+      - name: Ruff lint
+        run: uv run ruff check .
 
-      - name: Run tests
-        working-directory: backend
-        run: pytest -v --tb=short
+      - name: Ruff format
+        run: uv run ruff format --check .
 
-  frontend-lint:
-    name: Frontend Lint & Build Check
+      - name: mypy
+        run: uv run mypy app workers
+
+  backend-test:
+    name: backend-test
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.12.23"
+          python-version: "3.11"
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # No service containers: the test session starts its own pgvector Postgres through
+      # testcontainers (the runner has Docker) and sets the env vars the app needs.
+      # --cov-report=xml adds coverage.xml on top of the terminal report from addopts.
+      - name: pytest
+        run: uv run pytest --cov-report=xml
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: backend/coverage.xml
+          if-no-files-found: error
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # app.core.config.Settings requires all three at import time; Alembic uses the sync URL.
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      SYNC_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      GEMINI_API_KEY: dummy-not-used
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.12.23"
+          python-version: "3.11"
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Apply all migrations to an empty database
+        run: uv run alembic upgrade head
+
+      # Fails if the models have changes that no migration captures.
+      - name: Check models and migrations agree
+        run: uv run alembic check
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same major as the frontend Docker image (node:20-alpine).
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        working-directory: frontend
         run: npm ci
 
-      - name: Run ESLint
-        working-directory: frontend
+      - name: ESLint
         run: npm run lint
 
       - name: Type check
-        working-directory: frontend
         run: npx tsc --noEmit
 
-  docker-compose-check:
-    name: Docker Compose Validate
+      - name: Build
+        run: npm run build
+
+  compose:
+    name: compose
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Validate docker-compose
+      - uses: actions/checkout@v7
+
+      # Services read .env via env_file, so validate against the documented template.
+      - name: Generate .env from the template
+        run: cp .env.example .env
+
+      - name: Validate docker-compose.yml
         run: docker compose config --quiet

@@ -70,6 +70,8 @@ export default function CampaignPage() {
 
   useEffect(() => {
     if (!loading) {
+      // Data fetch on filter change; state is only set after the request resolves.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void fetchCandidates();
     }
   }, [fetchCandidates, loading]);

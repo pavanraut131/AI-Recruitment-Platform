@@ -10,9 +10,6 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: check-yaml
-        # TODO(E0-05): drop this exclude when the CI workflow is rewritten; the current
-        # file has invalid YAML (unquoted `...:memory:` value).
-        exclude: ^\.github/workflows/ci\.yml$
 
   # Keep `rev` in sync with the ruff version pinned in backend/pyproject.toml / uv.lock.
   - repo: https://github.com/astral-sh/ruff-pre-commit

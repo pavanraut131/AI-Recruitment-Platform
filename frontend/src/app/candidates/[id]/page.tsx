@@ -58,6 +58,8 @@ export default function CandidateDetailPage() {
   useEffect(() => {
     if (!candidate || loading || notesText === (candidate.notes || "")) return;
 
+    // Debounced autosave: show "saving" as soon as the notes change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSavingNotes("saving");
     const timeoutId = setTimeout(async () => {
       try {
