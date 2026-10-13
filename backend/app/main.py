@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import structlog
 
+from app.api.v1 import campaigns, candidates, parse_jd, resumes, stats
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.storage import ensure_bucket_exists
-from app.api.v1 import campaigns, resumes, candidates, stats, parse_jd
 
 configure_logging(debug=settings.DEBUG)
 logger = structlog.get_logger()

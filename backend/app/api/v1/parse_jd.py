@@ -1,10 +1,9 @@
-import os
 import json
-import structlog
-from typing import List
-from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+
 import google.generativeai as genai
+import structlog
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.core.config import settings
 
@@ -22,7 +21,7 @@ class JDParseRequest(BaseModel):
 class JDParseResponse(BaseModel):
     role_title: str
     seniority: str
-    skills: List[str]
+    skills: list[str]
 
 
 PROMPT = """
@@ -72,4 +71,4 @@ async def parse_job_description(payload: JDParseRequest):
         )
     except Exception as e:
         logger.error("jd_parse_failed", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to parse job description")
+        raise HTTPException(status_code=500, detail="Failed to parse job description") from e

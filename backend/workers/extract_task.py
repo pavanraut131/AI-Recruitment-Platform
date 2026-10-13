@@ -6,17 +6,18 @@ Worker 1: PDF Extraction
 - Enqueues AI processing task
 """
 import uuid
+
 import structlog
 from celery import Task
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from workers.celery_app import celery_app
-from app.core.config import settings
 from app.core import storage
-from app.services.pdf import extract_text_from_pdf, clean_text, is_valid_pdf
-from app.models.resume import Resume
+from app.core.config import settings
 from app.models.candidate import Candidate
+from app.models.resume import Resume
+from app.services.pdf import clean_text, extract_text_from_pdf, is_valid_pdf
+from workers.celery_app import celery_app
 
 logger = structlog.get_logger()
 
@@ -27,8 +28,9 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 def _publish_sse_event(resume_id: str, status: str, extra: dict = None):
     """Publish status update to Redis pub/sub for SSE streaming."""
-    import redis
     import json
+
+    import redis
 
     r = redis.Redis.from_url(settings.REDIS_URL)
     payload = {"resume_id": resume_id, "status": status, **(extra or {})}
@@ -143,13 +145,13 @@ def extract_resume(self, resume_id: str):
                     db.commit()
             _publish_sse_event(resume_id, "failed", {"error": str(exc)})
             return
-        raise self.retry(exc=exc, countdown=30)
+        raise self.retry(exc=exc, countdown=30) from exc
 
 
 def _gemini_vision_ocr(pdf_bytes: bytes) -> str:
     """Use Gemini Vision to OCR a scanned PDF (fallback path)."""
-    import google.generativeai as genai
     import fitz
+    import google.generativeai as genai
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
@@ -157,7 +159,7 @@ def _gemini_vision_ocr(pdf_bytes: bytes) -> str:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     all_text = []
 
-    for page_num, page in enumerate(doc):
+    for page in doc:
         pix = page.get_pixmap(dpi=150)
         img_bytes = pix.tobytes("png")
 

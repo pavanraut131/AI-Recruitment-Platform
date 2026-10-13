@@ -1,22 +1,25 @@
 import csv
 import io
 import uuid
-from typing import List, Optional
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from pydantic import BaseModel
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
-import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.candidate import Candidate
 from app.models.resume import Resume
 from app.schemas.candidate import (
-    CandidateListItem, CandidateDetail,
-    CandidateCategoryUpdate, CandidateNotesUpdate, CandidatePipelineUpdate,
+    CandidateCategoryUpdate,
+    CandidateDetail,
+    CandidateListItem,
+    CandidateNotesUpdate,
+    CandidatePipelineUpdate,
 )
-from pydantic import BaseModel
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["candidates"])
@@ -27,24 +30,24 @@ VALID_PIPELINE_STAGES = {
 }
 
 class BulkPipelineUpdate(BaseModel):
-    candidate_ids: List[uuid.UUID]
+    candidate_ids: list[uuid.UUID]
     stage: str
 
 class BulkDeleteRequest(BaseModel):
-    candidate_ids: List[uuid.UUID]
+    candidate_ids: list[uuid.UUID]
 
 
 # ── Helper ────────────────────────────────────────────────────
 
 def _build_candidate_filters(
     campaign_id: uuid.UUID,
-    skill: Optional[str],
-    category: Optional[str],
-    min_score: Optional[float],
-    max_score: Optional[float],
-    min_experience: Optional[float],
-    search: Optional[str],
-    pipeline_stage: Optional[str],
+    skill: str | None,
+    category: str | None,
+    min_score: float | None,
+    max_score: float | None,
+    min_experience: float | None,
+    search: str | None,
+    pipeline_stage: str | None,
 ) -> list:
     filters = [Candidate.campaign_id == campaign_id]
     if category:
@@ -73,16 +76,16 @@ def _build_candidate_filters(
 
 # ── List candidates ───────────────────────────────────────────
 
-@router.get("/campaigns/{campaign_id}/candidates", response_model=List[CandidateListItem])
+@router.get("/campaigns/{campaign_id}/candidates", response_model=list[CandidateListItem])
 async def list_candidates(
     campaign_id: uuid.UUID,
-    skill: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
-    min_score: Optional[float] = Query(None, ge=0, le=100),
-    max_score: Optional[float] = Query(None, ge=0, le=100),
-    min_experience: Optional[float] = Query(None, ge=0),
-    search: Optional[str] = Query(None),
-    pipeline_stage: Optional[str] = Query(None),
+    skill: str | None = Query(None),
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    min_experience: float | None = Query(None, ge=0),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -108,11 +111,11 @@ async def list_candidates(
 @router.get("/campaigns/{campaign_id}/candidates/export")
 async def export_candidates_csv(
     campaign_id: uuid.UUID,
-    category: Optional[str] = Query(None),
-    min_score: Optional[float] = Query(None, ge=0, le=100),
-    max_score: Optional[float] = Query(None, ge=0, le=100),
-    search: Optional[str] = Query(None),
-    pipeline_stage: Optional[str] = Query(None),
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """

@@ -3,14 +3,14 @@ Global stats endpoint — aggregate counts across all campaigns.
 Used by the dashboard to populate the top-level stat cards.
 """
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.campaign import Campaign
-from app.models.resume import Resume
 from app.models.candidate import Candidate
+from app.models.resume import Resume
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 

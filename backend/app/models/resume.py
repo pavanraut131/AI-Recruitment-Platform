@@ -1,9 +1,16 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, Integer, ForeignKey, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.campaign import Campaign
+    from app.models.candidate import Candidate
 
 
 class ResumeStatus(str):

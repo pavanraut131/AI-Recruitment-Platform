@@ -69,3 +69,72 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+# ── ruff ─────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
+ignore = [
+    # Line length is owned by `ruff format`; what it can't wrap (long string literals such as
+    # LLM prompts, Alembic-generated lines) isn't worth hand-breaking.
+    "E501",
+    # `class X(str, Enum)` -> `StrEnum` changes str()/format() output of members (used in DB
+    # values and JSON); not a safe mechanical change.
+    "UP042",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency markers are meant to be called in argument defaults.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "workers"]
+# The local `alembic/` migrations folder would otherwise make ruff treat the library as first-party.
+known-third-party = ["alembic"]
+
+# ── mypy ─────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+files = ["app", "workers"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# Third-party libraries that ship no type information and have no stub package.
+# ("google" is the namespace package of google.generativeai; without it mypy reports it on
+# incremental runs with a warm cache.)
+[[tool.mypy.overrides]]
+module = ["fitz", "google", "google.generativeai"]
+ignore_missing_imports = true
+
+# BASELINE: modules that had type errors when mypy was introduced (E0-02).
+# Remove entries as modules are fixed; never add new ones.
+[[tool.mypy.overrides]]
+module = [
+    "app.api.v1.resumes",    # Celery apply_async(args=list) and Optional filename
+    "app.core.database",     # get_db async generator annotated with the wrong return type
+    "workers.ai_task",       # implicit Optional default; unchecked Optional ORM rows
+    "workers.extract_task",  # implicit Optional default; unchecked Optional ORM rows; apply_async args
+]
+ignore_errors = true

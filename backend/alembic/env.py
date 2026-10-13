@@ -2,8 +2,8 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Import all models so Alembic can detect them
-from app.models import Campaign, Resume, Candidate  # noqa: F401
+from app.models import Campaign, Candidate, Resume  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.SYNC_DATABASE_URL)

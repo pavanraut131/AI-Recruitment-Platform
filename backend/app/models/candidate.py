@@ -1,9 +1,16 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, Float, ForeignKey, Text, func
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.campaign import Campaign
+    from app.models.resume import Resume
 
 
 class Candidate(Base):

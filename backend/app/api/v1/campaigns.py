@@ -1,16 +1,15 @@
 import uuid
-from typing import List
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.campaign import Campaign
-from app.models.resume import Resume
 from app.models.candidate import Candidate
-from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, CampaignStats
-import structlog
+from app.models.resume import Resume
+from app.schemas.campaign import CampaignCreate, CampaignResponse, CampaignStats, CampaignUpdate
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -26,7 +25,7 @@ async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(ge
     return campaign
 
 
-@router.get("", response_model=List[CampaignResponse])
+@router.get("", response_model=list[CampaignResponse])
 async def list_campaigns(
     skip: int = 0,
     limit: int = 20,

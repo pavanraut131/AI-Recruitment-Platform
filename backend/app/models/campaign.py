@@ -1,10 +1,17 @@
+import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, func
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
-import enum
+
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate import Candidate
+    from app.models.resume import Resume
 
 
 class CampaignStatus(str, enum.Enum):

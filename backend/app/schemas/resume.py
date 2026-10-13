@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -12,7 +12,7 @@ class ResumeResponse(BaseModel):
     file_size_bytes: int
     status: str
     retry_count: int
-    error_message: Optional[str]
+    error_message: str | None
     uploaded_at: datetime
     updated_at: datetime
 
@@ -33,7 +33,7 @@ class SSEEvent(BaseModel):
     resume_id: str
     filename: str
     status: str
-    candidate_name: Optional[str] = None
-    score: Optional[float] = None
-    category: Optional[str] = None
-    error: Optional[str] = None
+    candidate_name: str | None = None
+    score: float | None = None
+    category: str | None = None
+    error: str | None = None

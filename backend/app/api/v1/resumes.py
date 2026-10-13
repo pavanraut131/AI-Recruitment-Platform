@@ -1,21 +1,21 @@
-import uuid
 import asyncio
-import json
 import hashlib
-from typing import List, AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, tuple_
-from sse_starlette.sse import EventSourceResponse
+import json
+import uuid
+from collections.abc import AsyncGenerator
+
 import redis.asyncio as aioredis
 import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
-from app.core.database import get_db
-from app.core.config import settings
 from app.core import storage
-from app.models.resume import Resume
+from app.core.config import settings
+from app.core.database import get_db
 from app.models.campaign import Campaign
+from app.models.resume import Resume
 from app.schemas.resume import ResumeResponse, UploadBatchResponse
 from workers.extract_task import extract_resume
 
@@ -32,7 +32,7 @@ MAX_FILE_SIZE = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 )
 async def bulk_upload_resumes(
     campaign_id: uuid.UUID,
-    files: List[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
 ):
     # Validate campaign exists
@@ -133,7 +133,7 @@ async def bulk_upload_resumes(
     )
 
 
-@router.get("/campaigns/{campaign_id}/resumes", response_model=List[ResumeResponse])
+@router.get("/campaigns/{campaign_id}/resumes", response_model=list[ResumeResponse])
 async def list_campaign_resumes(
     campaign_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

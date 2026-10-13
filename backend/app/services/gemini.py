@@ -1,15 +1,16 @@
 import json
+
+import google.generativeai as genai
 import structlog
-from typing import List
+from google.api_core.exceptions import ResourceExhausted
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
     wait_fixed,
-    retry_if_exception_type,
 )
-from google.api_core.exceptions import ResourceExhausted
-import google.generativeai as genai
+
 from app.core.config import settings
 from app.schemas.candidate import ExtractionResult, ScoringResult
 
@@ -147,7 +148,7 @@ def extract_candidate_info(resume_text: str) -> ExtractionResult:
 def score_candidate(
     candidate_profile: dict,
     role: str,
-    required_skills: List[str],
+    required_skills: list[str],
 ) -> ScoringResult:
     """Call Gemini to score and classify a candidate against a job role."""
     prompt = SCORING_PROMPT_TEMPLATE.format(

@@ -7,18 +7,19 @@ Worker 2: AI Processing
 - Publishes SSE update
 """
 import uuid
+
 import structlog
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from celery import Task
 from google.api_core.exceptions import ResourceExhausted
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from workers.celery_app import celery_app
 from app.core.config import settings
-from app.models.resume import Resume
-from app.models.candidate import Candidate
 from app.models.campaign import Campaign
-from app.services.gemini import extract_candidate_info, score_candidate, is_resume_content
+from app.models.candidate import Candidate
+from app.models.resume import Resume
+from app.services.gemini import extract_candidate_info, is_resume_content, score_candidate
+from workers.celery_app import celery_app
 
 logger = structlog.get_logger()
 
@@ -27,8 +28,9 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 
 def _publish_sse_event(resume_id: str, status: str, extra: dict = None):
-    import redis
     import json
+
+    import redis
     r = redis.Redis.from_url(settings.REDIS_URL)
     payload = {"resume_id": resume_id, "status": status, **(extra or {})}
     r.publish(f"resume:status:{resume_id}", json.dumps(payload))
@@ -188,4 +190,4 @@ def process_candidate_ai(self, resume_id: str):
 
     except Exception as exc:
         log.error("ai_processing_failed", error=str(exc))
-        raise self.retry(exc=exc, countdown=60)
+        raise self.retry(exc=exc, countdown=60) from exc
