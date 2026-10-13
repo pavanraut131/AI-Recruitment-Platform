@@ -57,7 +57,7 @@ export default function CandidateDetailPage() {
 
   useEffect(() => {
     if (!candidate || loading || notesText === (candidate.notes || "")) return;
-    
+
     setSavingNotes("saving");
     const timeoutId = setTimeout(async () => {
       try {

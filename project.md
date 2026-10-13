@@ -23,7 +23,7 @@ graph TD
 
 ### Technical Stack Details
 
-*   **Frontend**: 
+*   **Frontend**:
     *   **Framework**: Next.js (App Router, TypeScript)
     *   **Styling**: TailwindCSS & Vanilla CSS design system (custom variables, warm/neutral dark theme, sleek cards, custom animations)
     *   **Charts**: Recharts (Candidate distribution, Top skills analysis)

@@ -87,7 +87,7 @@ Score breakdown rules (must sum to the overall score):
 
 Category rules:
 - score >= 75: "strong_match"
-- score >= 50: "moderate_match"  
+- score >= 50: "moderate_match"
 - score >= 25: "weak_match"
 - score < 25: "rejected"
 
