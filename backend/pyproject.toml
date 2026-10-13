@@ -48,7 +48,8 @@ dev = [
     "pytest==8.2.2",
     "pytest-asyncio==0.23.7",
     "pytest-cov==7.1.0",
-    "aiosqlite==0.20.0",
+    # Real Postgres (pgvector/pgvector:pg16) in Docker for the test session
+    "testcontainers[postgres]==4.15.0",
     # Lint / format / type check
     "ruff==0.17.0",
     "mypy==2.4.0",
@@ -69,6 +70,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# Coverage is reported on every run; no fail-under gate until app/modules/ exists (Sprint 2).
+addopts = "--cov=app --cov=workers --cov-report=term-missing"
+
+# ── coverage (pytest-cov) ────────────────────────────────────
+[tool.coverage.run]
+# SQLAlchemy's asyncio layer runs ORM code inside greenlets; without this, lines after an
+# `await session...` call are reported as not covered.
+concurrency = ["thread", "greenlet"]
 
 # ── ruff ─────────────────────────────────────────────────────
 [tool.ruff]
