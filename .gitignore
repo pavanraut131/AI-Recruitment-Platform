@@ -57,3 +57,6 @@ htmlcov/
 
 # Claude Code local state (agent worktrees, settings)
 .claude/
+
+# Seed generator output (python -m app.devtools.seed)
+backend/seed-manifest.json
