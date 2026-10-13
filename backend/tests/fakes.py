@@ -2,6 +2,9 @@
 
 - :class:`CeleryRecorder` records task dispatch instead of sending it to a broker.
 - :class:`InMemoryStorage` replaces the MinIO functions in ``app.core.storage``.
+- :class:`FakeGemini` replaces ``google.generativeai.GenerativeModel``.
+- :class:`FakeRedis` gives every ``redis.Redis.from_url`` / ``redis.asyncio.Redis.from_url`` call a
+  fakeredis client on one shared in-memory server, so pub/sub works across sync and async clients.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+import fakeredis
 from botocore.exceptions import ClientError
 
 
@@ -98,3 +102,77 @@ class InMemoryStorage:
 
     def get_presigned_url(self, object_key: str, expires_in: int = 3600) -> str:
         return f"http://storage.test/{self.bucket}/{object_key}?X-Amz-Expires={expires_in}"
+
+
+# ── Gemini (google.generativeai) ──────────────────────────────
+class GeminiNotConfiguredError(RuntimeError):
+    """Raised when code under test calls Gemini but the test did not script a response."""
+
+
+@dataclass
+class GeminiCall:
+    model: str
+    prompt: Any
+
+
+@dataclass
+class FakeGeminiResponse:
+    text: str
+
+
+class FakeGemini:
+    """Scriptable stand-in for ``google.generativeai.GenerativeModel``.
+
+    ``respond_with(text)`` makes later calls return ``text`` as ``response.text``;
+    ``respond_with(exc)`` makes them raise ``exc``. Until a response is scripted every call raises
+    :class:`GeminiNotConfiguredError`, so an unexpected AI call fails loudly instead of reaching
+    the network. Every call is recorded in ``calls``.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[GeminiCall] = []
+        self._response: str | BaseException = GeminiNotConfiguredError(
+            "Gemini was called but the test did not script a response (fake_gemini.respond_with)"
+        )
+
+    def respond_with(self, response: str | BaseException) -> None:
+        self._response = response
+
+    def answer(self, model: str, prompt: Any) -> FakeGeminiResponse:
+        self.calls.append(GeminiCall(model=model, prompt=prompt))
+        if isinstance(self._response, BaseException):
+            raise self._response
+        return FakeGeminiResponse(text=self._response)
+
+    def GenerativeModel(self, model_name: str, **_: Any) -> FakeGenerativeModel:  # noqa: N802
+        return FakeGenerativeModel(self, model_name)
+
+
+class FakeGenerativeModel:
+    def __init__(self, fake: FakeGemini, model_name: str) -> None:
+        self._fake = fake
+        self.model_name = model_name
+
+    def generate_content(self, prompt: Any, **_: Any) -> FakeGeminiResponse:
+        return self._fake.answer(self.model_name, prompt)
+
+    async def generate_content_async(self, prompt: Any, **_: Any) -> FakeGeminiResponse:
+        return self._fake.answer(self.model_name, prompt)
+
+
+# ── Redis ─────────────────────────────────────────────────────
+class FakeRedis:
+    """One in-memory Redis server per test; hands out sync and async fakeredis clients for it.
+
+    Set ``server.connected = False`` to simulate Redis being down (commands raise
+    ``redis.exceptions.ConnectionError``).
+    """
+
+    def __init__(self) -> None:
+        self.server = fakeredis.FakeServer()
+
+    def sync_client(self, url: str = "", **kwargs: Any) -> fakeredis.FakeRedis:
+        return fakeredis.FakeRedis(server=self.server, **kwargs)
+
+    def async_client(self, url: str = "", **kwargs: Any) -> fakeredis.FakeAsyncRedis:
+        return fakeredis.FakeAsyncRedis(server=self.server, **kwargs)

@@ -1,0 +1,2400 @@
+# serializer version: 1
+# name: test_api_v1_health_does_not_exist
+  dict({
+    'body': dict({
+      'detail': 'Not Found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_global_stats
+  dict({
+    'body': dict({
+      'active_campaigns': 1,
+      'archived_campaigns': 1,
+      'closed_campaigns': 1,
+      'total_campaigns': 4,
+      'total_candidates': 2,
+      'total_failed': 2,
+      'total_processed': 3,
+      'total_processing': 3,
+      'total_resumes': 8,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_global_stats_empty
+  dict({
+    'body': dict({
+      'active_campaigns': 0,
+      'archived_campaigns': 0,
+      'closed_campaigns': 0,
+      'total_campaigns': 0,
+      'total_candidates': 0,
+      'total_failed': 0,
+      'total_processed': 0,
+      'total_processing': 0,
+      'total_resumes': 0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_health
+  dict({
+    'body': dict({
+      'env': 'test',
+      'status': 'ok',
+      'version': '1.0.0',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_health_ready[all-ok]
+  dict({
+    'body': dict({
+      'checks': dict({
+        'postgres': 'ok',
+        'redis': 'ok',
+      }),
+      'status': 'ready',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_health_ready[redis-down]
+  dict({
+    'body': dict({
+      'checks': dict({
+        'postgres': 'ok',
+        'redis': 'error: <redis exception message>',
+      }),
+      'status': 'degraded',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 503,
+  })
+# ---
+# name: test_openapi_schema
+  dict({
+    'components': dict({
+      'schemas': dict({
+        'Body_bulk_upload_resumes_api_v1_campaigns__campaign_id__upload_post': dict({
+          'properties': dict({
+            'files': dict({
+              'items': dict({
+                'format': 'binary',
+                'type': 'string',
+              }),
+              'title': 'Files',
+              'type': 'array',
+            }),
+          }),
+          'required': list([
+            'files',
+          ]),
+          'title': 'Body_bulk_upload_resumes_api_v1_campaigns__campaign_id__upload_post',
+          'type': 'object',
+        }),
+        'BulkDeleteRequest': dict({
+          'properties': dict({
+            'candidate_ids': dict({
+              'items': dict({
+                'format': 'uuid',
+                'type': 'string',
+              }),
+              'title': 'Candidate Ids',
+              'type': 'array',
+            }),
+          }),
+          'required': list([
+            'candidate_ids',
+          ]),
+          'title': 'BulkDeleteRequest',
+          'type': 'object',
+        }),
+        'BulkPipelineUpdate': dict({
+          'properties': dict({
+            'candidate_ids': dict({
+              'items': dict({
+                'format': 'uuid',
+                'type': 'string',
+              }),
+              'title': 'Candidate Ids',
+              'type': 'array',
+            }),
+            'stage': dict({
+              'title': 'Stage',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'candidate_ids',
+            'stage',
+          ]),
+          'title': 'BulkPipelineUpdate',
+          'type': 'object',
+        }),
+        'CampaignCreate': dict({
+          'properties': dict({
+            'description': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Description',
+            }),
+            'required_skills': dict({
+              'default': list([
+              ]),
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Required Skills',
+              'type': 'array',
+            }),
+            'role': dict({
+              'title': 'Role',
+              'type': 'string',
+            }),
+            'title': dict({
+              'title': 'Title',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'title',
+            'role',
+          ]),
+          'title': 'CampaignCreate',
+          'type': 'object',
+        }),
+        'CampaignResponse': dict({
+          'properties': dict({
+            'created_at': dict({
+              'format': 'date-time',
+              'title': 'Created At',
+              'type': 'string',
+            }),
+            'description': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Description',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'required_skills': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Required Skills',
+              'type': 'array',
+            }),
+            'role': dict({
+              'title': 'Role',
+              'type': 'string',
+            }),
+            'stats': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/CampaignStats',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+            }),
+            'status': dict({
+              'title': 'Status',
+              'type': 'string',
+            }),
+            'title': dict({
+              'title': 'Title',
+              'type': 'string',
+            }),
+            'updated_at': dict({
+              'format': 'date-time',
+              'title': 'Updated At',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'title',
+            'role',
+            'description',
+            'required_skills',
+            'status',
+            'created_at',
+            'updated_at',
+          ]),
+          'title': 'CampaignResponse',
+          'type': 'object',
+        }),
+        'CampaignStats': dict({
+          'properties': dict({
+            'avg_score': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Avg Score',
+            }),
+            'moderate_match': dict({
+              'default': 0,
+              'title': 'Moderate Match',
+              'type': 'integer',
+            }),
+            'rejected': dict({
+              'default': 0,
+              'title': 'Rejected',
+              'type': 'integer',
+            }),
+            'strong_match': dict({
+              'default': 0,
+              'title': 'Strong Match',
+              'type': 'integer',
+            }),
+            'top_skills': dict({
+              'default': list([
+              ]),
+              'items': dict({
+                'type': 'object',
+              }),
+              'title': 'Top Skills',
+              'type': 'array',
+            }),
+            'total_failed': dict({
+              'default': 0,
+              'title': 'Total Failed',
+              'type': 'integer',
+            }),
+            'total_pending': dict({
+              'default': 0,
+              'title': 'Total Pending',
+              'type': 'integer',
+            }),
+            'total_processed': dict({
+              'default': 0,
+              'title': 'Total Processed',
+              'type': 'integer',
+            }),
+            'total_quota_exceeded': dict({
+              'default': 0,
+              'title': 'Total Quota Exceeded',
+              'type': 'integer',
+            }),
+            'total_resumes': dict({
+              'default': 0,
+              'title': 'Total Resumes',
+              'type': 'integer',
+            }),
+            'weak_match': dict({
+              'default': 0,
+              'title': 'Weak Match',
+              'type': 'integer',
+            }),
+          }),
+          'title': 'CampaignStats',
+          'type': 'object',
+        }),
+        'CampaignUpdate': dict({
+          'properties': dict({
+            'description': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Description',
+            }),
+            'required_skills': dict({
+              'anyOf': list([
+                dict({
+                  'items': dict({
+                    'type': 'string',
+                  }),
+                  'type': 'array',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Required Skills',
+            }),
+            'role': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Role',
+            }),
+            'status': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Status',
+            }),
+            'title': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Title',
+            }),
+          }),
+          'title': 'CampaignUpdate',
+          'type': 'object',
+        }),
+        'CandidateCategoryUpdate': dict({
+          'properties': dict({
+            'category': dict({
+              'title': 'Category',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'category',
+          ]),
+          'title': 'CandidateCategoryUpdate',
+          'type': 'object',
+        }),
+        'CandidateDetail': dict({
+          'properties': dict({
+            'campaign_id': dict({
+              'format': 'uuid',
+              'title': 'Campaign Id',
+              'type': 'string',
+            }),
+            'category': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Category',
+            }),
+            'certifications': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Certifications',
+              'type': 'array',
+            }),
+            'created_at': dict({
+              'format': 'date-time',
+              'title': 'Created At',
+              'type': 'string',
+            }),
+            'education': dict({
+              'items': dict({
+                'type': 'object',
+              }),
+              'title': 'Education',
+              'type': 'array',
+            }),
+            'email': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Email',
+            }),
+            'github_url': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Github Url',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'linkedin_url': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Linkedin Url',
+            }),
+            'missing_skills': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Missing Skills',
+              'type': 'array',
+            }),
+            'name': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Name',
+            }),
+            'notes': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Notes',
+            }),
+            'phone': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Phone',
+            }),
+            'pipeline_stage': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Pipeline Stage',
+            }),
+            'projects': dict({
+              'items': dict({
+                'type': 'object',
+              }),
+              'title': 'Projects',
+              'type': 'array',
+            }),
+            'recommendation': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Recommendation',
+            }),
+            'resume_id': dict({
+              'format': 'uuid',
+              'title': 'Resume Id',
+              'type': 'string',
+            }),
+            'score': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Score',
+            }),
+            'score_breakdown': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'object',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Score Breakdown',
+            }),
+            'skills': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Skills',
+              'type': 'array',
+            }),
+            'strengths': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Strengths',
+              'type': 'array',
+            }),
+            'summary': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Summary',
+            }),
+            'updated_at': dict({
+              'format': 'date-time',
+              'title': 'Updated At',
+              'type': 'string',
+            }),
+            'weaknesses': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Weaknesses',
+              'type': 'array',
+            }),
+            'work_experience': dict({
+              'items': dict({
+                'type': 'object',
+              }),
+              'title': 'Work Experience',
+              'type': 'array',
+            }),
+            'years_of_experience': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Years Of Experience',
+            }),
+          }),
+          'required': list([
+            'id',
+            'resume_id',
+            'campaign_id',
+            'name',
+            'email',
+            'phone',
+            'github_url',
+            'linkedin_url',
+            'skills',
+            'education',
+            'work_experience',
+            'certifications',
+            'projects',
+            'years_of_experience',
+            'summary',
+            'strengths',
+            'weaknesses',
+            'missing_skills',
+            'recommendation',
+            'score',
+            'category',
+            'created_at',
+            'updated_at',
+          ]),
+          'title': 'CandidateDetail',
+          'type': 'object',
+        }),
+        'CandidateListItem': dict({
+          'properties': dict({
+            'campaign_id': dict({
+              'format': 'uuid',
+              'title': 'Campaign Id',
+              'type': 'string',
+            }),
+            'category': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Category',
+            }),
+            'created_at': dict({
+              'format': 'date-time',
+              'title': 'Created At',
+              'type': 'string',
+            }),
+            'email': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Email',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'name': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Name',
+            }),
+            'pipeline_stage': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Pipeline Stage',
+            }),
+            'resume_id': dict({
+              'format': 'uuid',
+              'title': 'Resume Id',
+              'type': 'string',
+            }),
+            'score': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Score',
+            }),
+            'skills': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Skills',
+              'type': 'array',
+            }),
+            'summary': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Summary',
+            }),
+            'years_of_experience': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Years Of Experience',
+            }),
+          }),
+          'required': list([
+            'id',
+            'resume_id',
+            'campaign_id',
+            'name',
+            'email',
+            'skills',
+            'years_of_experience',
+            'score',
+            'category',
+            'summary',
+            'created_at',
+          ]),
+          'title': 'CandidateListItem',
+          'type': 'object',
+        }),
+        'CandidateNotesUpdate': dict({
+          'properties': dict({
+            'notes': dict({
+              'title': 'Notes',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'notes',
+          ]),
+          'title': 'CandidateNotesUpdate',
+          'type': 'object',
+        }),
+        'CandidatePipelineUpdate': dict({
+          'properties': dict({
+            'stage': dict({
+              'title': 'Stage',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'stage',
+          ]),
+          'title': 'CandidatePipelineUpdate',
+          'type': 'object',
+        }),
+        'GlobalStats': dict({
+          'properties': dict({
+            'active_campaigns': dict({
+              'default': 0,
+              'title': 'Active Campaigns',
+              'type': 'integer',
+            }),
+            'archived_campaigns': dict({
+              'default': 0,
+              'title': 'Archived Campaigns',
+              'type': 'integer',
+            }),
+            'closed_campaigns': dict({
+              'default': 0,
+              'title': 'Closed Campaigns',
+              'type': 'integer',
+            }),
+            'total_campaigns': dict({
+              'default': 0,
+              'title': 'Total Campaigns',
+              'type': 'integer',
+            }),
+            'total_candidates': dict({
+              'default': 0,
+              'title': 'Total Candidates',
+              'type': 'integer',
+            }),
+            'total_failed': dict({
+              'default': 0,
+              'title': 'Total Failed',
+              'type': 'integer',
+            }),
+            'total_processed': dict({
+              'default': 0,
+              'title': 'Total Processed',
+              'type': 'integer',
+            }),
+            'total_processing': dict({
+              'default': 0,
+              'title': 'Total Processing',
+              'type': 'integer',
+            }),
+            'total_resumes': dict({
+              'default': 0,
+              'title': 'Total Resumes',
+              'type': 'integer',
+            }),
+          }),
+          'title': 'GlobalStats',
+          'type': 'object',
+        }),
+        'HTTPValidationError': dict({
+          'properties': dict({
+            'detail': dict({
+              'items': dict({
+                '$ref': '#/components/schemas/ValidationError',
+              }),
+              'title': 'Detail',
+              'type': 'array',
+            }),
+          }),
+          'title': 'HTTPValidationError',
+          'type': 'object',
+        }),
+        'JDParseRequest': dict({
+          'properties': dict({
+            'job_description': dict({
+              'title': 'Job Description',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'job_description',
+          ]),
+          'title': 'JDParseRequest',
+          'type': 'object',
+        }),
+        'JDParseResponse': dict({
+          'properties': dict({
+            'role_title': dict({
+              'title': 'Role Title',
+              'type': 'string',
+            }),
+            'seniority': dict({
+              'title': 'Seniority',
+              'type': 'string',
+            }),
+            'skills': dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'title': 'Skills',
+              'type': 'array',
+            }),
+          }),
+          'required': list([
+            'role_title',
+            'seniority',
+            'skills',
+          ]),
+          'title': 'JDParseResponse',
+          'type': 'object',
+        }),
+        'ResumeResponse': dict({
+          'properties': dict({
+            'campaign_id': dict({
+              'format': 'uuid',
+              'title': 'Campaign Id',
+              'type': 'string',
+            }),
+            'error_message': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Error Message',
+            }),
+            'file_size_bytes': dict({
+              'title': 'File Size Bytes',
+              'type': 'integer',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'original_filename': dict({
+              'title': 'Original Filename',
+              'type': 'string',
+            }),
+            'retry_count': dict({
+              'title': 'Retry Count',
+              'type': 'integer',
+            }),
+            'status': dict({
+              'title': 'Status',
+              'type': 'string',
+            }),
+            'storage_path': dict({
+              'title': 'Storage Path',
+              'type': 'string',
+            }),
+            'updated_at': dict({
+              'format': 'date-time',
+              'title': 'Updated At',
+              'type': 'string',
+            }),
+            'uploaded_at': dict({
+              'format': 'date-time',
+              'title': 'Uploaded At',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'campaign_id',
+            'original_filename',
+            'storage_path',
+            'file_size_bytes',
+            'status',
+            'retry_count',
+            'error_message',
+            'uploaded_at',
+            'updated_at',
+          ]),
+          'title': 'ResumeResponse',
+          'type': 'object',
+        }),
+        'UploadBatchResponse': dict({
+          'properties': dict({
+            'accepted_files': dict({
+              'title': 'Accepted Files',
+              'type': 'integer',
+            }),
+            'batch_id': dict({
+              'title': 'Batch Id',
+              'type': 'string',
+            }),
+            'campaign_id': dict({
+              'format': 'uuid',
+              'title': 'Campaign Id',
+              'type': 'string',
+            }),
+            'message': dict({
+              'title': 'Message',
+              'type': 'string',
+            }),
+            'rejected_files': dict({
+              'items': dict({
+              }),
+              'title': 'Rejected Files',
+              'type': 'array',
+            }),
+            'resume_ids': dict({
+              'items': dict({
+                'format': 'uuid',
+                'type': 'string',
+              }),
+              'title': 'Resume Ids',
+              'type': 'array',
+            }),
+            'total_files': dict({
+              'title': 'Total Files',
+              'type': 'integer',
+            }),
+          }),
+          'required': list([
+            'batch_id',
+            'campaign_id',
+            'total_files',
+            'accepted_files',
+            'rejected_files',
+            'resume_ids',
+            'message',
+          ]),
+          'title': 'UploadBatchResponse',
+          'type': 'object',
+        }),
+        'ValidationError': dict({
+          'properties': dict({
+            'loc': dict({
+              'items': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              'title': 'Location',
+              'type': 'array',
+            }),
+            'msg': dict({
+              'title': 'Message',
+              'type': 'string',
+            }),
+            'type': dict({
+              'title': 'Error Type',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'loc',
+            'msg',
+            'type',
+          ]),
+          'title': 'ValidationError',
+          'type': 'object',
+        }),
+      }),
+    }),
+    'info': dict({
+      'description': 'Bulk upload resumes, extract candidate info with AI, and rank candidates.',
+      'title': 'AI Resume Bulk Import System',
+      'version': '1.0.0',
+    }),
+    'openapi': '3.1.0',
+    'paths': dict({
+      '/api/v1/campaigns': dict({
+        'get': dict({
+          'operationId': 'list_campaigns_api_v1_campaigns_get',
+          'parameters': list([
+            dict({
+              'in': 'query',
+              'name': 'skip',
+              'required': False,
+              'schema': dict({
+                'default': 0,
+                'title': 'Skip',
+                'type': 'integer',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'limit',
+              'required': False,
+              'schema': dict({
+                'default': 20,
+                'title': 'Limit',
+                'type': 'integer',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    'items': dict({
+                      '$ref': '#/components/schemas/CampaignResponse',
+                    }),
+                    'title': 'Response List Campaigns Api V1 Campaigns Get',
+                    'type': 'array',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'List Campaigns',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+        'post': dict({
+          'operationId': 'create_campaign_api_v1_campaigns_post',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/CampaignCreate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '201': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CampaignResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Create Campaign',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/parse-jd': dict({
+        'post': dict({
+          'operationId': 'parse_job_description_api_v1_campaigns_parse_jd_post',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/JDParseRequest',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/JDParseResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Parse Job Description',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}': dict({
+        'delete': dict({
+          'operationId': 'delete_campaign_api_v1_campaigns__campaign_id__delete',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Delete Campaign',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+        'get': dict({
+          'operationId': 'get_campaign_api_v1_campaigns__campaign_id__get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CampaignResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Get Campaign',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+        'put': dict({
+          'operationId': 'update_campaign_api_v1_campaigns__campaign_id__put',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/CampaignUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CampaignResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Update Campaign',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/candidates': dict({
+        'get': dict({
+          'operationId': 'list_candidates_api_v1_campaigns__campaign_id__candidates_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'skill',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Skill',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'category',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Category',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'min_score',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'maximum': 100.0,
+                    'minimum': 0.0,
+                    'type': 'number',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Min Score',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'max_score',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'maximum': 100.0,
+                    'minimum': 0.0,
+                    'type': 'number',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Max Score',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'min_experience',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'minimum': 0.0,
+                    'type': 'number',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Min Experience',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'search',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Search',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'pipeline_stage',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Pipeline Stage',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'page',
+              'required': False,
+              'schema': dict({
+                'default': 1,
+                'minimum': 1,
+                'title': 'Page',
+                'type': 'integer',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'page_size',
+              'required': False,
+              'schema': dict({
+                'default': 20,
+                'maximum': 100,
+                'minimum': 1,
+                'title': 'Page Size',
+                'type': 'integer',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    'items': dict({
+                      '$ref': '#/components/schemas/CandidateListItem',
+                    }),
+                    'title': 'Response List Candidates Api V1 Campaigns  Campaign Id  Candidates Get',
+                    'type': 'array',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'List Candidates',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/candidates/bulk': dict({
+        'delete': dict({
+          'description': 'Delete multiple candidates (and their resumes) in one request.',
+          'operationId': 'bulk_delete_candidates_api_v1_campaigns__campaign_id__candidates_bulk_delete',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/BulkDeleteRequest',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Bulk Delete Candidates',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/candidates/bulk-pipeline': dict({
+        'patch': dict({
+          'description': 'Move multiple candidates to the same pipeline stage in one request.',
+          'operationId': 'bulk_update_pipeline_api_v1_campaigns__campaign_id__candidates_bulk_pipeline_patch',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/BulkPipelineUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Bulk Update Pipeline',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/candidates/export': dict({
+        'get': dict({
+          'description': '''
+            Download a filtered candidate list as CSV.
+            Applies the same filters as the list endpoint.
+          ''',
+          'operationId': 'export_candidates_csv_api_v1_campaigns__campaign_id__candidates_export_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'category',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Category',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'min_score',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'maximum': 100.0,
+                    'minimum': 0.0,
+                    'type': 'number',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Min Score',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'max_score',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'maximum': 100.0,
+                    'minimum': 0.0,
+                    'type': 'number',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Max Score',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'search',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Search',
+              }),
+            }),
+            dict({
+              'in': 'query',
+              'name': 'pipeline_stage',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'title': 'Pipeline Stage',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Export Candidates Csv',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/resumes': dict({
+        'get': dict({
+          'operationId': 'list_campaign_resumes_api_v1_campaigns__campaign_id__resumes_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    'items': dict({
+                      '$ref': '#/components/schemas/ResumeResponse',
+                    }),
+                    'title': 'Response List Campaign Resumes Api V1 Campaigns  Campaign Id  Resumes Get',
+                    'type': 'array',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'List Campaign Resumes',
+          'tags': list([
+            'resumes',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/resumes/retry-failed': dict({
+        'post': dict({
+          'description': 'Re-queue all failed and quota_exceeded resumes for a campaign.',
+          'operationId': 'retry_failed_resumes_api_v1_campaigns__campaign_id__resumes_retry_failed_post',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Retry Failed Resumes',
+          'tags': list([
+            'resumes',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/stats': dict({
+        'get': dict({
+          'operationId': 'campaign_stats_api_v1_campaigns__campaign_id__stats_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CampaignStats',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Campaign Stats',
+          'tags': list([
+            'campaigns',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/stream': dict({
+        'get': dict({
+          'description': '''
+            SSE endpoint — streams real-time processing updates for a campaign.
+            Frontend subscribes and receives events as each resume finishes.
+          ''',
+          'operationId': 'stream_campaign_status_api_v1_campaigns__campaign_id__stream_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Stream Campaign Status',
+          'tags': list([
+            'resumes',
+          ]),
+        }),
+      }),
+      '/api/v1/campaigns/{campaign_id}/upload': dict({
+        'post': dict({
+          'operationId': 'bulk_upload_resumes_api_v1_campaigns__campaign_id__upload_post',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'campaign_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Campaign Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'multipart/form-data': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/Body_bulk_upload_resumes_api_v1_campaigns__campaign_id__upload_post',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '202': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/UploadBatchResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Bulk Upload Resumes',
+          'tags': list([
+            'resumes',
+          ]),
+        }),
+      }),
+      '/api/v1/candidates/{candidate_id}': dict({
+        'delete': dict({
+          'operationId': 'delete_candidate_api_v1_candidates__candidate_id__delete',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'candidate_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Candidate Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Delete Candidate',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+        'get': dict({
+          'operationId': 'get_candidate_api_v1_candidates__candidate_id__get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'candidate_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Candidate Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CandidateDetail',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Get Candidate',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/candidates/{candidate_id}/category': dict({
+        'put': dict({
+          'operationId': 'update_candidate_category_api_v1_candidates__candidate_id__category_put',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'candidate_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Candidate Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/CandidateCategoryUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CandidateDetail',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Update Candidate Category',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/candidates/{candidate_id}/notes': dict({
+        'patch': dict({
+          'operationId': 'update_candidate_notes_api_v1_candidates__candidate_id__notes_patch',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'candidate_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Candidate Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/CandidateNotesUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CandidateDetail',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Update Candidate Notes',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/candidates/{candidate_id}/pipeline': dict({
+        'patch': dict({
+          'operationId': 'update_candidate_pipeline_api_v1_candidates__candidate_id__pipeline_patch',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'candidate_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Candidate Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/CandidatePipelineUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CandidateDetail',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Update Candidate Pipeline',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/resumes/{resume_id}': dict({
+        'get': dict({
+          'operationId': 'get_resume_api_v1_resumes__resume_id__get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'resume_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Resume Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/ResumeResponse',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Get Resume',
+          'tags': list([
+            'resumes',
+          ]),
+        }),
+      }),
+      '/api/v1/resumes/{resume_id}/candidate': dict({
+        'get': dict({
+          'operationId': 'get_candidate_by_resume_api_v1_resumes__resume_id__candidate_get',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'resume_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Resume Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CandidateDetail',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/HTTPValidationError',
+                  }),
+                }),
+              }),
+              'description': 'Validation Error',
+            }),
+          }),
+          'summary': 'Get Candidate By Resume',
+          'tags': list([
+            'candidates',
+          ]),
+        }),
+      }),
+      '/api/v1/stats': dict({
+        'get': dict({
+          'description': '''
+            Return aggregate counts across all campaigns.
+            Three single-table queries — no joins, very fast.
+          ''',
+          'operationId': 'get_global_stats_api_v1_stats_get',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/GlobalStats',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+          }),
+          'summary': 'Get Global Stats',
+          'tags': list([
+            'stats',
+          ]),
+        }),
+      }),
+      '/health': dict({
+        'get': dict({
+          'operationId': 'health_check_health_get',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+          }),
+          'summary': 'Health Check',
+          'tags': list([
+            'health',
+          ]),
+        }),
+      }),
+      '/health/ready': dict({
+        'get': dict({
+          'description': 'Check database and Redis connectivity.',
+          'operationId': 'readiness_check_health_ready_get',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+          }),
+          'summary': 'Readiness Check',
+          'tags': list([
+            'health',
+          ]),
+        }),
+      }),
+    }),
+  })
+# ---
+# name: test_unknown_route
+  dict({
+    'body': dict({
+      'detail': 'Not Found',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 404,
+  })
+# ---
