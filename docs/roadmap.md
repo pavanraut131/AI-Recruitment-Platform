@@ -34,7 +34,7 @@ Ordering notes:
 
 | Sprint | Dates | Goal | Status |
 |---|---|---|---|
-| [1](sprints/sprint-01.md) | 2026-10-14 → 10-20 | Safety net & working CI: characterization tests on real Postgres, CI running on `master` | planned |
+| [1](sprints/sprint-01.md) | 2026-10-14 → 10-20 | Safety net & working CI: characterization tests on real Postgres, CI running on `master` | in review |
 
 ## Out of scope for now
 
