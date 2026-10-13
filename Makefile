@@ -26,6 +26,16 @@ migrate-up:
 migrate-down:
 	docker compose exec backend alembic downgrade -1
 
+# ── Seed data (dev only; refuses when APP_ENV=production) ────
+# Fake campaigns/resumes/candidates plus backend/seed-manifest.json (expected backfill results).
+# Refuses if candidates exist; `make seed SEED_FLAGS=--reset` deletes campaigns, resumes and
+# candidates first. Override sizes with e.g. `make seed SEED_ARGS="--people 100 --campaigns 4"`.
+.PHONY: seed
+SEED_ARGS ?= --people 800 --campaigns 15 --seed 42
+SEED_FLAGS ?=
+seed:
+	docker compose exec -T backend python -m app.devtools.seed $(SEED_ARGS) $(SEED_FLAGS)
+
 # ── Shell access ─────────────────────────────────────────────
 shell-backend:
 	docker compose exec backend bash
@@ -73,6 +83,7 @@ clean:
 setup:
 	docker compose up --build -d --wait
 	$(MAKE) migrate-up
+	$(MAKE) seed SEED_FLAGS=--if-empty
 	@echo ""
 	@echo "✅ ResumeAI is ready! (ports below are the defaults; see .env)"
 	@echo "   Frontend:  http://localhost:3000"
