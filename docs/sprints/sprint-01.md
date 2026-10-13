@@ -1,6 +1,6 @@
 # Sprint 1 · Safety net & working CI
 
-**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-14 → 2026-10-20  ·  **Status:** in review
+**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-14 → 2026-10-20  ·  **Status:** done (closed 2026-10-13, ahead of schedule)
 
 ## Sprint goal
 
@@ -12,20 +12,20 @@ This sprint changes **no product behaviour**. Everything here is groundwork that
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| E0-01 | Fix the local dev environment | S | review (#2) |
-| E0-02 | Python tooling: uv, ruff, mypy, pre-commit | M | review (#6) |
-| E0-03 | Postgres test harness with testcontainers | M | review (#7) |
-| E0-04 | Characterization tests for the current API | L | review (#9) |
-| E0-05 | Rewrite CI | M | review (#8) |
-| E0-06 | ADRs for E0's key decisions | S | review (#4) |
-| E0-07 | PR template and branch protection guide | S | review (#5) |
+| E0-01 | Fix the local dev environment | S | done (#2) |
+| E0-02 | Python tooling: uv, ruff, mypy, pre-commit | M | done (#6) |
+| E0-03 | Postgres test harness with testcontainers | M | done (#7) |
+| E0-04 | Characterization tests for the current API | L | done (#9) |
+| E0-05 | Rewrite CI | M | done (#8) |
+| E0-06 | ADRs for E0's key decisions | S | done (#4) |
+| E0-07 | PR template and branch protection guide | S | done (#5) |
 
 Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in anywhere. 04 depends on 03, and 05 depends on 02 and 03.
 
 ---
 
 ### E0-01 · Fix the local dev environment
-**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-01-dev-env-fixes`
+**Status:** done  ·  **Size:** S  ·  **Branch:** `e0-01-dev-env-fixes`
 
 **Goal:** A fresh clone runs with `cp .env.example .env && make setup`, with no workarounds. This removes the three problems we hit on day one.
 
@@ -45,7 +45,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-02 · Python tooling: uv, ruff, mypy, pre-commit
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-02-python-tooling`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-02-python-tooling`
 
 **Goal:** One reproducible way to install, lint, format and type-check the backend, enforced the same way locally and in CI.
 
@@ -62,7 +62,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-03 · Postgres test harness with testcontainers
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-03-postgres-test-harness`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-03-postgres-test-harness`
 
 **Goal:** Tests run against real Postgres, matching production, instead of SQLite. SQLite cannot run the `JSONB`/`UUID` models, so the current tests cannot pass.
 
@@ -80,7 +80,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-04 · Characterization tests for the current API
-**Status:** review  ·  **Size:** L  ·  **Branch:** `e0-04-characterization-tests`
+**Status:** done  ·  **Size:** L  ·  **Branch:** `e0-04-characterization-tests`
 
 **Goal:** Record exactly what every endpoint returns **today**, so the restructure and the Person/Application switch can be proven not to change the API.
 
@@ -103,7 +103,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-05 · Rewrite CI
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e0-05-ci-rewrite`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-05-ci-rewrite`
 
 **Goal:** CI actually runs (today it watches `main`/`develop`, which don't exist) and gates every PR.
 
@@ -126,7 +126,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-06 · ADRs for E0's key decisions
-**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-06-adrs`
+**Status:** done  ·  **Size:** S  ·  **Branch:** `e0-06-adrs`
 
 **Goal:** Record the reasoning behind E0's main decisions while it's fresh.
 
@@ -141,7 +141,7 @@ Suggested order: **01 → 02 → 03 → 04 → 05**, with 06 and 07 fitted in an
 ---
 
 ### E0-07 · PR template and branch protection guide
-**Status:** review  ·  **Size:** S  ·  **Branch:** `e0-07-pr-template`
+**Status:** done  ·  **Size:** S  ·  **Branch:** `e0-07-pr-template`
 
 **Goal:** Every PR follows the definition of done, and `master` can't be broken by a direct push.
 
@@ -187,9 +187,29 @@ Fix these **after** E0-09/E0-10 move the code into modules, so each fix becomes 
 
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+**Goal met:** yes. All 7 tickets merged, and CI is green on `master` with all five jobs.
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+### Demo
+
+- A fresh clone runs with `cp .env.example .env && make setup`, with host ports configurable alongside other local Postgres/Redis instances.
+- `uv run pytest`: **190 tests and 170 snapshots** against real Postgres 16 + pgvector, in about 35 s. Coverage went from 0 % (the suite couldn't run) to **75 %**.
+- CI runs 5 jobs (`backend-quality`, `backend-test`, `migrations`, `frontend`, `compose`) in under a minute. Branch protection on `master` now requires all five.
+- ADRs 0001–0004 record the E0 decisions. A PR template and CONTRIBUTING.md define the workflow.
+- The characterization tests surfaced **15 existing bugs** (B1–B10 in the Sprint 2 backlog). Two features turned out never to have worked: JD parsing and the skill filter.
+
+### Keep
+
+- **Characterization first.** Recording behaviour before refactoring found real bugs before we touched anything.
+- **Parallel agents in isolated worktrees**, each reviewed and re-tested before pushing.
+- **Prefilled PR descriptions**, so every change explains its what, why and how it was tested.
+
+### Drop
+
+- **Merging stacked PRs after their parent had already landed.** #4 and #6 merged into branches instead of `master` and needed catch-up PRs #10 and #11.
+- **Opening PRs from GitHub's "Compare & pull request" banner.** It produced a duplicate with an empty description (#3).
+
+### Try
+
+- "Automatically delete head branches" is now on, so stacked PRs move to `master` by themselves when their parent merges.
+- Claude opens PRs with `gh` and checks `master` after each merge round.
+- Use **"Create a merge commit"** as the default merge method. Squash and rebase-merge both rewrite commit hashes.
