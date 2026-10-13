@@ -17,7 +17,7 @@ Next.js (Frontend) → FastAPI (Backend) → Celery Workers → Gemini AI
 ## Features
 
 - **Bulk Upload**: Drag-and-drop up to 50 PDF resumes at once
-- **AI Extraction**: Name, email, skills, experience, education via Gemini 1.5 Flash
+- **AI Extraction**: Name, email, skills, experience, education via Gemini 2.5 Flash
 - **Hybrid PDF Parsing**: pdfplumber (native) → PyMuPDF → Gemini Vision (scanned PDFs)
 - **Real-time Updates**: Server-Sent Events (SSE) stream live processing status per file
 - **AI Scoring**: Each candidate scored 0–100 against job role requirements
@@ -41,19 +41,27 @@ cp .env.example .env
 # Edit .env and set your GEMINI_API_KEY
 ```
 
-### 3. Start all services
+If a default host port (5432, 6379, 9000, 9001, 8000, 3000, 5555) is already
+used on your machine, change the matching `*_HOST_PORT` variable in `.env`.
+
+### 3. Start the stack and run migrations
 ```bash
-docker compose up --build
+make setup
 ```
 
-### 4. Run database migrations
+This builds the images, starts every service, waits until they report
+healthy, and runs `alembic upgrade head`. Without `make`, run the same steps:
+
 ```bash
-# Wait for services to be healthy, then:
-docker compose exec backend alembic revision --autogenerate -m "initial"
+docker compose up --build -d --wait
 docker compose exec backend alembic upgrade head
 ```
 
-### 5. Open the app
+> Upgrading from an older checkout? The Postgres image moved from 15 to 16
+> (`pgvector/pgvector:pg16`), so run `docker compose down -v` once to drop the
+> old local volume. Local data is thrown away.
+
+### 4. Open the app
 | Service | URL |
 |---|---|
 | Frontend (Next.js) | http://localhost:3000 |
@@ -168,12 +176,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 | Variable | Description | Default |
 |---|---|---|
 | `GEMINI_API_KEY` | **Required** — Google Gemini API key | — |
-| `GEMINI_MODEL` | Gemini model to use | `gemini-1.5-flash` |
+| `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
 | `DATABASE_URL` | Async PostgreSQL URL | — |
 | `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
 | `MINIO_ENDPOINT` | MinIO host | `minio:9000` |
 | `MAX_FILE_SIZE_MB` | Max PDF size | `10` |
 | `MAX_FILES_PER_BATCH` | Max files per upload | `50` |
+| `*_HOST_PORT` | Host ports for Postgres, Redis, MinIO API/console, backend, frontend, Flower | `5432`, `6379`, `9000`, `9001`, `8000`, `3000`, `5555` |
 
 ---
 
