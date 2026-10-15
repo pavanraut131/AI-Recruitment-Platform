@@ -15,6 +15,7 @@ when a resume is uploaded or when extraction hands over to AI processing.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -72,6 +73,7 @@ async def test_stream_event_for_each_resume_status(
     campaign = await make_campaign(db_session)
     resume = await make_resume(db_session, campaign, original_filename="jane_doe_resume.pdf")
     rid = str(resume.id)
+    person_id = str(uuid.uuid4())
     publishers: list[Callable[[], None]] = [
         # tasks.extract_resume: task started
         lambda: publish_resume_event(rid, "extracting", {"filename": "jane_doe_resume.pdf"}),
@@ -79,7 +81,8 @@ async def test_stream_event_for_each_resume_status(
         lambda: publish_resume_event(
             rid, "failed", {"error": "Could not extract meaningful text from PDF"}
         ),
-        # tasks.process_candidate_ai: success
+        # tasks.process_candidate_ai: success. person_id and matched_existing were added in E0-16
+        # (additive: the Person the resume was attached to, and whether it existed before).
         lambda: publish_resume_event(
             rid,
             "done",
@@ -88,6 +91,8 @@ async def test_stream_event_for_each_resume_status(
                 "score": 82.0,
                 "category": "strong_match",
                 "filename": "jane_doe_resume.pdf",
+                "person_id": person_id,
+                "matched_existing": True,
             },
         ),
         # tasks.process_candidate_ai: extraction found no candidate data

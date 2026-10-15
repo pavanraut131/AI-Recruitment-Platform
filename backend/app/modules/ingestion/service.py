@@ -182,7 +182,13 @@ async def get_resume(db: AsyncSession, resume_id: uuid.UUID) -> Resume:
 
 
 async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
-    """Re-queue the campaign's ``failed`` and ``quota_exceeded`` resumes; returns how many."""
+    """Re-queue the campaign's ``failed`` and ``quota_exceeded`` resumes; returns how many.
+
+    Each resumes from the step it stopped at (spec §5.5): one that failed during AI analysis
+    (``processing_step`` is an AI step, so its text is already stored) goes straight back to
+    the AI task, which skips the steps already done; any other (failed text extraction, or
+    processed before ``processing_step`` existed) starts again with text extraction.
+    """
     resumes = await repository.failed_in_campaign(db, campaign_id)
     if not resumes:
         return 0
@@ -195,7 +201,10 @@ async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
     await repository.commit(db)
 
     for resume in resumes:
-        tasks.enqueue_extraction(resume.id)
+        if resume.processing_step in tasks.AI_STEPS:
+            tasks.enqueue_analysis(resume.id)
+        else:
+            tasks.enqueue_extraction(resume.id)
 
     return len(resumes)
 

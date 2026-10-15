@@ -3,7 +3,8 @@
 The Celery tasks :func:`publish_resume_event` on two channels: ``resume:status:<resume id>`` (no
 subscriber today) and ``resume:all_updates``, which :func:`campaign_event_stream` forwards to
 SSE clients. The payload is ``{"resume_id": ..., "status": ..., **extra}``; its shape per status
-is pinned by ``tests/characterization/test_sse.py``.
+is pinned by ``tests/characterization/test_sse.py``. Since E0-16 the ``done`` event also carries
+``person_id`` and ``matched_existing`` (additive; no other event knows the Person yet).
 """
 
 import asyncio
