@@ -46,7 +46,8 @@ async def test_api_v1_health_does_not_exist(
     client: AsyncClient, snapshot: SnapshotAssertion
 ) -> None:
     # BUG (recorded): /api/v1/health is listed as an endpoint but is not routed. The only
-    # health routes are /health and /health/ready (app/api/__init__.py defines an unused router).
+    # health routes are /health and /health/ready (app/api/__init__.py used to define an unused
+    # /api/v1 router; E0-09 removed it).
     resp = await client.get(f"{API}/health")
     assert response_data(resp) == snapshot
 
