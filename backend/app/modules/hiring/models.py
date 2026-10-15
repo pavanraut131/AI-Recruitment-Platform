@@ -1,8 +1,9 @@
 """hiring ORM models: ``Campaign``, ``Candidate``, ``Application`` and ``LegacyCandidateMap``.
 
 Tables ``campaigns``, ``candidates`` (legacy, dropped in phase 5 of spec §6.1), ``applications``
-and ``legacy_candidate_map`` (both created by the E0-14 expand migration; nothing writes them
-until E0-16/E0-17).
+and ``legacy_candidate_map`` (both created by the E0-14 expand migration). Since E0-16 the upload
+pipeline writes ``applications`` through ``service.upsert_application`` (dual write, spec §6.1);
+nothing reads them yet.
 
 Private to the hiring module: other modules use ``app.modules.hiring.service`` instead.
 
@@ -146,6 +147,13 @@ class Application(Base):
     # Ingestion-owned resume submitted for this application (no foreign key, ADR 0003). Indexed
     # for resume -> application lookups (dual write, deletes, the spec §6.3 verification).
     resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    # When ``resume_id`` was uploaded: ingestion's ``resumes.uploaded_at``, copied here because
+    # hiring may not read that table. It decides whether a later resume replaces the scoring
+    # (``service.upsert_application``). Added by the E0-16 expand migration, hence nullable; a
+    # row without it counts as older than any resume.
+    resume_uploaded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # AI insights (as in candidates)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
