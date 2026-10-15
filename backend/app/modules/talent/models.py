@@ -1,15 +1,16 @@
-"""talent ORM models: ``Person``, ``PersonIdentifier`` and ``IdentityConflict``.
+"""talent ORM models: ``Person``, ``PersonIdentifier``, ``IdentityConflict`` and ``PersonResume``.
 
-Tables ``people``, ``person_identifiers`` and ``identity_conflicts`` (EPIC-00 spec §4, ADR 0002,
-ADR 0004). Private to the talent module: other modules use ``app.modules.talent.service``.
+Tables ``people``, ``person_identifiers``, ``identity_conflicts`` (EPIC-00 spec §4, ADR 0002,
+ADR 0004) and ``person_resumes`` (E0-15). Private to the talent module: other modules use ``app.modules.talent.service``.
 
 Foreign keys exist only *within* talent (identifiers and conflicts -> ``people``). References to
 other modules' tables are plain UUID columns with no foreign key and no ORM relationship
 (ADR 0003): ``people.latest_resume_id``, ``person_identifiers.source_resume_id`` and
-``identity_conflicts.resume_id`` all point at ingestion's ``resumes`` table.
+``identity_conflicts.resume_id`` and ``person_resumes.resume_id`` all point at ingestion's
+``resumes`` table.
 
-Created by the E0-14 expand migration. Nothing writes these tables yet; ``resolve_person``
-(E0-15) is the only intended writer.
+Created by the E0-14 expand migration (``person_resumes`` by the E0-15 one).
+``app.modules.talent.service.resolve_person`` is the only writer.
 """
 
 import uuid
@@ -126,3 +127,33 @@ class IdentityConflict(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PersonResume(Base):
+    """Which Person a resume was resolved to: one row per resolved resume (E0-15).
+
+    Talent's own record of every ``resolve_person`` decision. It makes resolution idempotent per
+    resume (a retried pipeline step gets the same answer, even for a resume with no usable
+    identifiers) and gives each resume's ``uploaded_at``, which the profile refresh compares
+    against (spec §5.3). ``resumes.person_id`` holds the same link on the ingestion side, but
+    talent may not read another module's table (spec §3).
+    """
+
+    __tablename__ = "person_resumes"
+
+    # Ingestion-owned resume (no foreign key, ADR 0003).
+    resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    matched_existing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    conflict_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("identity_conflicts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
