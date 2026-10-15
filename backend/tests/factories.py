@@ -20,9 +20,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.campaign import Campaign
-from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.modules.hiring.models import Campaign, Candidate
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 

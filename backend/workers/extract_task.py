@@ -13,8 +13,8 @@ from celery import Task
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.modules.hiring.models import Candidate
 from app.platform import storage
 from app.platform.celery_app import celery_app
 from app.platform.config import settings

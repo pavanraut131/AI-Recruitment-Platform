@@ -150,10 +150,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 .
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/           # FastAPI routers
-│   │   │   ├── campaigns.py  # Campaign CRUD + stats
-│   │   │   ├── resumes.py    # Bulk upload + SSE stream
-│   │   │   └── candidates.py # Candidate listing + filters
+│   │   ├── api/v1/
+│   │   │   └── resumes.py    # Bulk upload + SSE stream (moves to modules/ingestion in E0-10)
 │   │   ├── platform/         # Shared kernel (no imports from modules/)
 │   │   │   ├── config.py     # Pydantic settings
 │   │   │   ├── database.py   # Async SQLAlchemy
@@ -161,10 +159,16 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   │   │   ├── logging.py    # structlog setup
 │   │   │   └── celery_app.py # Celery factory + routing
 │   │   ├── modules/          # Domain modules: talent, hiring, ingestion, ai (EPIC-00 §3)
+│   │   │   └── hiring/       # Campaigns, candidates, stats, JD parsing
+│   │   │       ├── router.py     # Thin HTTP layer (campaigns, candidates, stats, parse-jd)
+│   │   │       ├── service.py    # Public interface + business rules
+│   │   │       ├── repository.py # Queries
+│   │   │       ├── models.py     # Campaign, Candidate ORM models
+│   │   │       └── schemas.py    # Request/response schemas
 │   │   ├── devtools/         # Dev-only scripts; never imported by app code
 │   │   ├── core/             # Re-export shims for the old platform paths (until E0-10)
-│   │   ├── models/           # SQLAlchemy ORM models
-│   │   ├── schemas/          # Pydantic schemas
+│   │   ├── models/           # Resume ORM model (until E0-10)
+│   │   ├── schemas/          # Resume schemas + Gemini contracts (until E0-10)
 │   │   ├── services/
 │   │   │   ├── gemini.py     # Gemini extraction + scoring
 │   │   │   └── pdf.py        # pdfplumber + PyMuPDF
