@@ -6,7 +6,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.campaign import Campaign
+from app.modules.hiring.models import Campaign
 from app.platform.sql import escape_like
 from tests.factories import at, make_campaign, make_candidate, make_resume
 

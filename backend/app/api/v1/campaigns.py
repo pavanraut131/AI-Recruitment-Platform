@@ -5,11 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.campaign import Campaign
-from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.schemas import (
+    CampaignCreate,
+    CampaignResponse,
+    CampaignStats,
+    CampaignUpdate,
+)
 from app.platform.database import get_db
-from app.schemas.campaign import CampaignCreate, CampaignResponse, CampaignStats, CampaignUpdate
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])

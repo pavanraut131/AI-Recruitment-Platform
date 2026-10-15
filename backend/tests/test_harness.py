@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.models.campaign import Campaign
+from app.modules.hiring.models import Campaign
 from app.platform import storage
 from tests import postgres
 from tests.fakes import CeleryRecorder, InMemoryStorage

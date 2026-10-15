@@ -3,8 +3,8 @@ import json
 import google.generativeai as genai
 import structlog
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from app.modules.hiring.schemas import JDParseRequest, JDParseResponse
 from app.platform.config import settings
 
 logger = structlog.get_logger()
@@ -12,16 +12,6 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
-
-
-class JDParseRequest(BaseModel):
-    job_description: str
-
-
-class JDParseResponse(BaseModel):
-    role_title: str
-    seniority: str
-    skills: list[str]
 
 
 # str.format template: literal braces are escaped as {{ }}. The only placeholder is

@@ -5,36 +5,28 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy import and_, column, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.candidate import Candidate
 from app.models.resume import Resume
-from app.platform.database import get_db
-from app.platform.sql import LIKE_ESCAPE, escape_like
-from app.schemas.candidate import (
+from app.modules.hiring.models import Candidate
+from app.modules.hiring.schemas import (
+    BulkDeleteRequest,
+    BulkPipelineUpdate,
     CandidateCategoryUpdate,
     CandidateDetail,
     CandidateListItem,
     CandidateNotesUpdate,
     CandidatePipelineUpdate,
 )
+from app.platform.database import get_db
+from app.platform.sql import LIKE_ESCAPE, escape_like
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["candidates"])
 
 VALID_CATEGORIES = {"strong_match", "moderate_match", "weak_match", "rejected"}
 VALID_PIPELINE_STAGES = {"screened", "phone_call", "technical", "offer", "hired", "rejected_manual"}
-
-
-class BulkPipelineUpdate(BaseModel):
-    candidate_ids: list[uuid.UUID]
-    stage: str
-
-
-class BulkDeleteRequest(BaseModel):
-    candidate_ids: list[uuid.UUID]
 
 
 # ── Helper ────────────────────────────────────────────────────

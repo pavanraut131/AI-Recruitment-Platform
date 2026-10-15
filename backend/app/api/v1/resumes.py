@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from app.models.campaign import Campaign
 from app.models.resume import Resume
+from app.modules.hiring.models import Campaign
 from app.platform import storage
 from app.platform.config import settings
 from app.platform.database import get_db

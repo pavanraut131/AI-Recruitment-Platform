@@ -122,9 +122,8 @@ from faker import Faker
 from sqlalchemy import create_engine, delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from app.models.campaign import Campaign
-from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.modules.hiring.models import Campaign, Candidate
 from app.platform.config import settings
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)

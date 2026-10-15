@@ -15,9 +15,8 @@ from google.api_core.exceptions import ResourceExhausted
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models.campaign import Campaign
-from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.modules.hiring.models import Campaign, Candidate
 from app.platform.celery_app import celery_app
 from app.platform.config import settings
 from app.services.gemini import extract_candidate_info, is_resume_content, score_candidate

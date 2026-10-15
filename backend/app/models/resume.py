@@ -9,8 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.platform.database import Base
 
 if TYPE_CHECKING:
-    from app.models.campaign import Campaign
-    from app.models.candidate import Candidate
+    from app.modules.hiring.models import Campaign, Candidate
 
 
 class ResumeStatus(str):
