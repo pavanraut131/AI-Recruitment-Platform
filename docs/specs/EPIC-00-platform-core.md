@@ -72,10 +72,11 @@ Each module owns its tables. No module queries another module's tables directly.
 |---|---|---|
 | id | UUID PK | |
 | person_id | UUID FK → people, on delete cascade | |
-| kind | varchar(10) | `email` or `phone` |
+| kind | varchar(10) | `email` or `phone` (CHECK constraint) |
 | value_normalized | varchar(320) | |
 | raw_value | varchar(320) | Value as written on the resume |
 | source_resume_id | UUID null | |
+| inferred | boolean, default false | The phone's country was only inferred from `PHONE_DEFAULT_REGION` and it is not a mobile number. Stored, but never auto-matches on its own (Sprint 3 decision, option A; ADR 0004 amendment in E0-15). |
 | created_at | timestamptz | |
 | | | **UNIQUE(kind, value_normalized)**. Becomes `(agency_id, kind, value_normalized)` in E2. |
 
@@ -96,7 +97,7 @@ Each module owns its tables. No module queries another module's tables directly.
 | created_at, updated_at | timestamptz | |
 | | | **UNIQUE(campaign_id, person_id)** |
 
-**`legacy_candidate_map`**: candidate_id (PK) → application_id. This redirects the IDs of legacy candidates that were merged into another application.
+**`legacy_candidate_map`**: candidate_id (PK) → application_id (FK → applications, on delete cascade; candidate_id has no FK so the map outlives `candidates`). This redirects the IDs of legacy candidates that were merged into another application.
 
 ### ingestion
 
@@ -107,6 +108,8 @@ Each module owns its tables. No module queries another module's tables directly.
 - `processing_step varchar(20) null`: one of `extract_text`, `extract_profile`, `resolve_person`, `score`, `save`. It records the current step while processing and the failed step after a failure.
 
 The **status values stay the same** (`pending | extracting | processing | done | failed | quota_exceeded`) because the frontend depends on them (`UploadZone.tsx`). Step-level detail goes in `processing_step` instead.
+
+**`backfill_checkpoints`** (new): name (PK), last_created_at, last_id, updated_at. One row per batch job: the keyset position of the last committed batch (§6.2).
 
 ### Cross-module references
 
