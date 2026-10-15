@@ -33,12 +33,13 @@ Next.js (Frontend) → FastAPI (Backend) → Celery Workers → Gemini AI
 
 ### 1. Prerequisites
 - Docker + Docker Compose
-- Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
+- Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey)), or set
+  `AI_PROVIDER=fake` to run without Gemini
 
 ### 2. Configure environment
 ```bash
 cp .env.example .env
-# Edit .env and set your GEMINI_API_KEY
+# Edit .env and set your GEMINI_API_KEY (or AI_PROVIDER=fake to run without one)
 ```
 
 If a default host port (5432, 6379, 9000, 9001, 8000, 3000, 5555) is already
@@ -229,7 +230,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 | Variable | Description | Default |
 |---|---|---|
 | `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
-| `GEMINI_API_KEY` | **Required** — Google Gemini API key (any value with `AI_PROVIDER=fake`) | — |
+| `GEMINI_API_KEY` | Google Gemini API key. **Required** when `AI_PROVIDER=gemini` (start-up fails with a clear error without it); not needed with `AI_PROVIDER=fake` | — |
 | `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
 | `DATABASE_URL` | Async PostgreSQL URL | — |
 | `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
