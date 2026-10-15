@@ -390,6 +390,22 @@ def test_normalize_phone_is_idempotent(raw: str, region: str) -> None:
         assert normalize_phone(once, "IN") == once
 
 
+def test_unicode_digits_normalise_to_ascii_e164() -> None:
+    devanagari = "९८७६५४३२१०"  # 9876543210
+    assert normalize_phone(devanagari, "IN") == INDIAN_MOBILE_E164
+
+
+def test_normalising_any_country_code_imports_nothing_once_metadata_is_loaded() -> None:
+    """Regression guard for the E0-13 flake: no lazy metadata import inside a timed example."""
+    calling_codes = sorted(phonenumbers.COUNTRY_CODE_TO_REGION_CODE)
+    before = set(sys.modules)
+    for code in calling_codes:
+        for region in ("IN", "US", "GB"):
+            normalize_phone(f"+{code}9995551234", region)
+            normalize_phone(f"+{code}12345678", region)
+    assert set(sys.modules) - before == set()
+
+
 # Not every 10-digit number starting 6-9 is a mobile (some 6x ranges are landlines).
 _typed_indian_mobile = _indian_mobile.filter(
     lambda digits: (phone := classify_phone("+91" + digits, "IN")) is not None and phone.is_mobile
