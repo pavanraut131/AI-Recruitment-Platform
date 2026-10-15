@@ -111,14 +111,15 @@ uv sync                 # creates .venv from uv.lock (incl. dev tools); install 
 source .venv/bin/activate
 pre-commit install      # optional: run ruff + mypy + import-linter on every commit (make lint / format / typecheck / test)
 
-# Start services locally (need redis + postgres + minio running)
+# Start services locally (need redis + postgres + minio running).
+# AI_PROVIDER=fake runs the whole pipeline without a Gemini key (deterministic answers).
 uvicorn app.main:app --reload --port 8000
 
 # Worker 1 (PDF extraction)
-celery -A workers.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info
+celery -A app.platform.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info
 
 # Worker 2 (AI processing)
-celery -A workers.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info
+celery -A app.platform.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info
 ```
 
 ### Backend tests
@@ -128,7 +129,8 @@ make test               # or, from backend/: uv run pytest
 Tests need only **Docker** running. The session starts a throwaway `pgvector/pgvector:pg16`
 container with [testcontainers](https://testcontainers.com/), runs `alembic upgrade head` on it,
 and wraps every test in a transaction that is rolled back. Celery dispatch, MinIO, Redis and
-Gemini are replaced with in-memory fakes; no Redis, MinIO or Gemini access is needed. Coverage is
+Gemini are replaced with in-memory fakes; no Redis, MinIO or Gemini access is needed (tests that
+don't pin Gemini specifics use `AI_PROVIDER=fake` through the `fake_ai` fixture). Coverage is
 printed after each run. Fixtures are documented at the top of `backend/tests/conftest.py`.
 
 `backend/tests/characterization/` holds snapshot tests that record what every API endpoint
@@ -150,33 +152,40 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 .
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/
-│   │   │   └── resumes.py    # Bulk upload + SSE stream (moves to modules/ingestion in E0-10)
 │   │   ├── platform/         # Shared kernel (no imports from modules/)
 │   │   │   ├── config.py     # Pydantic settings
 │   │   │   ├── database.py   # Async SQLAlchemy
 │   │   │   ├── storage.py    # MinIO/S3 abstraction
 │   │   │   ├── logging.py    # structlog setup
-│   │   │   └── celery_app.py # Celery factory + routing
-│   │   ├── modules/          # Domain modules: talent, hiring, ingestion, ai (EPIC-00 §3)
-│   │   │   └── hiring/       # Campaigns, candidates, stats, JD parsing
-│   │   │       ├── router.py     # Thin HTTP layer (campaigns, candidates, stats, parse-jd)
-│   │   │       ├── service.py    # Public interface + business rules
-│   │   │       ├── repository.py # Queries
-│   │   │       ├── models.py     # Campaign, Candidate ORM models
-│   │   │       └── schemas.py    # Request/response schemas
+│   │   │   └── celery_app.py # Celery app + routing (`celery -A app.platform.celery_app`)
+│   │   ├── modules/          # Domain modules (EPIC-00 §3); each exposes service.py + schemas.py
+│   │   │   ├── hiring/       # Campaigns, candidates, stats, JD parsing
+│   │   │   │   ├── router.py     # Thin HTTP layer (campaigns, candidates, parse-jd)
+│   │   │   │   ├── service.py    # Public interface + business rules
+│   │   │   │   ├── repository.py # Queries
+│   │   │   │   ├── models.py     # Campaign, Candidate ORM models
+│   │   │   │   └── schemas.py    # Request/response schemas
+│   │   │   ├── ingestion/    # Upload pipeline
+│   │   │   │   ├── router.py     # Upload, resume list/detail, retry-failed, SSE stream
+│   │   │   │   ├── service.py    # Public interface (upload, resume counts/deletes)
+│   │   │   │   ├── repository.py # Queries on resumes
+│   │   │   │   ├── models.py     # Resume ORM model
+│   │   │   │   ├── schemas.py    # Request/response schemas
+│   │   │   │   ├── tasks.py      # Celery: PDF → text → AI → candidate
+│   │   │   │   ├── events.py     # Redis pub/sub progress events (SSE source)
+│   │   │   │   ├── pdf.py        # pdfplumber + PyMuPDF
+│   │   │   │   └── reset_stuck.py # Ops: re-queue stuck resumes
+│   │   │   ├── ai/           # All LLM access, behind the AIService protocol
+│   │   │   │   ├── service.py    # AIService, errors, get_ai_service() (AI_PROVIDER)
+│   │   │   │   ├── schemas.py    # ExtractionResult, ScoringResult, JDParseResult
+│   │   │   │   ├── gemini.py     # Google Gemini implementation
+│   │   │   │   ├── fake.py       # Deterministic offline implementation (AI_PROVIDER=fake)
+│   │   │   │   └── prompts.py    # Prompt templates
+│   │   │   └── talent/       # People and identity matching (identity.py so far)
+│   │   ├── api/              # Composition layer: endpoints spanning several modules
+│   │   │   └── routes.py     # Campaign/global stats, candidate deletes
 │   │   ├── devtools/         # Dev-only scripts; never imported by app code
-│   │   ├── core/             # Re-export shims for the old platform paths (until E0-10)
-│   │   ├── models/           # Resume ORM model (until E0-10)
-│   │   ├── schemas/          # Resume schemas + Gemini contracts (until E0-10)
-│   │   ├── services/
-│   │   │   ├── gemini.py     # Gemini extraction + scoring
-│   │   │   └── pdf.py        # pdfplumber + PyMuPDF
 │   │   └── main.py           # FastAPI app + lifespan
-│   ├── workers/
-│   │   ├── celery_app.py     # Shim: `celery -A workers.celery_app` (until E0-10)
-│   │   ├── extract_task.py   # Worker 1: PDF → text
-│   │   └── ai_task.py        # Worker 2: text → Gemini → score
 │   └── alembic/              # Database migrations
 ├── frontend/
 │   └── src/
@@ -219,7 +228,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 
 | Variable | Description | Default |
 |---|---|---|
-| `GEMINI_API_KEY` | **Required** — Google Gemini API key | — |
+| `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
+| `GEMINI_API_KEY` | **Required** — Google Gemini API key (any value with `AI_PROVIDER=fake`) | — |
 | `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
 | `DATABASE_URL` | Async PostgreSQL URL | — |
 | `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
