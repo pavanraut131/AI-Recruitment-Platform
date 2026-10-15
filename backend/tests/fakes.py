@@ -55,7 +55,7 @@ class CeleryRecorder:
         return call
 
     def for_task(self, name: str) -> list[CeleryCall]:
-        """Calls for one task, by full name, e.g. ``"workers.extract_task.extract_resume"``."""
+        """Calls for one task, by its registered name, e.g. ``tasks.EXTRACT_TASK_NAME``."""
         return [c for c in self.calls if c.task == name]
 
     def __len__(self) -> int:

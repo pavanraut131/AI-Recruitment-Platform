@@ -7,11 +7,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.modules.hiring.models import Campaign
+from app.modules.ingestion.tasks import extract_resume, process_candidate_ai
 from app.platform import storage
 from tests import postgres
 from tests.fakes import CeleryRecorder, InMemoryStorage
-from workers.ai_task import process_candidate_ai
-from workers.extract_task import extract_resume
 
 
 async def test_migrations_are_at_head(db_session: AsyncSession) -> None:

@@ -6,10 +6,9 @@ celery_app = Celery(
     "resumeai",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=[
-        "workers.extract_task",
-        "workers.ai_task",
-    ],
+    # Imported by worker processes at startup (a string, so platform imports no module). The
+    # task names below predate the module layout and are kept on purpose; see that module.
+    include=["app.modules.ingestion.tasks"],
 )
 
 celery_app.conf.update(

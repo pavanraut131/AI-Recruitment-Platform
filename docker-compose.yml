@@ -83,7 +83,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: resumeai_worker_extract
-    command: celery -A workers.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info -n extract@%h
+    command: celery -A app.platform.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info -n extract@%h
     env_file: .env
     volumes:
       - ./backend:/app
@@ -100,7 +100,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: resumeai_worker_ai
-    command: celery -A workers.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info -n ai@%h
+    command: celery -A app.platform.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info -n ai@%h
     env_file: .env
     volumes:
       - ./backend:/app
@@ -115,7 +115,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: resumeai_beat
-    command: celery -A workers.celery_app beat --loglevel=info
+    command: celery -A app.platform.celery_app beat --loglevel=info
     env_file: .env
     volumes:
       - ./backend:/app
@@ -128,7 +128,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: resumeai_flower
-    command: celery -A workers.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    command: celery -A app.platform.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
     env_file: .env
     ports:
       - "${FLOWER_HOST_PORT:-5555}:5555"

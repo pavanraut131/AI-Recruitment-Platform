@@ -35,11 +35,10 @@ Fixtures
         ``delete_file``, ``get_presigned_url`` and ``ensure_bucket_exists`` in
         ``app.platform.storage`` (and the direct import in ``app.main``). ``get_s3_client`` is
         made to raise, so any path that bypasses the fake fails loudly instead of reaching the
-        network. Patch where the code looks the names up: the ``app.core.storage`` shim only
-        re-binds them at import, so patching it would not reach the app.
+        network. Patch where the code looks the names up (``app.platform.storage``).
     ``fake_redis`` (function, autouse)
-        :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the workers'
-        ``_publish_sse_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
+        :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the Celery
+        tasks' ``publish_resume_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
         fakeredis clients on one in-memory server per test, so a sync ``publish`` reaches an async
         subscriber. Set ``fake_redis.server.connected = False`` to simulate Redis being down.
     ``fake_gemini`` (function, autouse)
@@ -158,8 +157,7 @@ def celery_calls(monkeypatch: pytest.MonkeyPatch) -> CeleryRecorder:
         return recorder.record(self.name, args, kwargs, task_id, **options)
 
     # Make sure every project task is registered, then patch the shared base class.
-    import workers.ai_task  # noqa: F401
-    import workers.extract_task  # noqa: F401
+    import app.modules.ingestion.tasks  # noqa: F401
 
     monkeypatch.setattr(Task, "apply_async", fake_apply_async)
     return recorder
