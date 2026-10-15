@@ -16,7 +16,12 @@ import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
-from app.modules.talent.identity import normalize_email, normalize_phone
+from app.modules.talent.identity import (
+    PhoneIdentity,
+    classify_phone,
+    normalize_email,
+    normalize_phone,
+)
 from app.platform.config import Settings
 
 # Per-example deadline. With all metadata loaded up front a warm example is well under 1 ms of
@@ -150,6 +155,110 @@ INDIAN_MOBILE_E164 = "+919876543210"
 )
 def test_normalize_phone(raw: str | None, region: str, expected: str | None) -> None:
     assert normalize_phone(raw, region) == expected
+
+
+# ── Phone classification (ADR 0004 amendment, option A) ──────────────────────
+
+
+@pytest.mark.parametrize(
+    ("raw", "region", "expected"),
+    [
+        # Explicit country code: "+" or an international dialling prefix
+        pytest.param(
+            "+1 415 555 2671",
+            "IN",
+            PhoneIdentity("+14155552671", explicit_country_code=True, is_mobile=True),
+            id="us-plus",
+        ),
+        pytest.param(
+            "+91 98765 43210",
+            "IN",
+            PhoneIdentity(INDIAN_MOBILE_E164, explicit_country_code=True, is_mobile=True),
+            id="in-mobile-plus",
+        ),
+        pytest.param(
+            "(+91) 9876543210",
+            "IN",
+            PhoneIdentity(INDIAN_MOBILE_E164, explicit_country_code=True, is_mobile=True),
+            id="in-mobile-plus-parens",
+        ),
+        pytest.param(
+            "0091 98765 43210",
+            "IN",
+            PhoneIdentity(INDIAN_MOBILE_E164, explicit_country_code=True, is_mobile=True),
+            id="in-mobile-idd",
+        ),
+        pytest.param(
+            "+91 80 2222 3333",
+            "IN",
+            PhoneIdentity("+918022223333", explicit_country_code=True, is_mobile=False),
+            id="in-landline-plus",
+        ),
+        pytest.param(
+            "011 1 415 555 2671",
+            "US",
+            PhoneIdentity("+14155552671", explicit_country_code=True, is_mobile=True),
+            id="us-idd-from-us",
+        ),
+        # Region inferred: mobiles stay match-eligible, landlines do not
+        pytest.param(
+            "9876543210",
+            "IN",
+            PhoneIdentity(INDIAN_MOBILE_E164, explicit_country_code=False, is_mobile=True),
+            id="in-mobile-bare",
+        ),
+        pytest.param(
+            "09876543210",
+            "IN",
+            PhoneIdentity(INDIAN_MOBILE_E164, explicit_country_code=False, is_mobile=True),
+            id="in-mobile-trunk-zero",
+        ),
+        pytest.param(
+            "080 2222 3333",
+            "IN",
+            PhoneIdentity("+918022223333", explicit_country_code=False, is_mobile=False),
+            id="in-landline-bare",
+        ),
+        # The E0-11 finding: a US number read as a valid Indian landline
+        pytest.param(
+            "(415) 555-2671",
+            "IN",
+            PhoneIdentity("+914155552671", explicit_country_code=False, is_mobile=False),
+            id="us-national-region-in",
+        ),
+        # US/CA numbers are FIXED_LINE_OR_MOBILE, which counts as mobile
+        pytest.param(
+            "(415) 555-2671",
+            "US",
+            PhoneIdentity("+14155552671", explicit_country_code=False, is_mobile=True),
+            id="us-national-region-us",
+        ),
+        pytest.param(
+            "020 7183 8750",
+            "GB",
+            PhoneIdentity("+442071838750", explicit_country_code=False, is_mobile=False),
+            id="gb-landline-bare",
+        ),
+        # Unusable -> None, exactly as normalize_phone
+        pytest.param(None, "IN", None, id="none"),
+        pytest.param("not a phone", "IN", None, id="garbage"),
+        pytest.param("12345", "IN", None, id="too-short"),
+        pytest.param("(415) 555-2671", "GB", None, id="invalid-for-region"),
+    ],
+)
+def test_classify_phone(raw: str | None, region: str, expected: PhoneIdentity | None) -> None:
+    assert classify_phone(raw, region) == expected
+
+
+@pytest.mark.parametrize(
+    ("explicit", "mobile", "eligible"),
+    [(True, True, True), (True, False, True), (False, True, True), (False, False, False)],
+)
+def test_phone_is_match_eligible_with_a_country_code_or_as_a_mobile(
+    explicit: bool, mobile: bool, eligible: bool
+) -> None:
+    phone = PhoneIdentity("+918022223333", explicit_country_code=explicit, is_mobile=mobile)
+    assert phone.match_eligible is eligible
 
 
 def test_phone_default_region_setting_defaults_to_india() -> None:
@@ -290,10 +399,26 @@ def test_normalising_any_country_code_imports_nothing_once_metadata_is_loaded() 
     """Regression guard for the E0-13 flake: no lazy metadata import inside a timed example."""
     calling_codes = sorted(phonenumbers.COUNTRY_CODE_TO_REGION_CODE)
     before = set(sys.modules)
-
     for code in calling_codes:
         for region in ("IN", "US", "GB"):
             normalize_phone(f"+{code}9995551234", region)
             normalize_phone(f"+{code}12345678", region)
-
     assert set(sys.modules) - before == set()
+
+
+# Not every 10-digit number starting 6-9 is a mobile (some 6x ranges are landlines).
+_typed_indian_mobile = _indian_mobile.filter(
+    lambda digits: (phone := classify_phone("+91" + digits, "IN")) is not None and phone.is_mobile
+)
+
+
+@PROPERTY_SETTINGS
+@given(st.data(), _typed_indian_mobile)
+def test_every_written_form_of_an_indian_mobile_is_match_eligible(
+    data: st.DataObject, digits: str
+) -> None:
+    written = data.draw(_formatted_indian_mobile(digits), label="written")
+    phone = classify_phone(written, "IN")
+    assert phone is not None
+    assert phone.e164 == "+91" + digits
+    assert phone.match_eligible

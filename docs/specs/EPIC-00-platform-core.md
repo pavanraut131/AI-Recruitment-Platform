@@ -82,6 +82,8 @@ Each module owns its tables. No module queries another module's tables directly.
 
 **`identity_conflicts`**: id, resume_id, chosen_person_id, conflicting_person_id, reason, created_at, resolved_at (null). This table is written in E0 and consumed in E6.
 
+**`person_resumes`** (added in E0-15): resume_id (PK, refers to an ingestion-owned resume, no foreign key), person_id (FK → people, on delete cascade, indexed), uploaded_at (timestamptz), matched_existing (boolean), conflict_id (FK → identity_conflicts, on delete set null, null), created_at. One row per resolved resume: it makes `resolve_person` idempotent per resume and records the upload time the profile refresh compares (§5.3). `resumes.person_id` holds the same link on the ingestion side, but talent may not read ingestion's table (§3).
+
 ### hiring
 
 **`applications`**
@@ -136,6 +138,7 @@ References between modules are stored as plain UUIDs **without** foreign key con
   - All other domains: no further changes.
   - Invalid addresses are discarded.
 - **Phone:** parse with `phonenumbers` using `PHONE_DEFAULT_REGION` (default `IN`) and store in E.164 format. Unparseable or invalid numbers are discarded.
+  - **Match-eligible or inferred** (`classify_phone`, [ADR 0004 amendment](../adr/0004-identity-matching-policy.md#amendment-2026-10-16-phone-numbers-without-a-country-code), option A): a phone is match-eligible if it was written with an explicit country code (`+…` or an international dialling prefix such as `00…`) or is a mobile number (`MOBILE` / `FIXED_LINE_OR_MOBILE`). Otherwise (a landline whose country was inferred from `PHONE_DEFAULT_REGION`, e.g. `(415) 555-2671` → `+914155552671`) it is stored with `inferred = true` and never matches.
 
 ### 5.3 Matching rules
 
@@ -146,13 +149,19 @@ References between modules are stored as plain UUIDs **without** foreign key con
 | Email and phone match different People | Attach to the email match and insert an `identity_conflicts` row. Never merge automatically. |
 | No usable identifiers | Create a new Person |
 
-**Profile refresh:** take the profile from the most recently *uploaded* resume. A field the new extraction lacks keeps its previous value.
+Only match-eligible identifiers take part in matching: every valid email, and match-eligible phones (§5.2). An inferred phone never matches and never causes a conflict, on the new resume or on a stored row. It is stored for the resolved Person unless the value already belongs to another Person (one owner per value; logged, not an error). An inferred row is confirmed (`inferred = false`) only when its own Person is matched on the email and the new resume writes the number in a match-eligible way.
+
+**Profile refresh:** take the profile from the most recently *uploaded* resume (`uploaded_at`, ties broken by resume id). A field the new extraction lacks (`null`, `""` or `[]`) keeps its previous value. A resume processed after a newer one never overwrites the newer values: it only fills fields that are still empty, and `latest_resume_id` keeps pointing at the newer resume.
+
+**Idempotent per resume:** a resume already resolved (a `person_resumes` row exists) returns the stored result and writes nothing, so a retried pipeline step cannot create a second Person, identifier or conflict.
 
 ### 5.4 Concurrency
 
-- `resolve_person` runs in one transaction.
-- It first takes `pg_advisory_xact_lock(hashtext(kind || ':' || value))` for each normalised identifier, in sorted order so that two workers cannot deadlock.
-- If an insert still hits `UNIQUE(kind, value_normalized)`, the transaction rolls back and resolution is retried once by re-reading.
+- `resolve_person` runs in the **caller's** transaction and never commits; the caller commits together with its own writes. It needs `READ COMMITTED` (the default), so that reads after a lock wait see what the previous holder committed.
+- It first takes `pg_advisory_xact_lock(hashtext(kind || ':' || value))` for each normalised identifier (match-eligible **and** inferred) plus `resume:<resume_id>`, before reading anything. The locks are taken in ascending order of the **lock id** (the `hashtext` value), not of the key text, so the order is global even when two keys hash to the same id; a transaction that holds a lock never waits for a lower one, so two workers cannot deadlock.
+- `hashtext` is a 32-bit hash, so different keys can collide. A collision only makes two unrelated resolutions wait for each other; correctness rests on `UNIQUE(kind, value_normalized)`, not on the locks being distinct.
+- After the advisory locks it locks at most one `people` row (the chosen Person, `FOR NO KEY UPDATE`, which does not block the `FOR KEY SHARE` taken by inserting a foreign key to it). Nothing it does after that waits on another resolution, so the row lock cannot close a cycle either.
+- Reads and writes run in a SAVEPOINT. If an insert still hits `UNIQUE(kind, value_normalized)` (only possible for a writer that bypasses `resolve_person`), it rolls back to the savepoint, re-reads and retries once; a second violation is raised to the caller.
 
 ### 5.5 Error handling
 
