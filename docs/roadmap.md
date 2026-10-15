@@ -35,7 +35,8 @@ Ordering notes:
 | Sprint | Dates | Goal | Status |
 |---|---|---|---|
 | [1](sprints/sprint-01.md) | 2026-10-13 (closed early) | Safety net & working CI: characterization tests on real Postgres, CI running on `master` | done |
-| [2](sprints/sprint-02.md) | 2026-10-14 → 10-20 | Modules in place: modular layout with enforced boundaries; parse-jd and skill filter fixed | planned |
+| [2](sprints/sprint-02.md) | 2026-10-14 → 10-15 | Modules in place: modular layout with enforced boundaries; parse-jd and skill filter fixed | done |
+| [3](sprints/sprint-03.md) | 2026-10-16 → 10-22 | People and applications side by side: expand, dual write, backfill, verify | planned |
 
 ## Out of scope for now
 
