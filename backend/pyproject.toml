@@ -40,6 +40,10 @@ dependencies = [
     "python-dotenv==1.0.1",
     "httpx==0.27.0",
     "tenacity==8.3.0",
+    # Seed data for local stacks (app.devtools.seed runs inside the backend image)
+    "faker==30.8.2",
+    # Identity normalisation (phone numbers -> E.164)
+    "phonenumbers==9.0.41",
 ]
 
 [dependency-groups]
@@ -49,6 +53,7 @@ dev = [
     "pytest-asyncio==0.23.7",
     "pytest-cov==7.1.0",
     "syrupy==6.1.1",  # snapshot tests (tests/characterization)
+    "hypothesis==6.169.0",  # property-based tests (tests/unit)
     "fakeredis==2.39.0",  # in-memory Redis for the SSE stream and /health/ready
     # Real Postgres (pgvector/pgvector:pg16) in Docker for the test session
     "testcontainers[postgres]==4.15.0",

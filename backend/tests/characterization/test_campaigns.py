@@ -340,6 +340,12 @@ JD = "Senior Python Engineer. 5+ years with FastAPI, PostgreSQL and AWS."
             id="fenced-json",
         ),
         pytest.param("{}", id="json-missing-keys"),
+        pytest.param('{"role_title": "Senior Python Engineer"}', id="json-partial-keys"),
+        pytest.param(
+            '{"role_title": "Senior Python Engineer", "seniority": "senior", "skills": "Python"}',
+            id="json-wrong-types",
+        ),
+        pytest.param('["Python", "FastAPI"]', id="json-not-object"),
         pytest.param("not json at all", id="invalid-json"),
         pytest.param(RuntimeError("Gemini unavailable"), id="gemini-error"),
     ],
@@ -350,14 +356,27 @@ async def test_parse_jd(
     snapshot: SnapshotAssertion,
     gemini_response: str | Exception,
 ) -> None:
-    # BUG (recorded): PROMPT contains literal JSON braces, so PROMPT.format() raises KeyError
-    # before Gemini is called; every request ends in the generic 500, whatever Gemini returns.
+    # Fixed in B1: this used to be a 500 for every request (PROMPT.format() raised KeyError
+    # before Gemini was called). A JSON object -> 200, missing keys fall back to defaults.
+    # Output that does not fit the response model (invalid JSON, not an object, wrong types)
+    # and Gemini errors -> the generic 500 "Failed to parse job description".
     fake_gemini.respond_with(gemini_response)
     resp = await client.post(f"{API}/campaigns/parse-jd", json={"job_description": JD})
     assert {
         "response": response_data(resp),
-        "gemini_calls": [{"model": c.model, "prompt": c.prompt} for c in fake_gemini.calls],
+        # The prompt does not depend on Gemini's answer; test_parse_jd_prompt records it once.
+        "gemini_calls": [{"model": c.model} for c in fake_gemini.calls],
     } == snapshot
+
+
+async def test_parse_jd_prompt(
+    client: AsyncClient, fake_gemini: FakeGemini, snapshot: SnapshotAssertion
+) -> None:
+    # The exact prompt sent to Gemini, as a list of lines: a multi-line string would be written
+    # with whitespace-only lines, which the trailing-whitespace pre-commit hook would strip.
+    fake_gemini.respond_with("{}")
+    await client.post(f"{API}/campaigns/parse-jd", json={"job_description": JD})
+    assert [c.prompt.splitlines() for c in fake_gemini.calls] == snapshot
 
 
 async def test_parse_jd_without_api_key(

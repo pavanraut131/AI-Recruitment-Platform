@@ -1332,75 +1332,6 @@
 # name: test_list_candidates[search-like-wildcard]
   dict({
     'body': list([
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': 'strong_match',
-        'created_at': '<datetime>',
-        'email': 'alice@example.com',
-        'id': '<uuid:2>',
-        'name': 'Alice Anderson',
-        'pipeline_stage': 'technical',
-        'resume_id': '<uuid:3>',
-        'score': 91.0,
-        'skills': list([
-          'Python',
-          'FastAPI',
-          'AWS',
-        ]),
-        'summary': 'Backend engineer with five years of Python API experience.',
-        'years_of_experience': 7.0,
-      }),
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': 'moderate_match',
-        'created_at': '<datetime>',
-        'email': 'bob@sample.org',
-        'id': '<uuid:4>',
-        'name': 'Bob Brown',
-        'pipeline_stage': 'screened',
-        'resume_id': '<uuid:5>',
-        'score': 74.0,
-        'skills': list([
-          'JavaScript',
-          'React',
-          'Node.js',
-        ]),
-        'summary': 'Backend engineer with five years of Python API experience.',
-        'years_of_experience': 3.0,
-      }),
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': 'weak_match',
-        'created_at': '<datetime>',
-        'email': 'carol@example.com',
-        'id': '<uuid:6>',
-        'name': 'Chen, Carol',
-        'pipeline_stage': None,
-        'resume_id': '<uuid:7>',
-        'score': 55.0,
-        'skills': list([
-          'Java',
-          'Spring',
-        ]),
-        'summary': 'Backend engineer with five years of Python API experience.',
-        'years_of_experience': 1.5,
-      }),
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': 'rejected',
-        'created_at': '<datetime>',
-        'email': 'dan@sample.org',
-        'id': '<uuid:8>',
-        'name': 'Dan Diaz',
-        'pipeline_stage': 'rejected_manual',
-        'resume_id': '<uuid:9>',
-        'score': 12.0,
-        'skills': list([
-          'PHP',
-        ]),
-        'summary': 'Backend engineer with five years of Python API experience.',
-        'years_of_experience': 0.0,
-      }),
     ]),
     'headers': dict({
       'content-type': 'application/json',
@@ -1460,7 +1391,7 @@
     'status_code': 422,
   })
 # ---
-# name: test_list_candidates_skill_filter_is_a_500[skill-empty-is-no-filter]
+# name: test_list_candidates_skill_filter[skill-empty-is-no-filter]
   dict({
     'body': list([
       dict({
@@ -1554,28 +1485,162 @@
     'status_code': 200,
   })
 # ---
-# name: test_list_candidates_skill_filter_is_a_500[skill-with-other-filters]
+# name: test_list_candidates_skill_filter[skill-json-syntax-not-matched]
   dict({
-    'body': dict({
-      'detail': 'Internal server error',
-      'path': 'http://test/api/v1/campaigns/<uuid:1>/candidates?skill=java&category=weak_match',
-    }),
+    'body': list([
+    ]),
     'headers': dict({
       'content-type': 'application/json',
     }),
-    'status_code': 500,
+    'status_code': 200,
   })
 # ---
-# name: test_list_candidates_skill_filter_is_a_500[skill]
+# name: test_list_candidates_skill_filter[skill-like-wildcard-escaped]
   dict({
-    'body': dict({
-      'detail': 'Internal server error',
-      'path': 'http://test/api/v1/campaigns/<uuid:1>/candidates?skill=python',
-    }),
+    'body': list([
+    ]),
     'headers': dict({
       'content-type': 'application/json',
     }),
-    'status_code': 500,
+    'status_code': 200,
+  })
+# ---
+# name: test_list_candidates_skill_filter[skill-mixed-case]
+  dict({
+    'body': list([
+      dict({
+        'campaign_id': '<uuid:1>',
+        'category': 'strong_match',
+        'created_at': '<datetime>',
+        'email': 'alice@example.com',
+        'id': '<uuid:2>',
+        'name': 'Alice Anderson',
+        'pipeline_stage': 'technical',
+        'resume_id': '<uuid:3>',
+        'score': 91.0,
+        'skills': list([
+          'Python',
+          'FastAPI',
+          'AWS',
+        ]),
+        'summary': 'Backend engineer with five years of Python API experience.',
+        'years_of_experience': 7.0,
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_candidates_skill_filter[skill-no-match]
+  dict({
+    'body': list([
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_candidates_skill_filter[skill-substring-of-element]
+  dict({
+    'body': list([
+      dict({
+        'campaign_id': '<uuid:1>',
+        'category': 'moderate_match',
+        'created_at': '<datetime>',
+        'email': 'bob@sample.org',
+        'id': '<uuid:2>',
+        'name': 'Bob Brown',
+        'pipeline_stage': 'screened',
+        'resume_id': '<uuid:3>',
+        'score': 74.0,
+        'skills': list([
+          'JavaScript',
+          'React',
+          'Node.js',
+        ]),
+        'summary': 'Backend engineer with five years of Python API experience.',
+        'years_of_experience': 3.0,
+      }),
+      dict({
+        'campaign_id': '<uuid:1>',
+        'category': 'weak_match',
+        'created_at': '<datetime>',
+        'email': 'carol@example.com',
+        'id': '<uuid:4>',
+        'name': 'Chen, Carol',
+        'pipeline_stage': None,
+        'resume_id': '<uuid:5>',
+        'score': 55.0,
+        'skills': list([
+          'Java',
+          'Spring',
+        ]),
+        'summary': 'Backend engineer with five years of Python API experience.',
+        'years_of_experience': 1.5,
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_candidates_skill_filter[skill-with-other-filters]
+  dict({
+    'body': list([
+      dict({
+        'campaign_id': '<uuid:1>',
+        'category': 'weak_match',
+        'created_at': '<datetime>',
+        'email': 'carol@example.com',
+        'id': '<uuid:2>',
+        'name': 'Chen, Carol',
+        'pipeline_stage': None,
+        'resume_id': '<uuid:3>',
+        'score': 55.0,
+        'skills': list([
+          'Java',
+          'Spring',
+        ]),
+        'summary': 'Backend engineer with five years of Python API experience.',
+        'years_of_experience': 1.5,
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_candidates_skill_filter[skill]
+  dict({
+    'body': list([
+      dict({
+        'campaign_id': '<uuid:1>',
+        'category': 'strong_match',
+        'created_at': '<datetime>',
+        'email': 'alice@example.com',
+        'id': '<uuid:2>',
+        'name': 'Alice Anderson',
+        'pipeline_stage': 'technical',
+        'resume_id': '<uuid:3>',
+        'score': 91.0,
+        'skills': list([
+          'Python',
+          'FastAPI',
+          'AWS',
+        ]),
+        'summary': 'Backend engineer with five years of Python API experience.',
+        'years_of_experience': 7.0,
+      }),
+    ]),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
   })
 # ---
 # name: test_list_candidates_unknown_campaign

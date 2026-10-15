@@ -24,15 +24,17 @@ class JDParseResponse(BaseModel):
     skills: list[str]
 
 
+# str.format template: literal braces are escaped as {{ }}. The only placeholder is
+# {job_description}; braces inside the substituted JD are not re-interpreted.
 PROMPT = """
 You are a technical recruiter. Extract the key information from this job description.
 
 Return ONLY valid JSON with this exact schema:
-{
+{{
   "role_title": "extracted job title",
   "seniority": "junior|mid|senior|staff",
   "skills": ["list", "of", "technical", "skills", "required"]
-}
+}}
 
 Rules:
 - skills: extract ONLY technical skills (languages, frameworks, tools, platforms)
@@ -48,6 +50,11 @@ Return ONLY valid JSON, no markdown, no explanation.
 """
 
 
+def build_prompt(job_description: str) -> str:
+    """Render PROMPT for one job description (which may itself contain braces)."""
+    return PROMPT.format(job_description=job_description)
+
+
 @router.post("/parse-jd", response_model=JDParseResponse)
 async def parse_job_description(payload: JDParseRequest):
     if not settings.GEMINI_API_KEY:
@@ -55,7 +62,7 @@ async def parse_job_description(payload: JDParseRequest):
 
     try:
         model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = PROMPT.format(job_description=payload.job_description)
+        prompt = build_prompt(payload.job_description)
 
         response = await model.generate_content_async(prompt)
         text = response.text.strip()
