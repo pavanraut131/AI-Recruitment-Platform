@@ -1,16 +1,16 @@
 """talent data access: the SQL behind ``talent.service``. Private to the talent module.
 
 Synchronous ``Session`` only: ``resolve_person`` runs in Celery workers and the backfill, which
-have no event loop (see ``app.modules.ingestion.tasks``).
+have no event loop (see ``app.modules.ingestion.tasks``); so do the verification reads at the end.
 """
 
 import uuid
 from collections.abc import Iterable, Sequence
 
-from sqlalchemy import select, text, tuple_
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 
-from app.modules.talent.models import Person, PersonIdentifier, PersonResume
+from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 
 
 def take_advisory_locks(session: Session, keys: Iterable[str]) -> list[int]:
@@ -73,3 +73,53 @@ def lock_person(session: Session, person_id: uuid.UUID) -> Person:
         .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     ).scalar_one()
+
+
+# ── Reads for the backfill verification (spec §6.3) ───────────
+def table_counts(session: Session) -> dict[str, int]:
+    def count(model: type[Person | PersonIdentifier | IdentityConflict | PersonResume]) -> int:
+        return session.execute(select(func.count()).select_from(model)).scalar_one()
+
+    return {
+        "people": count(Person),
+        "identifiers": count(PersonIdentifier),
+        "identity_conflicts": count(IdentityConflict),
+        "resolved_resumes": count(PersonResume),
+    }
+
+
+def person_ids(session: Session) -> set[uuid.UUID]:
+    return set(session.execute(select(Person.id)).scalars())
+
+
+def resolutions(session: Session) -> dict[uuid.UUID, uuid.UUID]:
+    rows = session.execute(select(PersonResume.resume_id, PersonResume.person_id)).tuples()
+    return {resume_id: person_id for resume_id, person_id in rows}
+
+
+def duplicate_identifiers(session: Session) -> list[tuple[str, str, int]]:
+    rows = session.execute(
+        select(PersonIdentifier.kind, PersonIdentifier.value_normalized, func.count())
+        .group_by(PersonIdentifier.kind, PersonIdentifier.value_normalized)
+        .having(func.count() > 1)
+    ).tuples()
+    return [(kind, value, n) for kind, value, n in rows]
+
+
+def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UUID]]:
+    has_identifier = select(PersonIdentifier.id).where(PersonIdentifier.person_id == Person.id)
+    rows = session.execute(
+        select(Person.id, PersonResume.resume_id)
+        .outerjoin(PersonResume, PersonResume.person_id == Person.id)
+        .where(~has_identifier.exists())
+    ).tuples()
+    people: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for person_id, resume_id in rows:
+        resumes = people.setdefault(person_id, [])
+        if resume_id is not None:
+            resumes.append(resume_id)
+    return people
+
+
+def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
+    return list(session.execute(select(IdentityConflict.resume_id)).scalars())

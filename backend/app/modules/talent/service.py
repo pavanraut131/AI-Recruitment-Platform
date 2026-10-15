@@ -2,7 +2,8 @@
 
 Other modules call :func:`resolve_person` (and use the types in ``app.modules.talent.schemas``);
 they never touch talent's tables. The callers are the upload pipeline (E0-16) and the backfill
-(E0-17), both running a synchronous ``Session``.
+(E0-17), both running a synchronous ``Session``. The backfill verification (E0-17) reads through
+the functions under "Reads for the backfill verification".
 
 Matching policy: ADR 0004 and its 2026-10-16 amendment (phones without a country code).
 
@@ -137,6 +138,53 @@ def get_resolution(session: Session, resume_id: uuid.UUID) -> ResolveResult | No
         matched_existing=done.matched_existing,
         conflict_id=done.conflict_id,
     )
+
+
+def has_match_eligible_identifier(
+    *, email: str | None, phone: str | None, default_region: str
+) -> bool:
+    """Whether a resume with these raw contact details has an identifier that can match a
+    Person (spec §5.3): a valid email, or a match-eligible phone (ADR 0004 amendment, option A).
+    An inferred phone does not count. Pure; used by the backfill verification (spec §6.3)."""
+    return any(not ident.inferred for ident in _normalise(email, phone, default_region))
+
+
+# ── Reads for the backfill verification (spec §6.3) ───────────
+@dataclass(frozen=True)
+class TalentCounts:
+    people: int
+    identifiers: int
+    identity_conflicts: int
+    resolved_resumes: int
+
+
+def counts(session: Session) -> TalentCounts:
+    return TalentCounts(**repository.table_counts(session))
+
+
+def person_ids(session: Session) -> set[uuid.UUID]:
+    return repository.person_ids(session)
+
+
+def resolutions(session: Session) -> dict[uuid.UUID, uuid.UUID]:
+    """``resume_id -> person_id`` for every resolved resume (``person_resumes``)."""
+    return repository.resolutions(session)
+
+
+def duplicate_identifiers(session: Session) -> list[tuple[str, str, int]]:
+    """``(kind, value_normalized, rows)`` stored more than once. Always empty while
+    ``UNIQUE(kind, value_normalized)`` exists; checked anyway, it is what matching relies on."""
+    return repository.duplicate_identifiers(session)
+
+
+def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """People with no stored identifier, each with the resumes resolved to them."""
+    return repository.people_without_identifiers(session)
+
+
+def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
+    """The resume of every ``identity_conflicts`` row (one entry per row)."""
+    return repository.identity_conflict_resume_ids(session)
 
 
 # ── Steps ─────────────────────────────────────────────────────
