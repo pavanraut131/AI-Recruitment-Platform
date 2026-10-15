@@ -9,7 +9,7 @@ Every language-model call in the app goes through an :class:`AIService`. Callers
   tests.
 
 Provider errors never leak out of this module: callers catch :class:`AIQuotaExceeded` (the
-provider's quota is used up; retrying soon will not help) and :class:`AIConfigurationError`
+provider's quota is used up; retry after its ``retry_after``) and :class:`AIConfigurationError`
 (the provider cannot be used as configured), so nothing outside ``app.modules.ai`` imports a
 provider SDK such as ``google.*`` (import-linter enforces it). Any other exception means the call
 failed (network, invalid model output, ...) and may be retried.
@@ -42,8 +42,16 @@ class AIConfigurationError(AIError):
 
 
 class AIQuotaExceeded(AIError):
-    """The provider's quota is exhausted (Gemini ``ResourceExhausted``), after the provider's own
-    retries. Do not retry right away."""
+    """The provider's quota is exhausted (Gemini ``ResourceExhausted``). Raised on the first
+    quota error, without waiting: the caller decides when to try again (spec §5.5).
+
+    ``retry_after`` is how many seconds the provider asked us to wait before retrying, when it
+    said so (Gemini's ``RetryInfo.retry_delay``), else ``None``.
+    """
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class AIService(Protocol):

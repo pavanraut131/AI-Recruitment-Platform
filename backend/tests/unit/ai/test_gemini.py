@@ -1,7 +1,7 @@
 """``GeminiAIService`` on top of the ``FakeGemini`` fixture (no network).
 
 Pins what the Gemini adapter sends (model, prompt), how it reads the answer, and how a quota
-error (``ResourceExhausted``) surfaces as ``AIQuotaExceeded`` after tenacity's retries.
+error (``ResourceExhausted``) surfaces as ``AIQuotaExceeded`` at once, with Google's retry delay.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from google.api_core.exceptions import ResourceExhausted
+from google.rpc.error_details_pb2 import RetryInfo
 
 from app.modules.ai import gemini, prompts
 from app.modules.ai.gemini import GeminiAIService
@@ -36,11 +37,10 @@ PROFILE = {
 
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Record tenacity's waits instead of sleeping (both retry layers of both functions)."""
+    """Record tenacity's waits instead of sleeping (both functions)."""
     recorded: list[float] = []
     for fn in (gemini.extract_candidate_info, gemini.score_candidate):
         monkeypatch.setattr(fn.retry, "sleep", recorded.append)  # type: ignore[attr-defined]
-        monkeypatch.setattr(fn.__wrapped__.retry, "sleep", recorded.append)  # type: ignore[attr-defined]
     return recorded
 
 
@@ -95,27 +95,66 @@ def test_score_overrides_the_category_from_the_score(
     assert json.dumps(PROFILE, indent=2) in prompt
 
 
-def test_quota_error_is_retried_then_raised_as_ai_quota_exceeded(
+def test_quota_error_is_raised_at_once_as_ai_quota_exceeded(
     fake_gemini: FakeGemini, sleeps: list[float]
 ) -> None:
     fake_gemini.respond_with(ResourceExhausted("429 quota"))
 
-    with pytest.raises(AIQuotaExceeded, match="quota"):
+    with pytest.raises(AIQuotaExceeded, match="quota") as raised:
         GeminiAIService().extract_profile("resume")
 
-    # 3 inner attempts (exponential backoff) x 3 outer rounds (65 s apart): unchanged policy.
-    assert len(fake_gemini.calls) == 9
-    assert sleeps.count(65) == 2
-    assert len(sleeps) == 3 * 2 + 2
+    # No retry and no wait here (E0-16, spec §5.5): the pipeline shows quota_exceeded and
+    # schedules the retry itself. (Before: 3 x 3 attempts, rounds 65 s apart.)
+    assert len(fake_gemini.calls) == 1
+    assert sleeps == []
+    assert raised.value.retry_after is None
 
 
 def test_score_quota_error_is_raised_as_ai_quota_exceeded(
     fake_gemini: FakeGemini, sleeps: list[float]
 ) -> None:
-    fake_gemini.respond_with(ResourceExhausted("429 quota"))
+    fake_gemini.respond_with(ResourceExhausted("429 quota", details=[_retry_info(43)]))
 
-    with pytest.raises(AIQuotaExceeded):
+    with pytest.raises(AIQuotaExceeded) as raised:
         GeminiAIService().score(ExtractionResult(), JobRequirements(role="Dev"))
+
+    assert len(fake_gemini.calls) == 1
+    assert raised.value.retry_after == 43.0
+
+
+def _retry_info(seconds: int, nanos: int = 0) -> RetryInfo:
+    info = RetryInfo()
+    info.retry_delay.seconds = seconds
+    info.retry_delay.nanos = nanos
+    return info
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        # gRPC: decoded google.rpc.RetryInfo
+        (ResourceExhausted("429", details=[_retry_info(43, 500_000_000)]), 43.5),
+        # REST: the detail as JSON
+        (
+            ResourceExhausted(
+                "429",
+                details=[
+                    {"@type": "type.googleapis.com/google.rpc.QuotaFailure"},
+                    {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "17s"},
+                ],
+            ),
+            17.0,
+        ),
+        # Only in the message
+        (ResourceExhausted("429 quota [retry_delay {\n  seconds: 9\n}\n]"), 9.0),
+        (ResourceExhausted("429 You exceeded your quota. Please retry in 31.2s."), 31.2),
+        (ResourceExhausted("429 quota"), None),
+    ],
+)
+def test_quota_retry_after_reads_googles_retry_delay(
+    error: ResourceExhausted, expected: float | None
+) -> None:
+    assert gemini.quota_retry_after(error) == expected
 
 
 def test_other_errors_are_retried_three_times_and_reraised(
