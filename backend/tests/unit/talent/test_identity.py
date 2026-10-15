@@ -1,15 +1,19 @@
 """Unit tests for identity normalisation (spec section 5.2; tricky cases from section 6.4).
 
-Pure functions, so no fixtures: the table-driven cases pin down each rule, and the Hypothesis
-properties check idempotence and that formatting variants collapse to one value.
+Pure functions: the table-driven cases pin down each rule, and the Hypothesis properties check
+idempotence and that formatting variants collapse to one value. The only fixture loads all of
+``phonenumbers``' metadata up front (see :func:`_all_phone_metadata_loaded`).
 """
 
 from __future__ import annotations
 
+import sys
+from collections.abc import Iterator
 from datetime import timedelta
 
+import phonenumbers
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from app.modules.talent.identity import (
@@ -20,14 +24,38 @@ from app.modules.talent.identity import (
 )
 from app.platform.config import Settings
 
-# Load phonenumbers' lazily-read metadata for the regions used below once, at import time, so
-# the first Hypothesis example doesn't pay for it and trip the deadline.
-normalize_phone("+919876543210", "IN")
-normalize_phone("+14155552671", "US")
-normalize_phone("+442071838750", "GB")
-
-# Generous per-example deadline for slow CI runners; each example is microseconds of work.
+# Per-example deadline. With all metadata loaded up front a warm example is well under 1 ms of
+# work; the margin covers first-use regex compilation and slow CI runners, not loading anything.
 PROPERTY_SETTINGS = settings(max_examples=200, deadline=timedelta(milliseconds=500))
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _all_phone_metadata_loaded() -> Iterator[None]:
+    """Load the metadata of every region and non-geographic code before any test runs.
+
+    ``phonenumbers`` imports a region's metadata module (``phonenumbers.data.region_XX``) the
+    first time it sees that region. Hypothesis times each example against the deadline, so an
+    example that is the first to reach a new country code pays for those imports inside the
+    timed call. The phone generators below reach any country code (``\\+[1-9][0-9]{6,14}``), and
+    a single ``+1`` number can import up to 25 modules (every region sharing calling code 1).
+    Warming only IN, US and GB, as this module used to, left all of that in the timed path.
+
+    That was the E0-13 flake in ``test_normalize_phone_is_idempotent``: reproduced with
+    ``--hypothesis-seed=9`` on a loaded machine as ``FlakyFailure: Unreliable test timings! On
+    an initial run, this test took 661.64ms, which exceeded the deadline of 500.00ms, but on a
+    subsequent run it took 0.68 ms`` for ``raw='+4749782259', region='GB'`` (the first ``+47``
+    number: Norway and Svalbard metadata). The property itself held on every input tried.
+
+    What stays in the timed path is CPU work in memory: ``phonenumbers`` compiles a region's
+    patterns on first use through ``re``'s bounded cache, which no fixture can pin. Measured
+    worst case with that cache purged before every example: about 10 ms, about 100 ms with
+    coverage tracing everything, so the 500 ms deadline keeps a wide margin.
+    """
+    phonenumbers.PhoneMetadata.load_all()
+    yield
+
+
+# ── Email ────────────────────────────────────────────────────────────────────
 
 # ── Email ────────────────────────────────────────────────────────────────────
 
@@ -328,9 +356,14 @@ def test_formatting_variants_of_an_indian_mobile_normalise_to_one_e164(
     assert normalize_phone(written, "IN") == "+91" + digits
 
 
+# phonenumbers accepts any Unicode decimal digit; resumes can contain Devanagari, Arabic-Indic
+# and full-width digits (and a full-width plus).
+_UNICODE_DIGITS = "".join(chr(zero + i) for zero in (0x0966, 0x0660, 0xFF10) for i in range(10))
+
 _phone_like = st.one_of(
     st.text(max_size=30),
     st.text("0123456789 +-()", max_size=20),
+    st.text("0123456789 +-" + _UNICODE_DIGITS + "＋", max_size=16),
     st.from_regex(r"\+[1-9][0-9]{6,14}", fullmatch=True),  # any country code
     _indian_mobile.flatmap(_formatted_indian_mobile),  # always valid
 )
@@ -338,12 +371,39 @@ _phone_like = st.one_of(
 
 @PROPERTY_SETTINGS
 @given(_phone_like, st.sampled_from(["IN", "US", "GB"]))
+# The input of the E0-13 timing flake: the first +47 number to be seen (see the fixture).
+@example("+4749782259", "GB")
+# The worst case for lazy metadata: a +1 number that matches none of the 25 NANPA regions.
+@example("+19995551234", "IN")
+# Edge cases worth pinning: extensions are dropped, so the result must still be stable.
+@example("+91 98765 43210 ext. 123", "IN")
+@example("+1 415 555 2671 x12", "GB")
+@example("+ 91 98765 43210", "US")  # space after the plus
+@example("९८७६५४३२१०", "IN")  # Devanagari
+@example("＋９１９８７６５４３２１０", "US")
+@example("9" * 30, "IN")  # far too long
 def test_normalize_phone_is_idempotent(raw: str, region: str) -> None:
     once = normalize_phone(raw, region)
     if once is not None:
         assert normalize_phone(once, region) == once
         # E.164 carries its country code, so the default region no longer matters.
         assert normalize_phone(once, "IN") == once
+
+
+def test_unicode_digits_normalise_to_ascii_e164() -> None:
+    devanagari = "९८७६५४३२१०"  # 9876543210
+    assert normalize_phone(devanagari, "IN") == INDIAN_MOBILE_E164
+
+
+def test_normalising_any_country_code_imports_nothing_once_metadata_is_loaded() -> None:
+    """Regression guard for the E0-13 flake: no lazy metadata import inside a timed example."""
+    calling_codes = sorted(phonenumbers.COUNTRY_CODE_TO_REGION_CODE)
+    before = set(sys.modules)
+    for code in calling_codes:
+        for region in ("IN", "US", "GB"):
+            normalize_phone(f"+{code}9995551234", region)
+            normalize_phone(f"+{code}12345678", region)
+    assert set(sys.modules) - before == set()
 
 
 # Not every 10-digit number starting 6-9 is a mobile (some 6x ranges are landlines).

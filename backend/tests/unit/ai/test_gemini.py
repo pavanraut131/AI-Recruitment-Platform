@@ -211,3 +211,22 @@ def test_transcribe_quota_error_is_raised_as_ai_quota_exceeded(fake_gemini: Fake
 
     with pytest.raises(AIQuotaExceeded):
         GeminiAIService().transcribe_page_images([b"png"])
+
+
+def test_sdk_is_configured_on_first_use_and_when_the_key_changes(
+    fake_gemini: FakeGemini, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import google.generativeai as genai
+
+    keys: list[str] = []
+    monkeypatch.setattr(genai, "configure", lambda *, api_key: keys.append(api_key))
+    monkeypatch.setattr(gemini, "_configured_key", None)  # as right after import
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key-1")
+
+    gemini._model()
+    gemini._model()
+    assert keys == ["key-1"]  # once, not per call
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key-2")
+    gemini._model()
+    assert keys == ["key-1", "key-2"]
