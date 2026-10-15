@@ -181,3 +181,35 @@ async def test_retry_failed_resets_and_requeues_failed_and_quota_exceeded(
         [str(failed.id), str(quota.id)]
     )
     assert await service.retry_failed(db_session, uuid.uuid4()) == 0
+
+
+@pytest.mark.parametrize(
+    ("processing_step", "task", "queue"),
+    [
+        (None, tasks.EXTRACT_TASK_NAME, "extract_queue"),  # from before processing_step existed
+        ("extract_text", tasks.EXTRACT_TASK_NAME, "extract_queue"),
+        ("extract_profile", tasks.AI_TASK_NAME, "ai_queue"),
+        ("score", tasks.AI_TASK_NAME, "ai_queue"),
+        ("resolve_person", tasks.AI_TASK_NAME, "ai_queue"),
+        ("save", tasks.AI_TASK_NAME, "ai_queue"),
+    ],
+)
+async def test_retry_failed_resumes_from_the_failed_step(
+    db_session: AsyncSession,
+    celery_calls: CeleryRecorder,
+    processing_step: str | None,
+    task: str,
+    queue: str,
+) -> None:
+    # Failed during AI analysis: the text is stored, so it goes straight back to the AI task,
+    # which skips the steps already done (spec §5.5).
+    campaign = await make_campaign(db_session)
+    resume = await make_resume(
+        db_session, campaign, status="failed", processing_step=processing_step
+    )
+
+    assert await service.retry_failed(db_session, campaign.id) == 1
+
+    assert [(c.task, c.args, c.options) for c in celery_calls.calls] == [
+        (task, (str(resume.id),), {"queue": queue})
+    ]

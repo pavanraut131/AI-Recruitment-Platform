@@ -94,6 +94,7 @@ Each module owns its tables. No module queries another module's tables directly.
 | campaign_id | UUID FK → campaigns, on delete cascade | |
 | person_id | UUID | Refers to talent (no cross-module foreign key) |
 | resume_id | UUID | The resume submitted for this application |
+| resume_uploaded_at | timestamptz null | Upload time of `resume_id` (added in E0-16): decides whether a later resume replaces the scoring, since hiring may not read `resumes`. Null counts as older than any resume. |
 | score, score_breakdown, category, summary, strengths, weaknesses, missing_skills, recommendation | as in `candidates` today | |
 | pipeline_stage, notes | as in `candidates` today | |
 | created_at, updated_at | timestamptz | |
@@ -125,10 +126,12 @@ References between modules are stored as plain UUIDs **without** foreign key con
 2. **`extract_text`** (extract_queue): convert the PDF to text, then enqueue `analyse_resume`.
 3. **`analyse_resume`** (ai_queue). Each step is safe to retry:
    1. `ai.extract_profile(text)` → store `resumes.extracted`. Skipped if already present.
-   2. `talent.resolve_person(identifiers, profile, resume_id)` → `person_id`. Skipped if `resumes.person_id` is already set.
-   3. `ai.score(profile, campaign_requirements)` → ScoringResult.
-   4. `hiring.upsert_application(campaign_id, person_id, resume_id, scoring)`, an upsert on `(campaign_id, person_id)`.
-4. **Progress events** keep their current shape, with `person_id` and `matched_existing: bool` added.
+   2. `ai.score(profile, campaign_requirements)` → ScoringResult. Not stored on its own: a retry scores again.
+   3. `talent.resolve_person(identifiers, profile, resume_id)` → `person_id`. Skipped if `resumes.person_id` is already set.
+   4. Write the legacy candidate and `hiring.upsert_application(campaign_id, person_id, resume_id, resume_uploaded_at, scoring)`, an upsert on `(campaign_id, person_id)`: a newer resume (by `uploaded_at`, ties by resume id) or the same one replaces the scoring, an older one changes nothing, and the recruiter's fields are never written.
+
+   Steps 3 and 4 are one transaction, committed once. Scoring runs *before* resolution (E0-16): it does not depend on the Person, and `resolve_person`'s advisory locks are held until the commit, so resolving first would hold them across the multi-second scoring call and serialise every other upload of the same person. `resumes.processing_step` follows the steps and is cleared when the resume is `done`.
+4. **Progress events** keep their current shape; the `done` event adds `person_id` and `matched_existing: bool` (the only event sent after the Person is known).
 
 ### 5.2 Normalisation (`talent/identity.py`, pure functions)
 
@@ -166,7 +169,7 @@ Only match-eligible identifiers take part in matching: every valid email, and ma
 ### 5.5 Error handling
 
 - A failure sets `status = failed` and leaves `processing_step` at the step that failed. The existing retry-failed endpoint resumes from that step, and the earlier steps are skipped because each is safe to re-run (§5.1).
-- A Gemini quota error (`ResourceExhausted`) sets `status = quota_exceeded` **immediately** and publishes an SSE event, so the UI's existing "Quota Limit" state appears. The retry is scheduled using the retry delay Google provides. Today the worker can sit retrying for minutes before the status changes.
+- A Gemini quota error (`ResourceExhausted`) sets `status = quota_exceeded` **immediately** and publishes an SSE event, so the UI's existing "Quota Limit" state appears. The retry is scheduled using the retry delay Google provides (`AIQuotaExceeded.retry_after`, else 65 s); the Gemini adapter no longer retries quota errors itself. Before E0-16 the worker could sit retrying for minutes before the status changed. When the task's retries are used up the resume stays `quota_exceeded` (not `failed`).
 
 ## 6. Migration plan (expand → backfill → contract)
 

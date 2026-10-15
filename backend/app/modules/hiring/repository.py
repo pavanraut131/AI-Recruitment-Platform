@@ -1,4 +1,5 @@
-"""hiring data access: every query against the ``campaigns`` and ``candidates`` tables.
+"""hiring data access: every query against the ``campaigns``, ``candidates`` and
+``applications`` tables.
 
 Private to the hiring module (only ``service.py`` calls it). The async functions take the
 request's ``AsyncSession``; the ones that end a unit of work commit, exactly where the endpoints
@@ -12,12 +13,14 @@ Hiring never queries another module's tables (the ``resumes`` counts and deletes
 
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
-from sqlalchemy import ColumnElement, and_, func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select, tuple_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign, Candidate
 
 
 # ── Campaigns ─────────────────────────────────────────────────
@@ -152,3 +155,54 @@ def get_candidate_by_resume_sync(db: Session, resume_id: uuid.UUID) -> Candidate
 
 def add_sync(db: Session, row: Candidate) -> None:
     db.add(row)
+
+
+# Columns the pipeline owns on an application: the resume it holds and that resume's scoring.
+# The recruiter's columns (pipeline_stage, notes) are deliberately not here.
+APPLICATION_PIPELINE_COLUMNS = (
+    "resume_id",
+    "resume_uploaded_at",
+    "score",
+    "score_breakdown",
+    "category",
+    "summary",
+    "strengths",
+    "weaknesses",
+    "missing_skills",
+    "recommendation",
+)
+
+
+def upsert_application_sync(db: Session, values: dict[str, Any]) -> Application:
+    """``INSERT … ON CONFLICT (campaign_id, person_id) DO UPDATE`` one application.
+
+    ``values`` holds ``id``, ``campaign_id``, ``person_id`` and every column in
+    :data:`APPLICATION_PIPELINE_COLUMNS`. On a conflict the pipeline columns are replaced only
+    when the incoming resume is not older than the stored one, comparing ``(resume_uploaded_at,
+    resume_id)`` as a tuple; a stored row whose upload time is unknown (``NULL``) always counts
+    as older. The row's ``id``, ``created_at`` and recruiter columns never change. Returns the
+    row as stored after the statement, whether or not it changed.
+    """
+    stmt = pg_insert(Application).values(**values)
+    excluded = stmt.excluded
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_applications_campaign_id_person_id",
+        set_={
+            **{name: excluded[name] for name in APPLICATION_PIPELINE_COLUMNS},
+            "updated_at": func.now(),
+        },
+        where=or_(
+            Application.resume_uploaded_at.is_(None),
+            tuple_(excluded.resume_uploaded_at, excluded.resume_id)
+            >= tuple_(Application.resume_uploaded_at, Application.resume_id),
+        ),
+    )
+    db.execute(stmt)
+    return db.execute(
+        select(Application)
+        .where(
+            Application.campaign_id == values["campaign_id"],
+            Application.person_id == values["person_id"],
+        )
+        .execution_options(populate_existing=True)
+    ).scalar_one()

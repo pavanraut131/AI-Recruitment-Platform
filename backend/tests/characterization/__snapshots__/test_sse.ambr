@@ -29,6 +29,8 @@
           'candidate_name': 'Jane Doe',
           'category': 'strong_match',
           'filename': 'jane_doe_resume.pdf',
+          'matched_existing': True,
+          'person_id': '<uuid:3>',
           'resume_id': '<uuid:2>',
           'score': 82.0,
           'status': 'done',
