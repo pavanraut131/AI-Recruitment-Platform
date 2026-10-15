@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 10
     MAX_FILES_PER_BATCH: int = 50
 
+    # Identity matching: region assumed for phone numbers written without a country code
+    # (ISO 3166-1 alpha-2, e.g. "IN", "US"). See app/modules/talent/identity.py.
+    PHONE_DEFAULT_REGION: str = "IN"
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
