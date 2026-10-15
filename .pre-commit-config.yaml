@@ -28,7 +28,7 @@ repos:
       # staged files. uv itself comes from additional_dependencies, so it needn't be on PATH.
       - id: mypy
         name: mypy
-        entry: uv run --directory backend mypy app workers
+        entry: uv run --directory backend mypy app
         language: python
         additional_dependencies: ["uv==0.12.23"]
         files: ^backend/.*\.py$

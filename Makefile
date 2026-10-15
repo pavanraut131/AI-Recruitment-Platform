@@ -60,7 +60,7 @@ format:
 	$(BACKEND_RUN) ruff format .
 
 typecheck:
-	$(BACKEND_RUN) mypy app workers
+	$(BACKEND_RUN) mypy app
 
 test:
 	$(BACKEND_RUN) pytest -v

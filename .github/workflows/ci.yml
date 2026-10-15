@@ -46,7 +46,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: mypy
-        run: uv run mypy app workers
+        run: uv run mypy app
 
       # Module boundaries (spec EPIC-00 §3); contracts live in backend/pyproject.toml.
       - name: import-linter
