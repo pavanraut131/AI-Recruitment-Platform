@@ -3,9 +3,11 @@
 The suite needs only Docker. No Redis, MinIO, Celery broker or Gemini network access.
 
 Session setup (hooks, see ``tests/postgres.py``)
-    ``pytest_sessionstart`` starts ``pgvector/pgvector:pg16`` with testcontainers, exports
-    ``DATABASE_URL`` / ``SYNC_DATABASE_URL`` / ``GEMINI_API_KEY`` and inert values for the other
-    services, then runs ``alembic upgrade head`` once. ``pytest_sessionfinish`` stops the
+    ``pytest_sessionstart`` starts ``pgvector/pgvector:pg16`` with testcontainers, waits until it
+    answers queries on fresh connections through the host port (the readiness note in
+    ``tests/postgres.py`` explains why), exports ``DATABASE_URL`` / ``SYNC_DATABASE_URL`` /
+    ``AI_PROVIDER`` / ``GEMINI_API_KEY`` (a dummy) and inert values for the other services, then
+    runs ``alembic upgrade head`` once. ``pytest_sessionfinish`` stops the
     container. This happens in hooks, before collection, because ``app`` reads its settings and
     builds its engine at import time. **Never import ``app`` at the top of this file**; test
     modules may import it, since collection runs after ``pytest_sessionstart``.
