@@ -18,8 +18,10 @@ What it does
 Safety
     * Refuses to run when ``APP_ENV=production`` (``SeedRefused``).
     * Refuses when any ``candidates`` row exists, unless ``--reset`` is given. ``--reset``
-      deletes **only** the rows of ``candidates``, ``resumes`` and ``campaigns``, prints how many
-      it deleted, and runs in the same transaction as the seeding (all or nothing).
+      deletes the rows of ``candidates``, ``resumes`` and ``campaigns`` and of the tables derived
+      from them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
+      ``applications``, ``legacy_candidate_map``, ``backfill_checkpoints``; nothing else), prints
+      how many it deleted, and runs in the same transaction as the seeding (all or nothing).
       ``--if-empty`` instead exits successfully without changes (used by ``make setup``).
     * Uses ``settings.SYNC_DATABASE_URL``; the core ``generate(session, ...)`` takes any sync
       ``Session``, and only flushes, so the caller owns the transaction (tests use
@@ -66,8 +68,12 @@ Deliberate cases (spec §6.4) and their sizes
     derived from the human's unique ordinal (``first.last<ordinal>`` / ``98`` followed by
     ``(ordinal * 7919 + 4321) mod 10**8``, a bijection), so two different humans never share a
     canonical email or phone except in the deliberate conflict case. All phones are 10-digit
-    Indian mobiles starting ``98``, valid for ``PHONE_DEFAULT_REGION=IN``; all emails are
-    syntactically valid. Emails are written in canonical form except in the variant cases above.
+    Indian mobiles starting ``98``, valid for ``PHONE_DEFAULT_REGION=IN``, and **match-eligible**
+    under the ADR 0004 amendment (option A) in every format written, including those without a
+    country code (``09876543210``, ``98765-43210``): ``phonenumbers`` types them ``MOBILE``, so
+    none is stored as ``inferred`` and the expectations below hold unchanged (asserted by
+    ``tests/devtools/test_seed.py``). All emails are syntactically valid. Emails are written in
+    canonical form except in the variant cases above.
 
 How each expected number is derived (no normalisation or matching code is run)
     The generator assigns every submission the Person key the §5.3 rules must resolve it to:
@@ -97,6 +103,9 @@ How each expected number is derived (no normalisation or matching code is run)
       and ``--campaigns`` campaigns. ``counts.true_people`` is ``--people``; it differs from
       ``expected.people`` only by the extra no-contact resumes.
 
+    ``campaign_ids`` lists the seeded campaigns, so ``verify_backfill --manifest`` can count only
+    their rows while other uploads happen during a rehearsal.
+
     ``cases.<name>`` repeats these numbers per case. Cases share no Person, so per-case values
     sum to the totals. ``cases.<name>.examples`` lists the candidates of the first human of the
     case (IDs and contact details as written) so a reviewer or test can find them.
@@ -122,8 +131,9 @@ from faker import Faker
 from sqlalchemy import create_engine, delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from app.modules.hiring.models import Campaign, Candidate
-from app.modules.ingestion.models import Resume
+from app.modules.hiring.models import Application, Campaign, Candidate, LegacyCandidateMap
+from app.modules.ingestion.models import BackfillCheckpoint, Resume
+from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform.config import settings
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
@@ -205,6 +215,19 @@ RECOMMENDATIONS = {
     "weak_match": "Phone screen first",
     "rejected": "Not recommended",
 }
+
+
+# Tables the dual write and the backfill derive from the legacy rows; ``--reset`` empties them
+# too (children first). Their rows are meaningless without the candidates they came from.
+DERIVED_MODELS: tuple[type[Any], ...] = (
+    LegacyCandidateMap,
+    Application,
+    PersonResume,
+    IdentityConflict,
+    PersonIdentifier,
+    Person,
+    BackfillCheckpoint,
+)
 
 
 class SeedRefused(RuntimeError):
@@ -598,6 +621,8 @@ def build_manifest(plan: Plan) -> dict[str, Any]:
         "generator": "app.devtools.seed",
         "rules": "docs/specs/EPIC-00-platform-core.md §5.2-5.3, docs/adr/0004",
         "params": {"people": plan.people, "campaigns": plan.campaigns, "seed": plan.seed},
+        # Lets verify_backfill count only the seeded campaigns while other uploads happen.
+        "campaign_ids": [str(row["id"]) for row in plan.campaign_rows],
         "counts": {
             "campaigns": len(plan.campaign_rows),
             "resumes": len(subs),
@@ -622,13 +647,21 @@ def existing_counts(session: Session) -> dict[str, int]:
     }
 
 
-def reset(session: Session) -> dict[str, int]:
-    """Delete every candidate, resume and campaign row (only those tables). Returns the counts."""
+def reset(session: Session) -> dict[str, Any]:
+    """Delete every candidate, resume and campaign row, and everything derived from them by the
+    dual write or the backfill (People, identifiers, conflicts, Applications, the legacy map and
+    the backfill checkpoints), so a rehearsal starts from the legacy data alone. Returns the
+    counts of the three legacy tables and, under ``derived``, the rows deleted from the others."""
     ensure_not_production()
-    counts = existing_counts(session)
+    counts: dict[str, Any] = existing_counts(session)
+    derived: dict[str, int] = {}
+    for model in DERIVED_MODELS:
+        result = session.execute(delete(model))
+        derived[model.__tablename__] = result.rowcount
     for model in (Candidate, Resume, Campaign):
         session.execute(delete(model))
     session.flush()
+    counts["derived"] = derived
     return counts
 
 
@@ -684,10 +717,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
             if args.reset:
                 deleted = reset(session)
+                derived = ", ".join(f"{n} {name}" for name, n in deleted["derived"].items())
                 print(
                     "seed: --reset deleted "
                     f"{deleted['candidates']} candidates, {deleted['resumes']} resumes, "
-                    f"{deleted['campaigns']} campaigns"
+                    f"{deleted['campaigns']} campaigns; derived rows: {derived}"
                 )
             manifest = generate(
                 session, people=args.people, campaigns=args.campaigns, seed=args.seed

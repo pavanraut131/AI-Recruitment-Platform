@@ -28,7 +28,10 @@ the data crosses this interface instead:
    ``resumes.campaign_id ON DELETE CASCADE`` (see ``models.py``), so it stays a hiring endpoint.
 4. **The upload pipeline** (``app.modules.ingestion``) checks campaigns and writes candidates
    only through the functions under "Upload pipeline" below, and applications through
-   :func:`upsert_application` (dual write, E0-16). Its scoring input is the ``ai`` module's
+   :func:`upsert_application` (dual write, E0-16) and :func:`link_legacy_candidate` (E0-17).
+   The backfill and its verification (``app.modules.ingestion.backfill`` / ``verify_backfill``)
+   read candidates and applications through the functions under "Legacy candidates ->
+   applications"; resume upload times cross the boundary as arguments. Its scoring input is the ``ai`` module's
    ``ScoringResult`` (``app.modules.ai.schemas``, public): the pipeline passes on what the
    model returned, and hiring keeps no second copy of that shape to keep in sync.
 """
@@ -605,3 +608,198 @@ def upsert_application(
         scoring_replaced=application.resume_id == resume_id,
     )
     return application
+
+
+# ── Legacy candidates -> applications (E0-17) ─────────────────
+# Every legacy candidate must lead to exactly one application (spec §6.2–6.3): the application
+# reuses the candidate's id, or ``legacy_candidate_map`` redirects the candidate's id to the
+# application it was merged into. Both the upload pipeline (from E0-17 on) and the backfill
+# (``app.modules.ingestion.backfill``) keep that link with the functions below.
+RECRUITER_FIELDS = ("pipeline_stage", "notes")
+
+
+@dataclass(frozen=True)
+class LegacyCandidate:
+    """One ``candidates`` row as the backfill reads it (spec §6.2)."""
+
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    resume_id: uuid.UUID
+    created_at: datetime
+    name: str | None
+    email: str | None
+    phone: str | None
+    github_url: str | None
+    linkedin_url: str | None
+    skills: list[Any] | None
+    education: list[Any] | None
+    work_experience: list[Any] | None
+    certifications: list[Any] | None
+    projects: list[Any] | None
+    years_of_experience: float | None
+    score: float | None
+    score_breakdown: dict[str, Any] | None
+    category: str | None
+    summary: str | None
+    strengths: list[Any] | None
+    weaknesses: list[Any] | None
+    missing_skills: list[Any] | None
+    recommendation: str | None
+    pipeline_stage: str | None
+    notes: str | None
+
+    @property
+    def position(self) -> tuple[datetime, uuid.UUID]:
+        """The keyset position of this candidate: ``(created_at, id)``."""
+        return (self.created_at, self.id)
+
+    def extraction(self) -> ExtractionResult:
+        """The AI extraction this candidate was written from (inverse of
+        :func:`record_extraction`), the shape the pipeline stores in ``resumes.extracted``."""
+        return ExtractionResult(
+            name=self.name,
+            email=self.email,
+            phone=self.phone,
+            github_url=self.github_url,
+            linkedin_url=self.linkedin_url,
+            skills=self.skills or [],
+            education=self.education or [],
+            work_experience=self.work_experience or [],
+            certifications=self.certifications or [],
+            projects=self.projects or [],
+            years_of_experience=self.years_of_experience,
+        )
+
+    def scoring(self) -> ScoringResult:
+        """The scoring stored on this candidate (inverse of :func:`record_scoring`), including a
+        category the recruiter changed by hand.
+
+        Copied **as stored**, without validation: a legacy row may hold ``NULL`` where
+        ``ScoringResult`` wants a value (e.g. ``summary``), and the application must mirror the
+        candidate exactly so the compatibility layer (spec §7) can rebuild the same response.
+        """
+        stored: dict[str, Any] = {
+            "score": self.score,
+            "score_breakdown": self.score_breakdown,
+            "category": self.category,
+            "summary": self.summary,
+            "strengths": self.strengths if self.strengths is not None else [],
+            "weaknesses": self.weaknesses if self.weaknesses is not None else [],
+            "missing_skills": self.missing_skills if self.missing_skills is not None else [],
+            "recommendation": self.recommendation,
+        }
+        return ScoringResult.model_construct(**stored)
+
+
+@dataclass(frozen=True)
+class LegacyCandidateRef:
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    resume_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class ApplicationRef:
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    person_id: uuid.UUID
+    resume_id: uuid.UUID
+
+
+def iter_legacy_candidates_after(
+    db: Session, after: tuple[datetime, uuid.UUID] | None, limit: int
+) -> list[LegacyCandidate]:
+    """The next page of legacy candidates in ``(created_at, id)`` order, strictly after the
+    keyset position ``after`` (``None``: from the start). Never ``OFFSET`` (spec §6.2)."""
+    rows = repository.legacy_candidates_after_sync(db, after, limit)
+    return [LegacyCandidate(**row._asdict()) for row in rows]
+
+
+def legacy_candidate_id_for_resume(db: Session, resume_id: uuid.UUID) -> uuid.UUID | None:
+    return repository.get_candidate_id_by_resume_sync(db, resume_id)
+
+
+def legacy_links(db: Session, candidate_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
+    """The application each of these candidates already leads to (its own id, or the
+    ``legacy_candidate_map`` redirect); candidates with neither are left out."""
+    links = repository.legacy_map_rows_sync(db, candidate_ids)
+    for application_id in repository.existing_application_ids_sync(db, candidate_ids):
+        links.setdefault(application_id, application_id)
+    return links
+
+
+def link_legacy_candidate(
+    db: Session, *, candidate_id: uuid.UUID, application_id: uuid.UUID
+) -> bool:
+    """Make ``candidate_id`` lead to ``application_id``: nothing to do when the application
+    reuses the candidate's id, else a ``legacy_candidate_map`` row (``ON CONFLICT DO NOTHING``,
+    so it is idempotent). Returns whether a map row was inserted. Never commits."""
+    if candidate_id == application_id:
+        return False
+    inserted = repository.insert_legacy_map_row_sync(db, candidate_id, application_id)
+    if inserted:
+        logger.info(
+            "legacy_candidate_mapped",
+            candidate_id=str(candidate_id),
+            application_id=str(application_id),
+        )
+    return inserted
+
+
+def linked_legacy_candidates(db: Session, application_id: uuid.UUID) -> list[LegacyCandidateRef]:
+    """Every candidate that leads to this application (its own id, or redirected to it)."""
+    application = repository.get_application_sync(db, application_id)
+    if application is None:
+        return []
+    return [
+        LegacyCandidateRef(id=row.id, campaign_id=application.campaign_id, resume_id=row.resume_id)
+        for row in repository.candidates_linked_to_sync(db, application_id)
+    ]
+
+
+def carry_recruiter_fields(
+    db: Session, application_id: uuid.UUID, newest_first: Sequence[uuid.UUID]
+) -> list[str]:
+    """Copy the recruiter's fields (``pipeline_stage``, ``notes``) of the legacy candidates that
+    lead to this application onto it (backfill, spec §6.2). Never commits.
+
+    ``newest_first`` lists those candidates by their resume's upload time, newest first (the
+    caller knows the upload times; hiring does not read ``resumes``). The rule, per field: the
+    value of the **newest candidate that has one**. A candidate with no value never clears the
+    field, and when no candidate has a value the application keeps its own. It depends only on
+    the set of candidates, not on the order they were backfilled in.
+
+    The category is not a recruiter field here: it travels with the scoring
+    (:func:`upsert_application`, newer resume wins), manual changes included.
+
+    Returns the fields that changed.
+    """
+    application = repository.get_application_sync(db, application_id)
+    if application is None:
+        return []
+    linked = {row.id: row for row in repository.candidates_linked_to_sync(db, application_id)}
+    ordered = [linked[candidate_id] for candidate_id in newest_first if candidate_id in linked]
+    changed: list[str] = []
+    for name in RECRUITER_FIELDS:
+        value = next((getattr(row, name) for row in ordered if getattr(row, name)), None)
+        if value is not None and getattr(application, name) != value:
+            setattr(application, name, value)
+            changed.append(name)
+    if changed:
+        db.flush()
+    return changed
+
+
+def legacy_candidate_refs(db: Session) -> list[LegacyCandidateRef]:
+    """Every legacy candidate (verification, spec §6.3)."""
+    return [LegacyCandidateRef(**row._asdict()) for row in repository.candidate_refs_sync(db)]
+
+
+def application_refs(db: Session) -> list[ApplicationRef]:
+    """Every application (verification, spec §6.3)."""
+    return [ApplicationRef(**row._asdict()) for row in repository.application_refs_sync(db)]
+
+
+def legacy_candidate_map(db: Session) -> dict[uuid.UUID, uuid.UUID]:
+    """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id``."""
+    return repository.legacy_map_rows_sync(db)

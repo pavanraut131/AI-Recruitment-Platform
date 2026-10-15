@@ -1,18 +1,21 @@
-"""ingestion data access: every query against the ``resumes`` table.
+"""ingestion data access: every query against the ``resumes`` and ``backfill_checkpoints`` tables.
 
 Private to the ingestion module. The async functions serve the HTTP endpoints (the request's
-``AsyncSession``); the ``*_sync`` ones serve the Celery tasks, which use a synchronous
-``Session``. Only functions named ``commit`` commit; the caller decides where a unit of work ends.
+``AsyncSession``); the ``*_sync`` ones serve the Celery tasks and the backfill / verification
+commands, which use a synchronous ``Session``. Only functions named ``commit`` commit; the caller decides where a unit of work ends.
 """
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Row, delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.ingestion.models import Resume
+from app.modules.ingestion.models import BackfillCheckpoint, Resume
 
 FAILED_STATUSES = ("failed", "quota_exceeded")
 
@@ -92,3 +95,61 @@ def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, str]]:
         .returning(Resume.id, Resume.original_filename)
     )
     return [(resume_id, filename) for resume_id, filename in result.tuples()]
+
+
+# ── Backfill and verification (sync, E0-17) ───────────────────
+def uploaded_at_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, datetime]:
+    """``id -> uploaded_at`` of the resumes among ``resume_ids`` that exist."""
+    if not resume_ids:
+        return {}
+    rows = db.execute(
+        select(Resume.id, Resume.uploaded_at).where(Resume.id.in_(resume_ids))
+    ).tuples()
+    return {resume_id: uploaded_at for resume_id, uploaded_at in rows}
+
+
+def resume_refs_sync(
+    db: Session,
+) -> Sequence[Row[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID | None]]]:
+    """``(id, campaign_id, status, person_id)`` of every resume."""
+    return db.execute(select(Resume.id, Resume.campaign_id, Resume.status, Resume.person_id)).all()
+
+
+def extracted_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Any]:
+    """``id -> extracted`` (the stored extraction snapshot, possibly ``None``)."""
+    if not resume_ids:
+        return {}
+    rows = db.execute(select(Resume.id, Resume.extracted).where(Resume.id.in_(resume_ids))).tuples()
+    return {resume_id: extracted for resume_id, extracted in rows}
+
+
+def get_checkpoint_sync(db: Session, name: str) -> BackfillCheckpoint | None:
+    return db.get(BackfillCheckpoint, name, populate_existing=True)
+
+
+def save_checkpoint_sync(
+    db: Session, name: str, last_created_at: datetime, last_id: uuid.UUID
+) -> None:
+    """Upsert the job's keyset position (``INSERT … ON CONFLICT (name) DO UPDATE``)."""
+    stmt = pg_insert(BackfillCheckpoint).values(
+        name=name, last_created_at=last_created_at, last_id=last_id
+    )
+    db.execute(
+        stmt.on_conflict_do_update(
+            index_elements=["name"],
+            set_={
+                "last_created_at": stmt.excluded.last_created_at,
+                "last_id": stmt.excluded.last_id,
+                "updated_at": func.now(),
+            },
+        )
+    )
+
+
+def delete_checkpoint_sync(db: Session, name: str) -> bool:
+    result = db.execute(
+        delete(BackfillCheckpoint)
+        .where(BackfillCheckpoint.name == name)
+        .returning(BackfillCheckpoint.name)
+    )
+    return result.scalar_one_or_none() is not None
