@@ -127,6 +127,10 @@ known-third-party = ["alembic"]
 # these contracts start biting as soon as the files they describe exist.
 [tool.importlinter]
 root_packages = ["app", "workers"]
+# `if TYPE_CHECKING:` imports count (grimp's default; `exclude_type_checking_imports` is deliberately
+# left off): a type-only import of another module's models is still coupling to its internals. So
+# cross-module ORM relationships name their target by string, and once both ends are in modules they
+# must not import each other even for typing (see app/modules/hiring/models.py, E0-09/E0-10).
 
 [[tool.importlinter.contracts]]
 id = "module-layers"
