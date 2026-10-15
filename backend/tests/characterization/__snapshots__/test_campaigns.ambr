@@ -763,21 +763,31 @@
 # name: test_parse_jd[fenced-json]
   dict({
     'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
     ]),
     'response': dict({
       'body': dict({
-        'detail': 'Failed to parse job description',
+        'role_title': 'Senior Python Engineer',
+        'seniority': 'senior',
+        'skills': list([
+          'Python',
+        ]),
       }),
       'headers': dict({
         'content-type': 'application/json',
       }),
-      'status_code': 500,
+      'status_code': 200,
     }),
   })
 # ---
 # name: test_parse_jd[gemini-error]
   dict({
     'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
     ]),
     'response': dict({
       'body': dict({
@@ -793,6 +803,9 @@
 # name: test_parse_jd[invalid-json]
   dict({
     'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
     ]),
     'response': dict({
       'body': dict({
@@ -808,6 +821,69 @@
 # name: test_parse_jd[json-missing-keys]
   dict({
     'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'role_title': 'Unknown Role',
+        'seniority': 'mid',
+        'skills': list([
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_parse_jd[json-not-object]
+  dict({
+    'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Failed to parse job description',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 500,
+    }),
+  })
+# ---
+# name: test_parse_jd[json-partial-keys]
+  dict({
+    'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'role_title': 'Senior Python Engineer',
+        'seniority': 'mid',
+        'skills': list([
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_parse_jd[json-wrong-types]
+  dict({
+    'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
     ]),
     'response': dict({
       'body': dict({
@@ -823,17 +899,54 @@
 # name: test_parse_jd[plain-json]
   dict({
     'gemini_calls': list([
+      dict({
+        'model': 'gemini-2.5-flash',
+      }),
     ]),
     'response': dict({
       'body': dict({
-        'detail': 'Failed to parse job description',
+        'role_title': 'Senior Python Engineer',
+        'seniority': 'senior',
+        'skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+          'AWS',
+        ]),
       }),
       'headers': dict({
         'content-type': 'application/json',
       }),
-      'status_code': 500,
+      'status_code': 200,
     }),
   })
+# ---
+# name: test_parse_jd_prompt
+  list([
+    list([
+      '',
+      'You are a technical recruiter. Extract the key information from this job description.',
+      '',
+      'Return ONLY valid JSON with this exact schema:',
+      '{',
+      '  "role_title": "extracted job title",',
+      '  "seniority": "junior|mid|senior|staff",',
+      '  "skills": ["list", "of", "technical", "skills", "required"]',
+      '}',
+      '',
+      'Rules:',
+      '- skills: extract ONLY technical skills (languages, frameworks, tools, platforms)',
+      '- seniority: infer from title/requirements ("5+ years" = senior, etc.)',
+      '- role_title: extract the actual job title from the JD',
+      '',
+      'Job Description:',
+      '---',
+      'Senior Python Engineer. 5+ years with FastAPI, PostgreSQL and AWS.',
+      '---',
+      '',
+      'Return ONLY valid JSON, no markdown, no explanation.',
+    ]),
+  ])
 # ---
 # name: test_parse_jd_validation_error[missing-job-description]
   dict({
