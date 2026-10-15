@@ -2,10 +2,11 @@
 
 How the endpoint works today: it subscribes to the Redis pub/sub channel ``resume:all_updates``,
 sends a ``connected`` event, then forwards every message on that channel as a ``resume_update``
-event (data = the published JSON, unchanged). The workers publish those messages with
-``_publish_sse_event`` in ``workers/extract_task.py`` and ``workers/ai_task.py``.
+event (data = the published JSON, unchanged). The Celery tasks publish those messages with
+``publish_resume_event`` (``app/modules/ingestion/events.py``, called from
+``app/modules/ingestion/tasks.py``; before E0-10 ``_publish_sse_event`` in ``workers/``).
 
-The tests publish through those real worker functions (Redis is fakeredis, see ``fake_redis``),
+The tests publish through that real function (Redis is fakeredis, see ``fake_redis``),
 using the same arguments as each call site, so the recorded payload shapes are the ones a client
 receives in production. Statuses with an event: ``extracting``, ``done``, ``failed`` (four
 variants) and ``quota_exceeded``. ``pending`` and ``processing`` have none: nothing is published
@@ -24,11 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import AppStatus
 from syrupy.assertion import SnapshotAssertion
 
+from app.modules.ingestion.events import publish_resume_event
 from tests.characterization.snapshot_utils import response_data
 from tests.characterization.sse import read_sse
 from tests.factories import make_campaign, make_resume
 from tests.fakes import FakeRedis
-from workers import ai_task, extract_task
 
 API = "/api/v1"
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
@@ -72,16 +73,14 @@ async def test_stream_event_for_each_resume_status(
     resume = await make_resume(db_session, campaign, original_filename="jane_doe_resume.pdf")
     rid = str(resume.id)
     publishers: list[Callable[[], None]] = [
-        # extract_task.extract_resume: task started
-        lambda: extract_task._publish_sse_event(
-            rid, "extracting", {"filename": "jane_doe_resume.pdf"}
-        ),
-        # extract_task.extract_resume: retries exhausted
-        lambda: extract_task._publish_sse_event(
+        # tasks.extract_resume: task started
+        lambda: publish_resume_event(rid, "extracting", {"filename": "jane_doe_resume.pdf"}),
+        # tasks.extract_resume: retries exhausted
+        lambda: publish_resume_event(
             rid, "failed", {"error": "Could not extract meaningful text from PDF"}
         ),
-        # ai_task.process_candidate_ai: success
-        lambda: ai_task._publish_sse_event(
+        # tasks.process_candidate_ai: success
+        lambda: publish_resume_event(
             rid,
             "done",
             {
@@ -91,16 +90,14 @@ async def test_stream_event_for_each_resume_status(
                 "filename": "jane_doe_resume.pdf",
             },
         ),
-        # ai_task.process_candidate_ai: extraction found no candidate data
-        lambda: ai_task._publish_sse_event(
+        # tasks.process_candidate_ai: extraction found no candidate data
+        lambda: publish_resume_event(
             rid, "failed", {"error": "Not a resume — no candidate information could be extracted"}
         ),
-        # ai_task.BaseTask.on_failure (retries exhausted) / extract_task.BaseTask.on_failure
-        lambda: ai_task._publish_sse_event(
-            rid, "failed", {"error": "Gemini returned invalid JSON"}
-        ),
-        # ai_task._mark_quota_exceeded
-        lambda: ai_task._publish_sse_event(rid, "quota_exceeded", {"error": QUOTA_MESSAGE}),
+        # tasks.AITask.on_failure (retries exhausted) / tasks.ExtractTask.on_failure
+        lambda: publish_resume_event(rid, "failed", {"error": "Gemini returned invalid JSON"}),
+        # tasks._mark_quota_exceeded
+        lambda: publish_resume_event(rid, "quota_exceeded", {"error": QUOTA_MESSAGE}),
     ]
     result = await read_sse(
         app,
@@ -115,7 +112,7 @@ async def test_stream_event_for_each_resume_status(
     } == snapshot
 
     redis = fake_redis.sync_client()
-    # The worker also publishes to a per-resume channel nobody subscribes to.
+    # The task also publishes to a per-resume channel nobody subscribes to.
     assert redis.pubsub_numsub(f"resume:status:{rid}") == [(f"resume:status:{rid}".encode(), 0)]
     # After the client disconnects the stream unsubscribes.
     assert redis.pubsub_numsub("resume:all_updates") == [(b"resume:all_updates", 0)]
@@ -130,10 +127,8 @@ async def test_stream_forwards_events_of_other_campaigns(
     other = await make_campaign(db_session, title="Other")
     other_resume = await make_resume(db_session, other, original_filename="other.pdf")
     publishers: list[Callable[[], None]] = [
-        lambda: extract_task._publish_sse_event(
-            str(other_resume.id), "extracting", {"filename": "other.pdf"}
-        ),
-        lambda: extract_task._publish_sse_event("not-a-resume-id", "failed", {"error": "x"}),
+        lambda: publish_resume_event(str(other_resume.id), "extracting", {"filename": "other.pdf"}),
+        lambda: publish_resume_event("not-a-resume-id", "failed", {"error": "x"}),
     ]
     result = await read_sse(
         app,

@@ -30,6 +30,7 @@ backend/app/
     ├── hiring/          # Campaign, Application, pipeline stage, notes, campaign stats, JD parsing
     ├── ingestion/       # upload, resumes table, extract/analyse tasks, SSE progress
     └── ai/              # Gemini client, prompts, ExtractionResult / ScoringResult types
+├── api/                 # composition layer: endpoints that span modules (calls services only)
 └── devtools/            # seed generator and dev-only scripts (never imported by app code)
 ```
 
@@ -43,6 +44,8 @@ Each module contains `router.py` (thin HTTP layer), `service.py` (the **public i
 - Every module → `platform`
 - `platform` → nothing in `modules/`
 - `devtools` may import anything, and nothing may import `devtools`
+- `api` (the composition layer, [ADR 0005](../adr/0005-composition-layer.md)) may import every module's `service` and `schemas`; no module and not `platform` may import `api`
+- Only `ai` may import an LLM SDK (`google.*`)
 - A module may import only another module's `service` (and the schemas it exposes), never its `models`, `repository` or `tasks`.
 
 Each module owns its tables. No module queries another module's tables directly.

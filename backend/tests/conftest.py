@@ -35,18 +35,25 @@ Fixtures
         ``delete_file``, ``get_presigned_url`` and ``ensure_bucket_exists`` in
         ``app.platform.storage`` (and the direct import in ``app.main``). ``get_s3_client`` is
         made to raise, so any path that bypasses the fake fails loudly instead of reaching the
-        network. Patch where the code looks the names up: the ``app.core.storage`` shim only
-        re-binds them at import, so patching it would not reach the app.
+        network. Patch where the code looks the names up (``app.platform.storage``).
     ``fake_redis`` (function, autouse)
-        :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the workers'
-        ``_publish_sse_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
+        :class:`tests.fakes.FakeRedis`. ``redis.Redis.from_url`` (``/health/ready``, the Celery
+        tasks' ``publish_resume_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
         fakeredis clients on one in-memory server per test, so a sync ``publish`` reaches an async
         subscriber. Set ``fake_redis.server.connected = False`` to simulate Redis being down.
     ``fake_gemini`` (function, autouse)
-        :class:`tests.fakes.FakeGemini`. Replaces ``google.generativeai.GenerativeModel`` (used by
-        ``/campaigns/parse-jd`` and the OCR fallback) and the module-level model in
-        ``app.services.gemini``. Calls raise until the test scripts a response with
-        ``fake_gemini.respond_with(...)``; no test can reach the Gemini API.
+        :class:`tests.fakes.FakeGemini`. Replaces ``google.generativeai.GenerativeModel``, which
+        ``app.modules.ai.gemini.GeminiAIService`` (the default ``AI_PROVIDER``) instantiates on
+        every call. Calls raise until the test scripts a response with
+        ``fake_gemini.respond_with(...)``; no test can reach the Gemini API. The characterization
+        tests run through ``GeminiAIService`` on top of this fake, so the recorded Gemini calls
+        (model, prompt) stay pinned. Tests that don't care about Gemini specifics use the
+        ``fake_ai`` fixture (``AI_PROVIDER=fake``) instead.
+
+    ``fake_ai`` (function)
+        Opt-in. Sets ``AI_PROVIDER=fake`` for the test, so ``app.modules.ai.service.get_ai_service()``
+        returns the deterministic, offline :class:`app.modules.ai.fake.FakeAIService`. Returns
+        that service instance (it is stateless; any instance answers the same).
 
 Test data
     ``tests/factories.py`` builds campaigns, resumes and candidates through ``db_session``.
@@ -68,6 +75,8 @@ from tests.fakes import CeleryRecorder, FakeGemini, FakeRedis, InMemoryStorage
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from app.modules.ai.fake import FakeAIService
 
 
 # ── Session hooks ─────────────────────────────────────────────
@@ -148,8 +157,7 @@ def celery_calls(monkeypatch: pytest.MonkeyPatch) -> CeleryRecorder:
         return recorder.record(self.name, args, kwargs, task_id, **options)
 
     # Make sure every project task is registered, then patch the shared base class.
-    import workers.ai_task  # noqa: F401
-    import workers.extract_task  # noqa: F401
+    import app.modules.ingestion.tasks  # noqa: F401
 
     monkeypatch.setattr(Task, "apply_async", fake_apply_async)
     return recorder
@@ -195,10 +203,16 @@ def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
 def fake_gemini(monkeypatch: pytest.MonkeyPatch) -> FakeGemini:
     import google.generativeai as genai
 
-    from app.platform.config import settings
-    from app.services import gemini
-
     fake = FakeGemini()
+    # GeminiAIService creates its model per call, so this reaches every Gemini call in the app.
     monkeypatch.setattr(genai, "GenerativeModel", fake.GenerativeModel)
-    monkeypatch.setattr(gemini, "_model", fake.GenerativeModel(settings.GEMINI_MODEL))
     return fake
+
+
+@pytest.fixture
+def fake_ai(monkeypatch: pytest.MonkeyPatch) -> FakeAIService:
+    from app.modules.ai.fake import FakeAIService
+    from app.platform.config import settings
+
+    monkeypatch.setattr(settings, "AI_PROVIDER", "fake")
+    return FakeAIService()

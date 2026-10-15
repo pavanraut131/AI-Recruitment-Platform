@@ -2,11 +2,13 @@
 
 Each endpoint parses the request, calls one service function and returns its result; the
 service's :class:`~app.modules.hiring.service.HiringError` subclasses become ``HTTPException``\\ s
-here. Four routers keep the published contract identical to the pre-module app: the route
+here. Three routers keep the published contract identical to the pre-module app: the route
 paths, tags, endpoint function names (they are the OpenAPI ``operationId``\\ s) and docstrings
 (the OpenAPI descriptions) are all part of the snapshot in
-``tests/characterization/__snapshots__/test_stats_health.ambr``. ``app.main`` includes them in
-the original order, around the resumes router.
+``tests/characterization/__snapshots__/test_stats_health.ambr``. ``app.main`` includes them.
+
+The endpoints that also need the ``ingestion`` module (campaign detail and stats, the global
+stats, candidate deletes) are composed in ``app.api`` instead.
 """
 
 import uuid
@@ -20,18 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.hiring import service
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.hiring.schemas import (
-    BulkDeleteRequest,
     BulkPipelineUpdate,
     CampaignCreate,
     CampaignResponse,
-    CampaignStats,
     CampaignUpdate,
     CandidateCategoryUpdate,
     CandidateDetail,
     CandidateListItem,
     CandidateNotesUpdate,
     CandidatePipelineUpdate,
-    GlobalStats,
     JDParseRequest,
     JDParseResponse,
 )
@@ -40,7 +39,6 @@ from app.platform.database import get_db
 campaigns_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 parse_jd_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 candidates_router = APIRouter(tags=["candidates"])
-stats_router = APIRouter(prefix="/stats", tags=["stats"])
 
 _STATUS_CODES: dict[type[service.HiringError], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,
@@ -73,14 +71,6 @@ async def list_campaigns(
     return await service.list_campaigns(db, skip, limit)
 
 
-@campaigns_router.get("/{campaign_id}", response_model=CampaignResponse)
-async def get_campaign(
-    campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
-) -> CampaignResponse:
-    with _http_errors():
-        return await service.get_campaign(db, campaign_id)
-
-
 @campaigns_router.put("/{campaign_id}", response_model=CampaignResponse)
 async def update_campaign(
     campaign_id: uuid.UUID,
@@ -97,28 +87,11 @@ async def delete_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get
         await service.delete_campaign(db, campaign_id)
 
 
-@campaigns_router.get("/{campaign_id}/stats", response_model=CampaignStats)
-async def campaign_stats(
-    campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
-) -> CampaignStats:
-    return await service.campaign_stats(db, campaign_id)
-
-
 # ── Job description parsing ───────────────────────────────────
 @parse_jd_router.post("/parse-jd", response_model=JDParseResponse)
 async def parse_job_description(payload: JDParseRequest) -> JDParseResponse:
     with _http_errors():
         return await service.parse_job_description(payload)
-
-
-# ── Global stats ──────────────────────────────────────────────
-@stats_router.get("", response_model=GlobalStats)
-async def get_global_stats(db: AsyncSession = Depends(get_db)) -> GlobalStats:
-    """
-    Return aggregate counts across all campaigns.
-    Three single-table queries — no joins, very fast.
-    """
-    return await service.global_stats(db)
 
 
 # ── Candidates: list ──────────────────────────────────────────
@@ -232,8 +205,8 @@ async def get_candidate_by_resume(
         return await service.get_candidate_by_resume(db, resume_id)
 
 
-# ── Candidates: bulk actions and delete ───────────────────────
-# response_model=None: no response schema was ever published for the two bulk endpoints, and
+# ── Candidates: bulk actions ──────────────────────────────────
+# response_model=None: no response schema was ever published for the bulk endpoints, and
 # FastAPI would otherwise derive one from the dict[str, int] return annotation.
 @candidates_router.patch("/campaigns/{campaign_id}/candidates/bulk-pipeline", response_model=None)
 async def bulk_update_pipeline(
@@ -247,22 +220,3 @@ async def bulk_update_pipeline(
             db, campaign_id, payload.candidate_ids, payload.stage
         )
     return {"updated": updated}
-
-
-@candidates_router.delete(
-    "/campaigns/{campaign_id}/candidates/bulk", status_code=status.HTTP_200_OK, response_model=None
-)
-async def bulk_delete_candidates(
-    campaign_id: uuid.UUID,
-    payload: BulkDeleteRequest,
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, int]:
-    """Delete multiple candidates (and their resumes) in one request."""
-    resume_ids = await service.bulk_delete_candidates(db, campaign_id, payload.candidate_ids)
-    return {"deleted": len(resume_ids)}
-
-
-@candidates_router.delete("/candidates/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_candidate(candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
-    with _http_errors():
-        await service.delete_candidate(db, candidate_id)

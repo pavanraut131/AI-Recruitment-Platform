@@ -69,7 +69,7 @@ The 170 characterization snapshots from Sprint 1 are the safety net. A ticket th
 
 **Acceptance criteria**
 - [ ] `app/core/*` moves to `app/platform/` (settings, database, logging, storage). `workers/celery_app.py` moves to `app/platform/celery_app.py`.
-  - Old import paths keep working through thin re-export shims, marked `# TODO(E0-10): remove`, so this ticket stays small.
+  - Old import paths keep working through thin re-export shims, each marked with a removal TODO pointing at E0-10, so this ticket stays small.
 - [ ] Create `app/modules/{talent,hiring,ingestion,ai}/__init__.py` and `app/devtools/__init__.py`, each with a docstring stating the module's responsibility.
 - [ ] `import-linter` is configured in `pyproject.toml` with the contracts from spec §3:
   - layers `ingestion → hiring → talent`

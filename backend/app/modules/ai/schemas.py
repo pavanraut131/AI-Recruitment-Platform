@@ -1,7 +1,9 @@
-"""Gemini response contracts used by ``app.services.gemini`` and the AI worker.
+"""ai data contracts: what the language model returns, and what it is asked about.
 
-The candidate API schemas moved to ``app.modules.hiring.schemas`` (E0-09). These two models are
-AI types, not hiring ones. TODO(E0-10): move them into the ``ai`` module (spec section 3).
+Public: other modules may import these (import-linter allows ``app.modules.ai.schemas``).
+``ExtractionResult`` and ``ScoringResult`` moved here from ``app.schemas.candidate`` (E0-10)
+unchanged; they are the shapes every :class:`~app.modules.ai.service.AIService` implementation
+returns, whatever the provider.
 """
 
 from typing import Any
@@ -9,8 +11,9 @@ from typing import Any
 from pydantic import BaseModel
 
 
-# ── Gemini response contracts ──────────────────────────────────
 class ExtractionResult(BaseModel):
+    """A candidate profile extracted from resume text."""
+
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -25,6 +28,8 @@ class ExtractionResult(BaseModel):
 
 
 class ScoringResult(BaseModel):
+    """A candidate's fit for a role."""
+
     score: float
     score_breakdown: dict[str, Any] | None = (
         None  # {skills_match, experience_match, project_relevance, education_bonus, communication_quality}
@@ -35,3 +40,18 @@ class ScoringResult(BaseModel):
     weaknesses: list[str] = []
     missing_skills: list[str] = []
     recommendation: str
+
+
+class JobRequirements(BaseModel):
+    """What a candidate is scored against."""
+
+    role: str
+    required_skills: list[str] = []
+
+
+class JDParseResult(BaseModel):
+    """The key facts of a job description."""
+
+    role_title: str
+    seniority: str  # junior | mid | senior | staff
+    skills: list[str]

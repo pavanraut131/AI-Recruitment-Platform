@@ -79,7 +79,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Coverage is reported on every run; no fail-under gate until app/modules/ exists (Sprint 2).
-addopts = "--cov=app --cov=workers --cov-report=term-missing"
+addopts = "--cov=app --cov-report=term-missing"
 
 # ── coverage (pytest-cov) ────────────────────────────────────
 [tool.coverage.run]
@@ -117,7 +117,7 @@ extend-immutable-calls = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "workers"]
+known-first-party = ["app"]
 # The local `alembic/` migrations folder would otherwise make ruff treat the library as first-party.
 known-third-party = ["alembic"]
 
@@ -126,11 +126,14 @@ known-third-party = ["alembic"]
 # Module expressions that match nothing (e.g. a module with no service.py yet) are not errors, so
 # these contracts start biting as soon as the files they describe exist.
 [tool.importlinter]
-root_packages = ["app", "workers"]
+root_packages = ["app"]
+# Third-party packages are nodes in the import graph too, so a contract can forbid one
+# (``google`` below). Only their top-level name is modelled, e.g. ``google``.
+include_external_packages = true
 # `if TYPE_CHECKING:` imports count (grimp's default; `exclude_type_checking_imports` is deliberately
 # left off): a type-only import of another module's models is still coupling to its internals. So
-# cross-module ORM relationships name their target by string, and once both ends are in modules they
-# must not import each other even for typing (see app/modules/hiring/models.py, E0-09/E0-10).
+# modules must not import each other's models even for typing; cross-module links are plain ids
+# (ADR 0003, see app/modules/hiring/models.py).
 
 [[tool.importlinter.contracts]]
 id = "module-layers"
@@ -162,6 +165,47 @@ protected_modules = ["app.devtools"]
 allowed_importers = ["app.devtools"]
 
 [[tool.importlinter.contracts]]
+id = "llm-sdk-only-in-ai"
+name = "Only the ai module imports an LLM SDK (google.*)"
+type = "forbidden"
+# Everything except app.modules.ai. (A forbidden contract takes no "all but" wildcard, so list
+# the rest; a new top-level package under app/ must be added here.)
+source_modules = [
+    "app.main",
+    "app.api",
+    "app.platform",
+    "app.devtools",
+    "app.modules.hiring",
+    "app.modules.ingestion",
+    "app.modules.talent",
+]
+forbidden_modules = ["google"]
+# Importing ai.service (which may load the Gemini adapter) is the point; only direct imports of
+# google.* outside ai are violations.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "composition-on-top"
+name = "Nothing below the composition layer imports app.api"
+type = "forbidden"
+source_modules = ["app.modules", "app.platform"]
+forbidden_modules = ["app.api"]
+
+[[tool.importlinter.contracts]]
+id = "composition-uses-public-interfaces"
+name = "app.api imports only modules' service and schemas"
+type = "forbidden"
+source_modules = ["app.api"]
+forbidden_modules = ["app.modules.*"]
+# Same allowlist idea as "public-interfaces" below: a module's service/schemas are its public
+# interface, so app.api -> <module>.service is fine (and chains through it are not reported).
+ignore_imports = [
+    "app.api.** -> app.modules.*.service",
+    "app.api.** -> app.modules.*.schemas",
+]
+broken_contract_guidance = "The composition layer (app.api) may call a module only through app.modules.<name>.service and the schemas in app.modules.<name>.schemas."
+
+[[tool.importlinter.contracts]]
 id = "public-interfaces"
 name = "Modules import only each other's service and schemas"
 type = "forbidden"
@@ -184,7 +228,7 @@ broken_contract_guidance = "Import another module only through its public interf
 [tool.mypy]
 python_version = "3.11"
 plugins = ["pydantic.mypy"]
-files = ["app", "workers"]
+files = ["app"]
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -221,13 +265,3 @@ warn_return_any = true
 implicit_reexport = false
 strict_equality = true
 extra_checks = true
-
-# BASELINE: modules that had type errors when mypy was introduced (E0-02).
-# Remove entries as modules are fixed; never add new ones.
-[[tool.mypy.overrides]]
-module = [
-    "app.api.v1.resumes",    # Celery apply_async(args=list) and Optional filename
-    "workers.ai_task",       # implicit Optional default; unchecked Optional ORM rows
-    "workers.extract_task",  # implicit Optional default; unchecked Optional ORM rows; apply_async args
-]
-ignore_errors = true

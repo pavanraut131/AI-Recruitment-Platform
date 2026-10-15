@@ -5,8 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import resumes
+from app.api import routes as composed
 from app.modules.hiring import router as hiring
+from app.modules.ingestion import router as ingestion
 from app.platform.config import settings
 from app.platform.logging import configure_logging
 from app.platform.storage import ensure_bucket_exists
@@ -48,12 +49,15 @@ app.add_middleware(
 
 # ── Routers ───────────────────────────────────────────────────
 PREFIX = settings.API_V1_PREFIX
-# Same order as before the hiring module existed (E0-09): route matching is first-match.
+# Module routers, plus the endpoints composed from several modules (app.api). No two routes
+# share a path and method, so the order does not change which endpoint answers a request.
 app.include_router(hiring.campaigns_router, prefix=PREFIX)
+app.include_router(composed.campaigns_router, prefix=PREFIX)
 app.include_router(hiring.parse_jd_router, prefix=PREFIX)
-app.include_router(resumes.router, prefix=PREFIX)
+app.include_router(ingestion.router, prefix=PREFIX)
 app.include_router(hiring.candidates_router, prefix=PREFIX)
-app.include_router(hiring.stats_router, prefix=PREFIX)
+app.include_router(composed.candidates_router, prefix=PREFIX)
+app.include_router(composed.stats_router, prefix=PREFIX)
 
 
 # ── Health endpoints ──────────────────────────────────────────
