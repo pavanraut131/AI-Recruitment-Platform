@@ -2,46 +2,32 @@
 
 Campaign CRUD and stats, the global stats, job description parsing, and the candidate list,
 export, detail, recruiter updates and deletes. The routers in ``router.py`` only translate HTTP
-to these calls; other modules (E0-10: ``ingestion``) may import this module and
-``app.modules.hiring.schemas``, never ``models`` or ``repository`` (import-linter enforces it).
+to these calls; other modules (``ingestion``) and the composition layer (``app.api``) may import
+this module and ``app.modules.hiring.schemas``, never ``models`` or ``repository``
+(import-linter enforces it).
 
 Business rules live here: the category / pipeline-stage vocabularies, the candidate filter
-builder shared by the list and the CSV export, the stats aggregation and the JD prompt. Errors
-are raised as :class:`HiringError` subclasses carrying the user-facing ``detail``; the router
-maps them to status codes.
+builder shared by the list and the CSV export, and the stats aggregation. Job descriptions are
+parsed by the ``ai`` module. Errors are raised as :class:`HiringError` subclasses carrying the
+user-facing ``detail``; the routers map them to status codes.
 
-Cross-module dependencies (resolved in E0-10)
----------------------------------------------
-Hiring still reads or deletes ingestion-owned resume data in the places below. Today that is
-legal (``Resume`` lives in ``app.models``, outside ``app.modules``), but once Resume moves to
-``app.modules.ingestion`` the layer contract (``ingestion -> hiring -> talent``) forbids hiring
-from importing it. Proposed resolution for each, none of which needs hiring to import ingestion:
+Cross-module boundaries (E0-10)
+-------------------------------
+Hiring never reads or writes another module's tables. Where a use case needs another module,
+the data crosses this interface instead:
 
-1. **Campaign stats resume counts** (``GET /campaigns/{id}``, ``GET /campaigns/{id}/stats``)
-   and **global stats resume counts** (``GET /stats``) via ``repository.resume_status_counts``.
-   The aggregation is already split out as pure functions (:func:`build_campaign_stats`,
-   :func:`build_global_stats`) that take the resume counts as an argument. E0-10 moves the
-   resume-count query into ``ingestion.service`` and composes the stats one level up: the
-   stats endpoints are served from ``ingestion`` (which may call ``hiring.service``) or from an
-   app-level composition router that calls both services. Hiring keeps only its own numbers.
-2. **Deleting a candidate also deletes its resume** (``DELETE /candidates/{id}``,
-   ``DELETE /campaigns/{id}/candidates/bulk``) via ``repository.delete_resume(s)``. The
-   service functions already return the affected resume ids; E0-10 makes ``ingestion`` own
-   the use case ("withdraw a submission"): ingestion calls ``hiring.service`` to delete the
-   candidates, gets the resume ids back and deletes its own resumes in the same transaction.
-3. **Deleting a campaign cascades to its resumes** through the ORM relationship
-   ``Campaign.resumes`` (plus ``resumes.campaign_id ON DELETE CASCADE``). E0-10 drops the
-   cross-module relationships (``Campaign.resumes``, ``Candidate.resume`` and the reverse
-   ones on ``Resume``) and relies on the database cascade until ADR 0003 removes the
-   cross-module foreign keys; after that, ingestion deletes a campaign's resumes when told
-   to (``hiring.service`` publishes the deletion, or the composing endpoint calls both).
-4. **``GET /resumes/{id}/candidate``** only queries ``candidates.resume_id``; it needs no
-   resume data and stays a hiring endpoint (the URL is the only resume-shaped part of it).
-5. **The upload pipeline and workers** (``app/api/v1/resumes.py``, ``workers/*``) read
-   ``Campaign`` and create/update ``Candidate`` rows through the hiring models. That is the
-   allowed direction (ingestion -> hiring), but must go through this service in E0-10
-   (e.g. ``campaign_exists``, ``get_required_skills``, ``record_extraction``,
-   ``record_scoring``), never ``hiring.models``.
+1. **Stats** (``GET /campaigns/{id}``, ``GET /campaigns/{id}/stats``, ``GET /stats``) need
+   resume counts by status, which ingestion owns. :func:`campaign_stats` and
+   :func:`global_stats` take them as an argument; ``app.api`` asks ingestion for them and
+   composes the endpoint.
+2. **Deleting candidates** (``DELETE /candidates/{id}``, ``DELETE
+   /campaigns/{id}/candidates/bulk``) also deletes their resumes. :func:`delete_candidate` and
+   :func:`bulk_delete_candidates` delete (flush, don't commit) and return the resume ids;
+   ``app.api`` has ingestion delete those resumes and commits both in one transaction.
+3. **Deleting a campaign** removes its resumes through the database's
+   ``resumes.campaign_id ON DELETE CASCADE`` (see ``models.py``), so it stays a hiring endpoint.
+4. **The upload pipeline** (``app.modules.ingestion``) checks campaigns and writes candidates
+   only through the functions under "Upload pipeline" below.
 """
 
 import csv
@@ -54,8 +40,10 @@ from typing import Any
 import structlog
 from sqlalchemy import ColumnElement, column, exists, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.modules.ai import service as ai_service
+from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import repository
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.hiring.schemas import (
@@ -119,12 +107,9 @@ async def _require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Campaig
 
 
 async def get_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> CampaignResponse:
-    """The campaign with its stats attached."""
+    """The campaign, without stats (``stats`` is ``None``; see :func:`campaign_stats`)."""
     campaign = await _require_campaign(db, campaign_id)
-    stats = await campaign_stats(db, campaign_id)
-    response = CampaignResponse.model_validate(campaign)
-    response.stats = stats
-    return response
+    return CampaignResponse.model_validate(campaign)
 
 
 async def update_campaign(
@@ -144,10 +129,13 @@ async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
 
 
 # ── Stats ─────────────────────────────────────────────────────
-async def campaign_stats(db: AsyncSession, campaign_id: uuid.UUID) -> CampaignStats:
-    """Stats for one campaign. An unknown campaign id yields all-zero stats, not a 404."""
-    # TODO(E0-10): the resume counts come from ingestion (see "Cross-module dependencies").
-    resume_counts = await repository.resume_status_counts(db, campaign_id)
+async def campaign_stats(
+    db: AsyncSession, campaign_id: uuid.UUID, resume_counts: Mapping[str, int]
+) -> CampaignStats:
+    """Stats for one campaign, given its resume counts by status (from ingestion).
+
+    An unknown campaign id yields all-zero stats, not a 404.
+    """
     category_rows = await repository.candidate_category_stats(db, campaign_id)
     skill_lists = await repository.candidate_skill_lists(db, campaign_id)
     return build_campaign_stats(resume_counts, category_rows, skill_lists)
@@ -196,11 +184,10 @@ def build_campaign_stats(
     )
 
 
-async def global_stats(db: AsyncSession) -> GlobalStats:
-    """Aggregate counts across all campaigns: three single-table queries, no joins."""
+async def global_stats(db: AsyncSession, resume_counts: Mapping[str, int]) -> GlobalStats:
+    """Aggregate counts across all campaigns, given the resume counts by status (from
+    ingestion): single-table queries, no joins."""
     campaign_counts = await repository.campaign_status_counts(db)
-    # TODO(E0-10): the resume counts come from ingestion (see "Cross-module dependencies").
-    resume_counts = await repository.resume_status_counts(db)
     total_candidates = await repository.count_candidates(db)
     return build_global_stats(campaign_counts, resume_counts, total_candidates)
 
@@ -440,36 +427,113 @@ async def bulk_update_pipeline(
 async def bulk_delete_candidates(
     db: AsyncSession, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID]
 ) -> list[uuid.UUID]:
-    """Delete the campaign's candidates among ``candidate_ids`` and their resumes.
+    """Delete the campaign's candidates among ``candidate_ids`` (others are ignored).
 
-    Returns the deleted candidates' resume ids (one per deleted candidate).
-    TODO(E0-10): the resume deletion moves to ingestion (see "Cross-module dependencies").
+    Flushes but does not commit: the caller deletes the returned resume ids (one per deleted
+    candidate) in the same transaction and commits.
     """
     candidates = await repository.candidates_in_campaign(db, campaign_id, candidate_ids)
     resume_ids = [c.resume_id for c in candidates]
 
     for c in candidates:
         await repository.delete_candidate(db, c)
+    await repository.flush(db)
 
-    if resume_ids:
-        await repository.delete_resumes(db, resume_ids)
-
-    await repository.commit(db)
     logger.info("bulk_candidates_deleted", count=len(candidates))
     return resume_ids
 
 
 async def delete_candidate(db: AsyncSession, candidate_id: uuid.UUID) -> uuid.UUID:
-    """Delete one candidate and its resume; returns the resume id.
+    """Delete one candidate; returns its resume id.
 
-    TODO(E0-10): the resume deletion moves to ingestion (see "Cross-module dependencies").
+    Flushes but does not commit: the caller deletes the resume in the same transaction and
+    commits.
     """
     candidate = await _require_candidate(db, candidate_id)
 
-    # Delete candidate first to avoid SQLAlchemy trying to set resume_id=NULL
     await repository.delete_candidate(db, candidate)
-    await repository.delete_resume(db, candidate.resume_id)
+    await repository.flush(db)
 
-    await repository.commit(db)
     logger.info("candidate_deleted", candidate_id=str(candidate_id))
     return candidate.resume_id
+
+
+# ── Upload pipeline ───────────────────────────────────────────
+# Called by app.modules.ingestion: the upload endpoint (async) and the Celery tasks (sync). The
+# tasks run in worker processes without an event loop and use a synchronous SQLAlchemy Session,
+# so these take that Session and never commit: the task changes the resume's status and the
+# candidate in one transaction and commits it, as before the module split.
+async def campaign_exists(db: AsyncSession, campaign_id: uuid.UUID) -> bool:
+    return await repository.get_campaign(db, campaign_id) is not None
+
+
+@dataclass(frozen=True)
+class CampaignRequirements:
+    """What a campaign's candidates are scored against."""
+
+    role: str
+    required_skills: list[str]
+
+
+def get_campaign_requirements(db: Session, campaign_id: uuid.UUID) -> CampaignRequirements | None:
+    """The campaign's role and required skills, or ``None`` if it does not exist."""
+    campaign = repository.get_campaign_sync(db, campaign_id)
+    if not campaign:
+        return None
+    return CampaignRequirements(role=campaign.role, required_skills=campaign.required_skills or [])
+
+
+def save_resume_text(
+    db: Session, *, resume_id: uuid.UUID, campaign_id: uuid.UUID, raw_text: str
+) -> None:
+    """Store a resume's extracted text on its candidate, creating the (not yet analysed)
+    candidate on first extraction."""
+    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
+    if not candidate:
+        repository.add_sync(
+            db, Candidate(resume_id=resume_id, campaign_id=campaign_id, raw_text=raw_text)
+        )
+    else:
+        candidate.raw_text = raw_text
+
+
+def get_resume_text(db: Session, resume_id: uuid.UUID) -> str | None:
+    """The extracted text stored for a resume's candidate (``None``: no candidate or no text)."""
+    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
+    return candidate.raw_text if candidate else None
+
+
+def _require_candidate_for_resume(db: Session, resume_id: uuid.UUID) -> Candidate:
+    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
+    if not candidate:
+        raise NotFoundError("Candidate not found")
+    return candidate
+
+
+def record_extraction(db: Session, resume_id: uuid.UUID, profile: ExtractionResult) -> None:
+    """Copy the AI-extracted profile onto the resume's candidate."""
+    candidate = _require_candidate_for_resume(db, resume_id)
+    candidate.name = profile.name
+    candidate.email = profile.email
+    candidate.phone = profile.phone
+    candidate.github_url = profile.github_url
+    candidate.linkedin_url = profile.linkedin_url
+    candidate.skills = profile.skills
+    candidate.education = profile.education
+    candidate.work_experience = profile.work_experience
+    candidate.certifications = profile.certifications
+    candidate.projects = profile.projects
+    candidate.years_of_experience = profile.years_of_experience
+
+
+def record_scoring(db: Session, resume_id: uuid.UUID, scoring: ScoringResult) -> None:
+    """Copy the AI score and assessment onto the resume's candidate."""
+    candidate = _require_candidate_for_resume(db, resume_id)
+    candidate.score = scoring.score
+    candidate.score_breakdown = scoring.score_breakdown
+    candidate.category = scoring.category
+    candidate.summary = scoring.summary
+    candidate.strengths = scoring.strengths
+    candidate.weaknesses = scoring.weaknesses
+    candidate.missing_skills = scoring.missing_skills
+    candidate.recommendation = scoring.recommendation

@@ -2,32 +2,26 @@
 
 Private to the hiring module: other modules use ``app.modules.hiring.service`` instead.
 
-Cross-module references (E0-10): both models still point at ``Resume``, which today lives in
-``app.models.resume`` and moves into the ``ingestion`` module in E0-10. ``ingestion`` sits *above*
-``hiring`` in the layer contract, so hiring must never import it, not even for typing (grimp, and
-therefore import-linter, counts ``TYPE_CHECKING`` imports). The relationships are therefore
-declared by class name (``relationship("Resume", ...)``), which SQLAlchemy resolves through the
-shared registry at mapper configuration, and the ``Resume`` import below exists only for mypy.
-E0-10 drops these relationships (``Campaign.resumes``, ``Candidate.resume``) rather than hiding
-the import; ADR 0003 wants cross-module links to be plain UUIDs and cross-module deletes to be
-explicit service calls. The ``candidates.resume_id`` foreign key and the ORM cascade from
-``Campaign.resumes`` stay until then, since this ticket changes no schema or behaviour.
+Cross-module references: ``candidates.resume_id`` points at the ingestion-owned ``resumes``
+table. It is a plain column here, with no ORM relationship to ``Resume`` and no import of it
+(``ingestion`` sits above ``hiring`` in the layer contract; ADR 0003 wants cross-module links to
+be plain ids). The database still has the legacy foreign keys ``candidates.resume_id ->
+resumes.id`` and ``resumes.campaign_id -> campaigns.id``, both ``ON DELETE CASCADE``; deleting a
+campaign removes its resumes through the latter (E0-10 dropped the ORM cascade that did the same).
+The Person/Application split removes those foreign keys (ADR 0003); from then on a campaign
+delete must also call ingestion explicitly (see ``app.api``).
 """
 
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.platform.database import Base
-
-if TYPE_CHECKING:
-    # Typing only; see the module docstring. TODO(E0-10): remove with the relationships.
-    from app.models.resume import Resume
 
 
 class CampaignStatus(str, enum.Enum):
@@ -53,11 +47,6 @@ class Campaign(Base):
     )
 
     # Relationships
-    # Cross-module (ingestion-owned Resume). Deleting a campaign cascades to its resumes through
-    # this ORM cascade (and the resumes.campaign_id ON DELETE CASCADE). TODO(E0-10): see docstring.
-    resumes: Mapped[list["Resume"]] = relationship(
-        "Resume", back_populates="campaign", cascade="all, delete-orphan"
-    )
     candidates: Mapped[list["Candidate"]] = relationship(
         "Candidate", back_populates="campaign", cascade="all, delete-orphan"
     )
@@ -67,8 +56,8 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Cross-module foreign key to the ingestion-owned resumes table. Kept as is until the
-    # Person/Application split replaces this table (ADR 0003); no schema change in E0-09.
+    # Cross-module foreign key to the ingestion-owned resumes table (no ORM relationship). Kept
+    # as is until the Person/Application split replaces this table (ADR 0003).
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resumes.id", ondelete="CASCADE"),
@@ -121,6 +110,4 @@ class Candidate(Base):
     )
 
     # Relationships
-    # Cross-module (ingestion-owned Resume). TODO(E0-10): see the module docstring.
-    resume: Mapped["Resume"] = relationship("Resume", back_populates="candidate")
     campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="candidates")

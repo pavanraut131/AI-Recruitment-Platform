@@ -1,12 +1,13 @@
 """hiring data access: every query against the ``campaigns`` and ``candidates`` tables.
 
-Private to the hiring module (only ``service.py`` calls it). Functions take the request's
-``AsyncSession``; the ones that end a unit of work commit, exactly where the endpoints committed
-before the move, so the SQL issued per request is unchanged.
+Private to the hiring module (only ``service.py`` calls it). The async functions take the
+request's ``AsyncSession``; the ones that end a unit of work commit, exactly where the endpoints
+committed before the move, so the SQL issued per request is unchanged. The ``*_sync`` functions
+serve the upload pipeline's Celery tasks, which use a synchronous ``Session``; they never commit
+(the task owns the transaction).
 
-The functions under "Resume reads and deletes" query the ingestion-owned ``resumes`` table and
-are the only places hiring touches it. They are temporary: TODO(E0-10) see ``service.py``,
-"Cross-module dependencies", for how each one leaves this module.
+Hiring never queries another module's tables (the ``resumes`` counts and deletes live in
+``app.modules.ingestion``).
 """
 
 import uuid
@@ -14,8 +15,8 @@ from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.models.resume import Resume
 from app.modules.hiring.models import Campaign, Candidate
 
 
@@ -123,8 +124,12 @@ async def count_candidates(db: AsyncSession) -> int:
 
 
 async def delete_candidate(db: AsyncSession, candidate: Candidate) -> None:
-    """Mark ``candidate`` for deletion; the caller commits."""
+    """Mark ``candidate`` for deletion; the caller flushes or commits."""
     await db.delete(candidate)
+
+
+async def flush(db: AsyncSession) -> None:
+    await db.flush()
 
 
 async def commit(db: AsyncSession) -> None:
@@ -136,28 +141,14 @@ async def commit_and_refresh(db: AsyncSession, row: Campaign | Candidate) -> Non
     await db.refresh(row)
 
 
-# ── Resume reads and deletes (cross-module, TODO(E0-10)) ─────
-async def resume_status_counts(
-    db: AsyncSession, campaign_id: uuid.UUID | None = None
-) -> dict[str, int]:
-    """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
-    query = select(Resume.status, func.count(Resume.id))
-    if campaign_id is not None:
-        query = query.where(Resume.campaign_id == campaign_id)
-    result = await db.execute(query.group_by(Resume.status))
-    return {status: count for status, count in result.tuples()}
+# ── Upload pipeline (sync, Celery tasks) ──────────────────────
+def get_campaign_sync(db: Session, campaign_id: uuid.UUID) -> Campaign | None:
+    return db.query(Campaign).filter(Campaign.id == campaign_id).first()
 
 
-async def delete_resumes(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> None:
-    """Mark the resumes with these ids for deletion; the caller commits."""
-    result = await db.execute(select(Resume).where(Resume.id.in_(resume_ids)))
-    for resume in result.scalars().all():
-        await db.delete(resume)
+def get_candidate_by_resume_sync(db: Session, resume_id: uuid.UUID) -> Candidate | None:
+    return db.query(Candidate).filter(Candidate.resume_id == resume_id).first()
 
 
-async def delete_resume(db: AsyncSession, resume_id: uuid.UUID) -> None:
-    """Mark the resume with this id (if any) for deletion; the caller commits."""
-    result = await db.execute(select(Resume).where(Resume.id == resume_id))
-    resume = result.scalar_one_or_none()
-    if resume:
-        await db.delete(resume)
+def add_sync(db: Session, row: Candidate) -> None:
+    db.add(row)
