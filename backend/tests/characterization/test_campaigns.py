@@ -11,8 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.models.resume import Resume
 from app.modules.hiring.models import Campaign, Candidate
+from app.modules.ingestion.models import Resume
 from tests.characterization.snapshot_utils import response_data
 from tests.factories import at, make_campaign, make_candidate, make_resume
 from tests.fakes import FakeGemini, InMemoryStorage

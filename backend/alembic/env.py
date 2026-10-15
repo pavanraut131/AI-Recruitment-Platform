@@ -9,8 +9,8 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import all models so Alembic can detect them (every table must be on Base.metadata)
-import app.models.resume  # noqa: F401  # TODO(E0-10): app.modules.ingestion.models
 import app.modules.hiring.models  # noqa: F401
+import app.modules.ingestion.models  # noqa: F401
 from app.platform.config import settings
 from app.platform.database import Base
 

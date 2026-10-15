@@ -16,8 +16,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.devtools import seed
-from app.models.resume import Resume
 from app.modules.hiring.models import Campaign, Candidate
+from app.modules.ingestion.models import Resume
 from app.platform.config import settings
 from tests.factories import make_candidate
 

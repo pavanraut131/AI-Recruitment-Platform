@@ -1,3 +1,8 @@
+"""PDF handling for the upload pipeline: text extraction and page rendering for OCR.
+
+Moved from ``app/services/pdf.py`` (E0-10). Private to the ingestion module.
+"""
+
 import io
 
 import structlog
@@ -74,3 +79,14 @@ def clean_text(text: str) -> str:
 def is_valid_pdf(content: bytes) -> bool:
     """Check if bytes represent a valid PDF by checking the magic bytes."""
     return content[:4] == b"%PDF"
+
+
+def render_pages_png(pdf_bytes: bytes, dpi: int = 150) -> list[bytes]:
+    """Render every page as a PNG image (input for OCR of scanned PDFs)."""
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return [page.get_pixmap(dpi=dpi).tobytes("png") for page in doc]
+    finally:
+        doc.close()

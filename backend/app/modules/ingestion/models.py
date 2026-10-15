@@ -1,15 +1,22 @@
+"""ingestion ORM model: ``Resume`` (the ``resumes`` table).
+
+Private to the ingestion module: other modules and ``app.api`` use
+``app.modules.ingestion.service`` instead.
+
+``resumes.campaign_id`` refers to hiring's ``campaigns`` table. It is a plain column, with no ORM
+relationship to ``Campaign`` (ADR 0003: cross-module links are ids). The legacy database foreign
+key ``ON DELETE CASCADE`` stays until the Person/Application split, so deleting a campaign still
+deletes its resumes in the database.
+"""
+
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.database import Base
-
-if TYPE_CHECKING:
-    from app.modules.hiring.models import Campaign, Candidate
 
 
 class ResumeStatus(str):
@@ -40,10 +47,4 @@ class Resume(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="resumes")
-    candidate: Mapped["Candidate | None"] = relationship(
-        "Candidate", back_populates="resume", uselist=False
     )
