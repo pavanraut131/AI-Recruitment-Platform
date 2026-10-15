@@ -33,3 +33,13 @@ repos:
         additional_dependencies: ["uv==0.12.23"]
         files: ^backend/.*\.py$
         pass_filenames: false
+
+      # Module boundaries (spec EPIC-00 §3); the contracts live in backend/pyproject.toml, so a
+      # change there re-runs it too. Analyses the whole import graph, not just staged files.
+      - id: lint-imports
+        name: import-linter
+        entry: uv run --directory backend lint-imports
+        language: python
+        additional_dependencies: ["uv==0.12.23"]
+        files: ^backend/(.*\.py|pyproject\.toml)$
+        pass_filenames: false

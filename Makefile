@@ -53,6 +53,7 @@ BACKEND_RUN = $(UV) run --directory backend
 lint:
 	$(BACKEND_RUN) ruff check .
 	$(BACKEND_RUN) ruff format --check .
+	$(BACKEND_RUN) lint-imports
 
 format:
 	$(BACKEND_RUN) ruff check --fix .

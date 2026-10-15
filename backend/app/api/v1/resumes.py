@@ -11,11 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from app.core import storage
-from app.core.config import settings
-from app.core.database import get_db
 from app.models.campaign import Campaign
 from app.models.resume import Resume
+from app.platform import storage
+from app.platform.config import settings
+from app.platform.database import get_db
 from app.schemas.resume import ResumeResponse, UploadBatchResponse
 from workers.extract_task import extract_resume
 

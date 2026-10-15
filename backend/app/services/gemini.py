@@ -11,7 +11,7 @@ from tenacity import (
     wait_fixed,
 )
 
-from app.core.config import settings
+from app.platform.config import settings
 from app.schemas.candidate import ExtractionResult, ScoringResult
 
 logger = structlog.get_logger()

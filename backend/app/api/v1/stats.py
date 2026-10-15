@@ -8,10 +8,10 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.models.campaign import Campaign
 from app.models.candidate import Candidate
 from app.models.resume import Resume
+from app.platform.database import get_db
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 

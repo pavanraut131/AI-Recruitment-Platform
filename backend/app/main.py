@@ -6,9 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import campaigns, candidates, parse_jd, resumes, stats
-from app.core.config import settings
-from app.core.logging import configure_logging
-from app.core.storage import ensure_bucket_exists
+from app.platform.config import settings
+from app.platform.logging import configure_logging
+from app.platform.storage import ensure_bucket_exists
 
 configure_logging(debug=settings.DEBUG)
 logger = structlog.get_logger()
@@ -74,7 +74,7 @@ async def readiness_check():
         checks["redis"] = f"error: {e}"
 
     try:
-        from app.core.database import engine
+        from app.platform.database import engine
 
         async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))

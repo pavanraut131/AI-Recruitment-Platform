@@ -62,7 +62,7 @@ async def test_health_ready(
     snapshot: SnapshotAssertion,
     redis_up: bool,
 ) -> None:
-    from app.core import database
+    from app.platform import database
 
     # The readiness check opens its own connection with the app's engine; use the test engine
     # (NullPool), since a pooled asyncpg connection cannot be reused across test event loops.

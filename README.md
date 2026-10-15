@@ -109,7 +109,7 @@ seeded resumes do not work). The same `--seed` always produces the same data.
 cd backend
 uv sync                 # creates .venv from uv.lock (incl. dev tools); install uv: https://docs.astral.sh/uv/
 source .venv/bin/activate
-pre-commit install      # optional: run ruff + mypy on every commit (make lint / format / typecheck / test)
+pre-commit install      # optional: run ruff + mypy + import-linter on every commit (make lint / format / typecheck / test)
 
 # Start services locally (need redis + postgres + minio running)
 uvicorn app.main:app --reload --port 8000
@@ -154,10 +154,15 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   │   │   ├── campaigns.py  # Campaign CRUD + stats
 │   │   │   ├── resumes.py    # Bulk upload + SSE stream
 │   │   │   └── candidates.py # Candidate listing + filters
-│   │   ├── core/
+│   │   ├── platform/         # Shared kernel (no imports from modules/)
 │   │   │   ├── config.py     # Pydantic settings
 │   │   │   ├── database.py   # Async SQLAlchemy
-│   │   │   └── storage.py    # MinIO/S3 abstraction
+│   │   │   ├── storage.py    # MinIO/S3 abstraction
+│   │   │   ├── logging.py    # structlog setup
+│   │   │   └── celery_app.py # Celery factory + routing
+│   │   ├── modules/          # Domain modules: talent, hiring, ingestion, ai (EPIC-00 §3)
+│   │   ├── devtools/         # Dev-only scripts; never imported by app code
+│   │   ├── core/             # Re-export shims for the old platform paths (until E0-10)
 │   │   ├── models/           # SQLAlchemy ORM models
 │   │   ├── schemas/          # Pydantic schemas
 │   │   ├── services/
@@ -165,7 +170,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   │   │   └── pdf.py        # pdfplumber + PyMuPDF
 │   │   └── main.py           # FastAPI app + lifespan
 │   ├── workers/
-│   │   ├── celery_app.py     # Celery factory + routing
+│   │   ├── celery_app.py     # Shim: `celery -A workers.celery_app` (until E0-10)
 │   │   ├── extract_task.py   # Worker 1: PDF → text
 │   │   └── ai_task.py        # Worker 2: text → Gemini → score
 │   └── alembic/              # Database migrations

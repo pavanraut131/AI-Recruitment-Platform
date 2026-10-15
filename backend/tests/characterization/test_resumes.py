@@ -16,9 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.core.config import settings
 from app.models.campaign import Campaign
 from app.models.resume import Resume
+from app.platform.config import settings
 from tests.characterization.snapshot_utils import (
     celery_calls_data,
     response_data,

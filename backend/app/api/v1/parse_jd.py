@@ -5,7 +5,7 @@ import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core.config import settings
+from app.platform.config import settings
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
