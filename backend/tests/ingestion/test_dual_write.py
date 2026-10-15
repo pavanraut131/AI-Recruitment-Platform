@@ -30,7 +30,7 @@ from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult, JobRequirements, ScoringResult
 from app.modules.ai.service import AIQuotaExceeded
 from app.modules.hiring import service as hiring_service
-from app.modules.hiring.models import Application, Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign, Candidate, LegacyCandidateMap
 from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
@@ -190,6 +190,7 @@ def test_repeat_applicant_to_two_campaigns_is_one_person_with_two_applications(
         assert application.resume_uploaded_at == resume.uploaded_at
         candidate = candidate_of(sync_db, resume)  # the legacy row, written as before
         assert (application.score, application.category) == (candidate.score, candidate.category)
+        assert application.id == candidate.id  # a new application reuses the id (E0-17)
     person_id = str(first.person_id)
     assert [(e["person_id"], e["matched_existing"]) for e in done_events(events)] == [
         (person_id, False),
@@ -229,6 +230,17 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
     )
     # Each legacy candidate keeps its own resume's scoring.
     assert older_candidate.missing_skills == ["Go"]
+    # Both candidates lead to the application (E0-17): the first analysed one's id is the
+    # application's, the other is redirected by legacy_candidate_map.
+    first, second = (
+        (newer_candidate, older_candidate) if newer_first else (older_candidate, newer_candidate)
+    )
+    assert application.id == first.id
+    assert hiring_service.legacy_links(sync_db, [first.id, second.id]) == {
+        first.id: application.id,
+        second.id: application.id,
+    }
+    assert sync_db.execute(select(func.count()).select_from(LegacyCandidateMap)).scalar_one() == 1
 
 
 def test_resumes_without_contact_details_each_get_their_own_person(
