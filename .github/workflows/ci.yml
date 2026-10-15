@@ -108,10 +108,12 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # app.platform.config.Settings requires all three at import time; Alembic uses the sync URL.
+      # app.platform.config.Settings requires both URLs at import time; Alembic uses the sync one.
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
       SYNC_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-      GEMINI_API_KEY: dummy-not-used
+      # Migrations never call an AI provider. With the fake one Settings needs no GEMINI_API_KEY
+      # (the default, gemini, would refuse to load without one).
+      AI_PROVIDER: fake
     steps:
       - uses: actions/checkout@v7
 
