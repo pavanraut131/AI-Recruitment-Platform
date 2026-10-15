@@ -162,6 +162,7 @@ async def test_reset_deletes_only_the_seeded_tables_and_reports_counts(
         "campaigns": manifest["counts"]["campaigns"],
         "resumes": manifest["counts"]["resumes"],
         "candidates": manifest["counts"]["legacy_candidates"],
+        "derived": {model.__tablename__: 0 for model in seed.DERIVED_MODELS},
     }
     for model in (Campaign, Resume, Candidate):
         assert await count(db_session, model) == 0
@@ -211,6 +212,29 @@ def test_manifest_is_internally_consistent(people: int, campaigns: int) -> None:
     assert cases[seed.PHONE_FORMATS]["candidates"] == 3 * cases[seed.PHONE_FORMATS]["true_people"]
     multi = cases[seed.MULTI_CAMPAIGN]
     assert multi["candidates"] >= 2 * multi["true_people"]
+
+
+@pytest.mark.parametrize(("people", "campaigns"), [(PEOPLE, CAMPAIGNS), (800, 15)])
+def test_every_phone_is_match_eligible_under_option_a(people: int, campaigns: int) -> None:
+    """The expectations assume every seeded phone can match (ADR 0004 amendment, option A):
+    a region-inferred landline would be stored ``inferred`` and never match, splitting the
+    phone_formats people and dropping the conflicts. Every format, with or without +91, must
+    classify as a mobile."""
+    from app.modules.talent.identity import classify_phone
+
+    phones = [s.phone for s in seed.build_plan(people, campaigns, SEED).submissions if s.phone]
+    assert phones
+    classified = {phone: classify_phone(phone, "IN") for phone in phones}
+    assert all(c is not None and c.is_mobile and c.match_eligible for c in classified.values())
+    # The formats without a country code are among them (they are the ones option A could drop).
+    assert any(p.startswith("0") for p in phones) and any("-" in p for p in phones)
+
+
+def test_manifest_lists_the_seeded_campaigns() -> None:
+    plan = seed.build_plan(PEOPLE, CAMPAIGNS, SEED)
+    manifest = seed.build_manifest(plan)
+    assert manifest["campaign_ids"] == [str(row["id"]) for row in plan.campaign_rows]
+    assert len(set(manifest["campaign_ids"])) == CAMPAIGNS
 
 
 def test_default_case_sizes() -> None:
