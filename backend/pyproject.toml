@@ -40,6 +40,8 @@ dependencies = [
     "python-dotenv==1.0.1",
     "httpx==0.27.0",
     "tenacity==8.3.0",
+    # Seed data for local stacks (app.devtools.seed runs inside the backend image)
+    "faker==30.8.2",
     # Identity normalisation (phone numbers -> E.164)
     "phonenumbers==9.0.41",
 ]

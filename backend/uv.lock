@@ -524,6 +524,19 @@ wheels = [
 ]
 
 [[package]]
+name = "faker"
+version = "30.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c1/df/7574c0d13f0bbab725e52bec4b00783aaa14163fe9093dde11a928a4c638/faker-30.8.2.tar.gz", hash = "sha256:aa31b52cdae3673d6a78b4857c7bcdc0e98f201a5cb77d7827fa9e6b5876da94", size = 1808329, upload-time = "2024-10-31T17:19:18.536Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/82/f7d0c0a4ab512fd1572a315eec903d50a578c75d5aa894cf3f5cc04025e5/Faker-30.8.2-py3-none-any.whl", hash = "sha256:4a82b2908cd19f3bba1a4da2060cc4eb18a40410ccdf9350d071d79dc92fe3ce", size = 1846458, upload-time = "2024-10-31T17:19:14.714Z" },
+]
+
+[[package]]
 name = "fakeredis"
 version = "2.39.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1615,6 +1628,7 @@ dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "celery", extra = ["redis"] },
+    { name = "faker" },
     { name = "fastapi" },
     { name = "flower" },
     { name = "google-generativeai" },
@@ -1661,6 +1675,7 @@ requires-dist = [
     { name = "boto3", specifier = "==1.34.131" },
     { name = "botocore", specifier = "==1.34.131" },
     { name = "celery", extras = ["redis"], specifier = "==5.4.0" },
+    { name = "faker", specifier = "==30.8.2" },
     { name = "fastapi", specifier = "==0.111.0" },
     { name = "flower", specifier = "==2.0.1" },
     { name = "google-generativeai", specifier = "==0.7.2" },
