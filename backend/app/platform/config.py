@@ -1,6 +1,7 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,8 +34,9 @@ class Settings(BaseSettings):
     # GEMINI_API_KEY) or "fake" (deterministic offline answers for local dev and smoke tests).
     AI_PROVIDER: Literal["gemini", "fake"] = "gemini"
 
-    # Gemini
-    GEMINI_API_KEY: str
+    # Gemini. Required (non-blank) when AI_PROVIDER is "gemini", optional otherwise; see
+    # _require_gemini_key.
+    GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # Upload limits
@@ -47,6 +49,17 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def _require_gemini_key(self) -> Self:
+        """Fail at start-up, not on the first resume, when Gemini is selected without a key."""
+        if self.AI_PROVIDER == "gemini" and not (self.GEMINI_API_KEY or "").strip():
+            raise ValueError(
+                "GEMINI_API_KEY is required when AI_PROVIDER=gemini (the default). Set "
+                "GEMINI_API_KEY to your Google Gemini API key, or set AI_PROVIDER=fake to run "
+                "without Gemini."
+            )
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -42,11 +42,26 @@ logger = structlog.get_logger()
 # Job description parsing has always used this model, whatever GEMINI_MODEL says.
 JD_PARSE_MODEL = "gemini-2.5-flash"
 
-if settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
+# The key the SDK was last configured with (see _configure_client).
+_configured_key: str | None = None
+
+
+def _configure_client() -> None:
+    """Configure the SDK with ``settings.GEMINI_API_KEY`` on first use, and again if it changes.
+
+    Done lazily rather than at import so that importing this module has no side effects (with
+    ``AI_PROVIDER=fake`` there may be no key at all). Settings validation guarantees a key when
+    ``AI_PROVIDER=gemini``.
+    """
+    global _configured_key
+    key = settings.GEMINI_API_KEY
+    if key and key != _configured_key:
+        genai.configure(api_key=key)
+        _configured_key = key
 
 
 def _model(name: str | None = None) -> Any:
+    _configure_client()
     return genai.GenerativeModel(name or settings.GEMINI_MODEL)
 
 
