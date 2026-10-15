@@ -12,8 +12,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from app.core.config import Settings
 from app.modules.talent.identity import normalize_email, normalize_phone
+from app.platform.config import Settings
 
 # Load phonenumbers' lazily-read metadata for the regions used below once, at import time, so
 # the first Hypothesis example doesn't pay for it and trip the deadline.

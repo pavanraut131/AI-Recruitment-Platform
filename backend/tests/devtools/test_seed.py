@@ -15,9 +15,9 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.devtools import seed
 from app.models import Campaign, Candidate, Resume
+from app.platform.config import settings
 from tests.factories import make_candidate
 
 PEOPLE, CAMPAIGNS, SEED = 60, 4, 7

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.candidate import Candidate
 from app.models.resume import Resume
 from app.platform.database import get_db
+from app.platform.sql import LIKE_ESCAPE, escape_like
 from app.schemas.candidate import (
     CandidateCategoryUpdate,
     CandidateDetail,
