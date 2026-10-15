@@ -11,15 +11,15 @@ import uuid
 
 import structlog
 from celery import Task
-from google.api_core.exceptions import ResourceExhausted
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.resume import Resume
+from app.modules.ai.schemas import ExtractionResult, JobRequirements
+from app.modules.ai.service import AIQuotaExceeded, get_ai_service
 from app.modules.hiring.models import Campaign, Candidate
 from app.platform.celery_app import celery_app
 from app.platform.config import settings
-from app.services.gemini import extract_candidate_info, is_resume_content, score_candidate
 
 logger = structlog.get_logger()
 
@@ -106,7 +106,7 @@ def process_candidate_ai(self, resume_id: str):
 
         # ── Step 1: Extract structured info ──────────────────────
         log.info("calling_gemini_extraction")
-        extraction = extract_candidate_info(raw_text)
+        extraction = get_ai_service().extract_profile(raw_text)
         log.info(
             "extraction_complete", name=extraction.name, skills_count=len(extraction.skills or [])
         )
@@ -131,8 +131,9 @@ def process_candidate_ai(self, resume_id: str):
 
         # ── Step 2: Score candidate ───────────────────────────────
         log.info("calling_gemini_scoring")
-        candidate_profile = extraction.model_dump()
-        scoring = score_candidate(candidate_profile, role, required_skills)
+        scoring = get_ai_service().score(
+            extraction, JobRequirements(role=role, required_skills=required_skills)
+        )
         log.info(
             "scoring_complete",
             score=scoring.score,
@@ -189,10 +190,26 @@ def process_candidate_ai(self, resume_id: str):
             },
         )
 
-    except ResourceExhausted:
+    except AIQuotaExceeded:
         # Daily quota hit — stop immediately, do NOT retry
         _mark_quota_exceeded(resume_id, log)
 
     except Exception as exc:
         log.error("ai_processing_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
+
+
+def is_resume_content(extraction: ExtractionResult) -> bool:
+    """
+    Heuristic check: does the extracted data look like a real resume?
+    Rejects documents that yield no identifiable candidate info.
+    """
+    has_name = bool(extraction.name and len(extraction.name.strip()) > 1)
+    has_skills = bool(extraction.skills and len(extraction.skills) > 0)
+    has_experience = bool(extraction.work_experience and len(extraction.work_experience) > 0)
+    has_education = bool(extraction.education and len(extraction.education) > 0)
+    has_email = bool(extraction.email)
+
+    # Must have at least 2 of these signals to be considered a real resume
+    signals = sum([has_name, has_skills, has_experience, has_education, has_email])
+    return signals >= 2

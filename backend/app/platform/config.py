@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +28,10 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin_secret"
     MINIO_BUCKET_NAME: str = "resumes"
     MINIO_USE_SSL: bool = False
+
+    # AI provider behind app.modules.ai.service.get_ai_service(): "gemini" (Google Gemini, needs
+    # GEMINI_API_KEY) or "fake" (deterministic offline answers for local dev and smoke tests).
+    AI_PROVIDER: Literal["gemini", "fake"] = "gemini"
 
     # Gemini
     GEMINI_API_KEY: str

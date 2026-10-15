@@ -153,27 +153,12 @@ def extract_resume(self, resume_id: str):
 
 
 def _gemini_vision_ocr(pdf_bytes: bytes) -> str:
-    """Use Gemini Vision to OCR a scanned PDF (fallback path)."""
+    """OCR a scanned PDF with the AI service (fallback path)."""
     import fitz
-    import google.generativeai as genai
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    from app.modules.ai.service import get_ai_service
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    all_text = []
-
-    for page in doc:
-        pix = page.get_pixmap(dpi=150)
-        img_bytes = pix.tobytes("png")
-
-        response = model.generate_content(
-            [
-                "Extract all text from this resume page. Return only the extracted text, no formatting.",
-                {"mime_type": "image/png", "data": img_bytes},
-            ]
-        )
-        all_text.append(response.text)
-
+    images = [page.get_pixmap(dpi=150).tobytes("png") for page in doc]
     doc.close()
-    return "\n".join(all_text)
+    return get_ai_service().transcribe_page_images(images)

@@ -127,6 +127,9 @@ known-third-party = ["alembic"]
 # these contracts start biting as soon as the files they describe exist.
 [tool.importlinter]
 root_packages = ["app", "workers"]
+# Third-party packages are nodes in the import graph too, so a contract can forbid one
+# (``google`` below). Only their top-level name is modelled, e.g. ``google``.
+include_external_packages = true
 # `if TYPE_CHECKING:` imports count (grimp's default; `exclude_type_checking_imports` is deliberately
 # left off): a type-only import of another module's models is still coupling to its internals. So
 # cross-module ORM relationships name their target by string, and once both ends are in modules they
@@ -160,6 +163,26 @@ name = "Nothing imports devtools"
 type = "protected"
 protected_modules = ["app.devtools"]
 allowed_importers = ["app.devtools"]
+
+[[tool.importlinter.contracts]]
+id = "llm-sdk-only-in-ai"
+name = "Only the ai module imports an LLM SDK (google.*)"
+type = "forbidden"
+# Everything except app.modules.ai. (A forbidden contract takes no "all but" wildcard, so list
+# the rest; a new top-level package under app/ must be added here.)
+source_modules = [
+    "app.main",
+    "app.platform",
+    "app.devtools",
+    "app.modules.hiring",
+    "app.modules.ingestion",
+    "app.modules.talent",
+    "workers",
+]
+forbidden_modules = ["google"]
+# Importing ai.service (which may load the Gemini adapter) is the point; only direct imports of
+# google.* outside ai are violations.
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "public-interfaces"

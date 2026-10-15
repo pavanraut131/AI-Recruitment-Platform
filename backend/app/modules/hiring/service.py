@@ -46,17 +46,16 @@ from importing it. Proposed resolution for each, none of which needs hiring to i
 
 import csv
 import io
-import json
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import google.generativeai as genai
 import structlog
 from sqlalchemy import ColumnElement, column, exists, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.ai import service as ai_service
 from app.modules.hiring import repository
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.hiring.schemas import (
@@ -68,13 +67,9 @@ from app.modules.hiring.schemas import (
     JDParseRequest,
     JDParseResponse,
 )
-from app.platform.config import settings
 from app.platform.sql import LIKE_ESCAPE, escape_like
 
 logger = structlog.get_logger()
-
-if settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
 
 VALID_CATEGORIES = {"strong_match", "moderate_match", "weak_match", "rejected"}
 VALID_PIPELINE_STAGES = {"screened", "phone_call", "technical", "offer", "hired", "rejected_manual"}
@@ -101,7 +96,8 @@ class InvalidInputError(HiringError):
 
 
 class JDParseError(HiringError):
-    """The job description could not be parsed (no API key, or Gemini/its answer failed)."""
+    """The job description could not be parsed (AI provider not configured, or the call or its
+    answer failed)."""
 
 
 # ── Campaigns ─────────────────────────────────────────────────
@@ -229,62 +225,15 @@ def build_global_stats(
 
 
 # ── Job description parsing ───────────────────────────────────
-# str.format template: literal braces are escaped as {{ }}. The only placeholder is
-# {job_description}; braces inside the substituted JD are not re-interpreted.
-PROMPT = """
-You are a technical recruiter. Extract the key information from this job description.
-
-Return ONLY valid JSON with this exact schema:
-{{
-  "role_title": "extracted job title",
-  "seniority": "junior|mid|senior|staff",
-  "skills": ["list", "of", "technical", "skills", "required"]
-}}
-
-Rules:
-- skills: extract ONLY technical skills (languages, frameworks, tools, platforms)
-- seniority: infer from title/requirements ("5+ years" = senior, etc.)
-- role_title: extract the actual job title from the JD
-
-Job Description:
----
-{job_description}
----
-
-Return ONLY valid JSON, no markdown, no explanation.
-"""
-
-
-def build_prompt(job_description: str) -> str:
-    """Render PROMPT for one job description (which may itself contain braces)."""
-    return PROMPT.format(job_description=job_description)
-
-
 async def parse_job_description(payload: JDParseRequest) -> JDParseResponse:
-    """Extract role title, seniority and skills from a job description with Gemini.
-
-    TODO(E0-10): call ``ai.service`` instead of ``google.generativeai`` directly.
-    """
-    if not settings.GEMINI_API_KEY:
-        raise JDParseError("Gemini API key not configured")
-
+    """Extract role title, seniority and skills from a job description with the AI service."""
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = build_prompt(payload.job_description)
-
-        response = await model.generate_content_async(prompt)
-        text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
-
-        data = json.loads(text.strip())
+        result = await ai_service.get_ai_service().parse_job_description(payload.job_description)
         return JDParseResponse(
-            role_title=data.get("role_title", "Unknown Role"),
-            seniority=data.get("seniority", "mid"),
-            skills=data.get("skills", []),
+            role_title=result.role_title, seniority=result.seniority, skills=result.skills
         )
+    except ai_service.AIConfigurationError as e:
+        raise JDParseError(str(e)) from e
     except Exception as e:
         logger.error("jd_parse_failed", error=str(e))
         raise JDParseError("Failed to parse job description") from e

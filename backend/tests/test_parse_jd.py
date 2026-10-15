@@ -5,7 +5,8 @@ import json
 import pytest
 from httpx import AsyncClient
 
-from app.modules.hiring.service import PROMPT, build_prompt
+from app.modules.ai.prompts import JD_PROMPT as PROMPT
+from app.modules.ai.prompts import build_jd_prompt as build_prompt
 from tests.fakes import FakeGemini
 
 JD_WITH_BRACES = 'Senior Go dev. Config like {"replicas": 3} and templates {{ .Values }} or {name}.'
