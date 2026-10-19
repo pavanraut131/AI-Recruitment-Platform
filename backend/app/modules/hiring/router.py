@@ -8,7 +8,8 @@ paths, tags, endpoint function names (they are the OpenAPI ``operationId``\\ s) 
 ``tests/characterization/__snapshots__/test_stats_health.ambr``. ``app.main`` includes them.
 
 The endpoints that also need the ``ingestion`` module (campaign detail and stats, the global
-stats, candidate deletes) are composed in ``app.api`` instead.
+stats, candidate deletes, and since E0-18 the recruiter updates, which mirror onto applications
+and need the resumes' upload times) are composed in ``app.api`` instead.
 """
 
 import uuid
@@ -22,15 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.hiring import service
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.hiring.schemas import (
-    BulkPipelineUpdate,
     CampaignCreate,
     CampaignResponse,
     CampaignUpdate,
-    CandidateCategoryUpdate,
     CandidateDetail,
     CandidateListItem,
-    CandidateNotesUpdate,
-    CandidatePipelineUpdate,
     JDParseRequest,
     JDParseResponse,
 )
@@ -160,41 +157,11 @@ async def export_candidates_csv(
     )
 
 
-# ── Candidates: get / update one ──────────────────────────────
+# ── Candidates: get one ──────────────────────────────
 @candidates_router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
 async def get_candidate(candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Candidate:
     with _http_errors():
         return await service.get_candidate(db, candidate_id)
-
-
-@candidates_router.put("/candidates/{candidate_id}/category", response_model=CandidateDetail)
-async def update_candidate_category(
-    candidate_id: uuid.UUID,
-    payload: CandidateCategoryUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> Candidate:
-    with _http_errors():
-        return await service.update_candidate_category(db, candidate_id, payload.category)
-
-
-@candidates_router.patch("/candidates/{candidate_id}/notes", response_model=CandidateDetail)
-async def update_candidate_notes(
-    candidate_id: uuid.UUID,
-    payload: CandidateNotesUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> Candidate:
-    with _http_errors():
-        return await service.update_candidate_notes(db, candidate_id, payload.notes)
-
-
-@candidates_router.patch("/candidates/{candidate_id}/pipeline", response_model=CandidateDetail)
-async def update_candidate_pipeline(
-    candidate_id: uuid.UUID,
-    payload: CandidatePipelineUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> Candidate:
-    with _http_errors():
-        return await service.update_candidate_pipeline(db, candidate_id, payload.stage)
 
 
 @candidates_router.get("/resumes/{resume_id}/candidate", response_model=CandidateDetail)
@@ -203,20 +170,3 @@ async def get_candidate_by_resume(
 ) -> Candidate:
     with _http_errors():
         return await service.get_candidate_by_resume(db, resume_id)
-
-
-# ── Candidates: bulk actions ──────────────────────────────────
-# response_model=None: no response schema was ever published for the bulk endpoints, and
-# FastAPI would otherwise derive one from the dict[str, int] return annotation.
-@candidates_router.patch("/campaigns/{campaign_id}/candidates/bulk-pipeline", response_model=None)
-async def bulk_update_pipeline(
-    campaign_id: uuid.UUID,
-    payload: BulkPipelineUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, int]:
-    """Move multiple candidates to the same pipeline stage in one request."""
-    with _http_errors():
-        updated = await service.bulk_update_pipeline(
-            db, campaign_id, payload.candidate_ids, payload.stage
-        )
-    return {"updated": updated}

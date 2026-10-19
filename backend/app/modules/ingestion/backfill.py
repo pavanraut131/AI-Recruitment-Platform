@@ -4,6 +4,7 @@ Usage (inside the backend container, or from ``backend/``)::
 
     python -m app.modules.ingestion.backfill [--batch-size 500] [--max-batches N]
         [--checkpoint-name person_application_v1] [--reset-checkpoint]
+    python -m app.modules.ingestion.backfill --resync-recruiter-fields [--batch-size 500]
 
 Runbook: ``docs/runbooks/person-application-backfill.md``. Check the result with
 ``python -m app.modules.ingestion.verify_backfill``.
@@ -32,7 +33,8 @@ Algorithm
     4. ``hiring.link_legacy_candidate``: when the application already existed under another id,
        a ``legacy_candidate_map`` row redirects the candidate's id to it.
     5. ``hiring.carry_recruiter_fields``: ``pipeline_stage`` and ``notes`` per field from the
-       newest candidate of that application that has a value (see that function).
+       newest candidate of that application that has a value, and the category of the
+       candidate of its current resume (``hiring.expected_recruiter_fields``).
 
     Candidates are skipped (logged and counted, never fatal) when their resume is missing, is not
     ``done`` (still processing, failed: the pipeline links those itself when they finish), or the
@@ -65,6 +67,17 @@ Idempotent and resumable
     ``already_backfilled``), and so does ``--reset-checkpoint``, which only restarts from the
     first candidate. Candidates created after the run (live uploads) are linked by the pipeline
     itself; a later run would also pick them up, as they sort after the checkpoint.
+
+Re-sync of the recruiter fields (``--resync-recruiter-fields``, E0-18)
+    Before E0-18 the legacy recruiter endpoints wrote only ``candidates``: a stage, note or
+    category changed after a candidate was backfilled is not on its application, and the
+    backfill does not revisit ``already_backfilled`` candidates. The re-sync recomputes the
+    mirrored fields of **every** application from its candidates with the same rule
+    (``hiring.carry_recruiter_fields``), in pages of ``--batch-size`` applications (keyset on
+    the id), one transaction per page, and reports how many applications changed. Idempotent:
+    a second run changes nothing. It needs no checkpoint: it is cheap and a re-run is the
+    resume. Run it after E0-18 is deployed (from then on the API mirrors every write), right
+    before ``verify_backfill``; runbook §8.
 
 Concurrency with live uploads
     The pipeline and the backfill share ``resolve_person``'s advisory locks and the
@@ -248,23 +261,19 @@ def backfill_candidate(
     outcome.map_row = hiring_service.link_legacy_candidate(
         db, candidate_id=candidate.id, application_id=application.id
     )
-    # A new application has only this candidate: nothing to carry unless it has a value.
-    if not outcome.application_created or candidate.pipeline_stage or candidate.notes:
-        outcome.recruiter_fields = bool(_carry_recruiter_fields(db, application.id))
+    outcome.recruiter_fields = bool(carry_recruiter_fields(db, [application.id]))
     return outcome
 
 
-def _carry_recruiter_fields(db: Session, application_id: uuid.UUID) -> list[str]:
-    """Order the application's legacy candidates by their resume's upload time (ingestion's
-    data) and let hiring apply its rule (``hiring.carry_recruiter_fields``)."""
-    linked = hiring_service.linked_legacy_candidates(db, application_id)
-    uploaded = repository.uploaded_at_sync(db, [c.resume_id for c in linked])
-    newest_first = sorted(
-        (c for c in linked if c.resume_id in uploaded),
-        key=lambda c: (uploaded[c.resume_id], c.resume_id),
-        reverse=True,
+def carry_recruiter_fields(
+    db: Session, application_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[str]]:
+    """Let hiring recompute these applications' recruiter fields from their candidates
+    (``hiring.carry_recruiter_fields``), handing it the resumes' upload times (ingestion's
+    data). Shared by the backfill, the re-sync and the upload pipeline."""
+    return hiring_service.carry_recruiter_fields(
+        db, application_ids, lambda resume_ids: repository.uploaded_at_sync(db, resume_ids)
     )
-    return hiring_service.carry_recruiter_fields(db, application_id, [c.id for c in newest_first])
 
 
 # ── The run ───────────────────────────────────────────────────
@@ -344,6 +353,69 @@ def _backfill_one(
     return outcome
 
 
+# ── Re-sync of the recruiter fields (E0-18) ──────────────────
+@dataclass
+class ResyncSummary:
+    batches: int = 0
+    applications: int = 0
+    changed: int = 0
+    fields: Counter[str] = field(default_factory=Counter)
+    duration_s: float = 0.0
+
+    def render(self) -> str:
+        fields = ", ".join(f"{name} {n}" for name, n in sorted(self.fields.items()))
+        return "\n".join(
+            [
+                f"resync: finished after {self.batches} batch(es) in {self.duration_s:.1f}s",
+                f"  applications checked:   {self.applications}",
+                f"  applications changed:   {self.changed}" + (f" ({fields})" if fields else ""),
+            ]
+        )
+
+
+def run_resync_recruiter_fields(
+    session_factory: SessionFactory,
+    *,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    progress: Callable[[str], None] = print,
+) -> ResyncSummary:
+    """Recompute the recruiter fields of every application from its candidates, one
+    transaction per page of ``batch_size`` applications (module docstring). Idempotent."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+    started = time.perf_counter()
+    summary = ResyncSummary()
+    after: uuid.UUID | None = None
+    try:
+        while True:
+            with session_factory() as db:
+                page = hiring_service.application_ids_after(db, after, batch_size)
+                if not page:
+                    break
+                changed = carry_recruiter_fields(db, page)
+                db.commit()
+            summary.batches += 1
+            summary.applications += len(page)
+            summary.changed += len(changed)
+            for names in changed.values():
+                summary.fields.update(names)
+            for application_id, names in changed.items():
+                logger.info(
+                    "resync_recruiter_fields_changed",
+                    application_id=str(application_id),
+                    fields=names,
+                )
+            progress(
+                f"resync: batch {summary.batches}: {len(page)} applications, changed {len(changed)}"
+            )
+            after = page[-1]
+            if len(page) < batch_size:
+                break
+    finally:
+        summary.duration_s = time.perf_counter() - started
+    return summary
+
+
 # ── CLI ───────────────────────────────────────────────────────
 def _positive(value: str) -> int:
     number = int(value)
@@ -367,7 +439,25 @@ def main(argv: Sequence[str] | None = None, session_factory: SessionFactory | No
         action="store_true",
         help="start again from the first candidate (already backfilled ones are skipped)",
     )
+    parser.add_argument(
+        "--resync-recruiter-fields",
+        action="store_true",
+        help="instead of backfilling, recompute every application's pipeline_stage, notes and "
+        "category from its candidates (E0-18; idempotent)",
+    )
     args = parser.parse_args(argv)
+
+    if args.resync_recruiter_fields:
+        try:
+            resync = run_resync_recruiter_fields(
+                session_factory or tasks.SyncSession, batch_size=args.batch_size
+            )
+        except Exception as exc:
+            print(f"resync: FAILED: {exc!r}", file=sys.stderr)
+            print("resync: committed batches are kept; run again (it is idempotent)")
+            return 1
+        print(resync.render())
+        return 0
 
     try:
         summary = run_backfill(
