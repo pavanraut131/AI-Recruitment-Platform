@@ -128,7 +128,7 @@ References between modules are stored as plain UUIDs **without** foreign key con
    1. `ai.extract_profile(text)` → store `resumes.extracted`. Skipped if already present.
    2. `ai.score(profile, campaign_requirements)` → ScoringResult. Not stored on its own: a retry scores again.
    3. `talent.resolve_person(identifiers, profile, resume_id)` → `person_id`. Skipped if `resumes.person_id` is already set.
-   4. Write the legacy candidate and `hiring.upsert_application(campaign_id, person_id, resume_id, resume_uploaded_at, scoring)`, an upsert on `(campaign_id, person_id)`: a newer resume (by `uploaded_at`, ties by resume id) or the same one replaces the scoring, an older one changes nothing, and the recruiter's fields are never written.
+   4. Write the legacy candidate and `hiring.upsert_application(campaign_id, person_id, resume_id, resume_uploaded_at, scoring)`, an upsert on `(campaign_id, person_id)`: a newer resume (by `uploaded_at`, ties by resume id) or the same one replaces the scoring, an older one changes nothing, and the recruiter's fields are never written. A new application reuses the legacy candidate's id; when the pair already had an application, the candidate's id goes into `legacy_candidate_map` (E0-17, the same rule as the backfill), so every candidate leads to exactly one application (§6.3).
 
    Steps 3 and 4 are one transaction, committed once. Scoring runs *before* resolution (E0-16): it does not depend on the Person, and `resolve_person`'s advisory locks are held until the commit, so resolving first would hold them across the multi-second scoring call and serialise every other upload of the same person. `resumes.processing_step` follows the steps and is cleared when the resume is `done`.
 4. **Progress events** keep their current shape; the `done` event adds `person_id` and `matched_existing: bool` (the only event sent after the Person is known).
@@ -195,15 +195,20 @@ The backfill and verification live in `ingestion` because they coordinate across
      - The first candidate for a pair keeps its own ID.
      - When a later candidate for the same pair arrives, the application takes the newer resume's scoring, and the older ID goes into `legacy_candidate_map`.
   3. Set `resumes.person_id` and `resumes.extracted`. The extraction is rebuilt from the candidate's stored fields.
+  4. Carry the recruiter's fields (`pipeline_stage`, `notes`): per field, the value of the newest candidate (by resume `uploaded_at`) of that application that has one; a candidate without a value never clears one. The category travels with the scoring.
+- Only candidates whose resume is `done` are backfilled; the others are skipped and counted (the pipeline links them when they finish). A resume already resolved by the dual write keeps its resolution.
+- **One transaction per candidate**, the checkpoint committed after each batch (E0-17). A batch-sized transaction would hold every advisory lock of the batch until its commit (about 3 per candidate) and, making many `resolve_person` calls in one transaction, would void the lock-ordering argument of §5.4 against live uploads.
 - Running the backfill again after it finishes changes nothing.
+- Runbook: [`docs/runbooks/person-application-backfill.md`](../runbooks/person-application-backfill.md).
 
 ### 6.3 Verification checks
 
 - Every `candidates.id` either is an `applications.id` or appears in `legacy_candidate_map`.
 - Every application's `person_id` exists in `people`, and its `resume_id` exists in `resumes`.
 - Every resume with status `done` has a `person_id`.
-- No person has zero identifiers unless all of their source resumes lacked identifiers.
+- No person has zero identifiers unless all of their source resumes lacked identifiers (a region-inferred phone, option A, does not count as one).
 - The counts of people and applications are reported and checked against the expected seed results.
+- Also checked (E0-17): no `(kind, value_normalized)` twice; an application's resume is in its campaign and resolved to its person; a candidate's application is in its campaign and belongs to its resume's person; every person was resolved from a resume. With a seed manifest that lists `campaign_ids`, the expected counts are taken in those campaigns only, so a rehearsal can upload elsewhere while it runs.
 
 ### 6.4 Seed data generator
 

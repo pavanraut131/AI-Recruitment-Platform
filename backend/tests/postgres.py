@@ -38,11 +38,17 @@ import contextlib
 import os
 import sys
 import time
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import psycopg2
 import pytest
 from testcontainers.community.postgres import PostgresContainer
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 POSTGRES_IMAGE = "pgvector/pgvector:pg16"  # same image as docker-compose.yml
 
@@ -172,6 +178,49 @@ def migrate_to_head() -> None:
     # pytest can be started from anywhere.
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     command.upgrade(cfg, "head")
+
+
+@contextlib.contextmanager
+def throwaway_database(prefix: str, **engine_options: Any) -> Iterator[Engine]:
+    """A new database in the session's container, migrated to ``head``, dropped afterwards.
+
+    For tests that must **commit** on several connections (concurrency, the backfill), which the
+    rolled-back ``db_session`` / ``sync_session`` cannot give. The session database is never
+    touched. ``engine_options`` go to ``create_engine`` (e.g. ``pool_size``).
+    """
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    from app.platform.config import settings
+
+    name = f"{prefix}_{uuid.uuid4().hex[:8]}"
+    base_url = make_url(settings.SYNC_DATABASE_URL)
+    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    url = base_url.set(database=name).render_as_string(hide_password=False)
+
+    original = settings.SYNC_DATABASE_URL
+    settings.SYNC_DATABASE_URL = url  # alembic/env.py reads it
+    try:
+        cfg = Config()  # no ini file: env.py would reconfigure logging
+        cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+        command.upgrade(cfg, "head")
+    finally:
+        settings.SYNC_DATABASE_URL = original
+
+    engine = create_engine(url, **engine_options)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+        # Suppressed: after `pytest -x` the session hook may already have stopped the container
+        # (and the database with it); that must not hide the test failure.
+        with contextlib.suppress(Exception), admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()
 
 
 def stop() -> None:

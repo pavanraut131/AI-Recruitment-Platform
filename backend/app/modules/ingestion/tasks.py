@@ -333,8 +333,9 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
     3. ``resolve_person``: ``talent.resolve_person``, storing ``resumes.person_id``. **Skipped**
        when ``resumes.person_id`` is set (the stored result is read instead). ``resolve_person``
        is itself idempotent per resume.
-    4. ``save``: the legacy candidate (exactly as before), ``hiring.upsert_application`` and the
-       resume's ``done`` status.
+    4. ``save``: the legacy candidate (exactly as before), ``hiring.upsert_application`` (a new
+       application reuses the candidate's id; a candidate merged into an existing application
+       gets a ``legacy_candidate_map`` row, E0-17) and the resume's ``done`` status.
 
     Steps 3 and 4 are **one transaction**: the Person, its identifiers or conflict, the
     ``person_resumes`` row, ``resumes.person_id``, the legacy candidate and the Application are
@@ -435,14 +436,23 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             # Legacy candidate, exactly as before the split (the API still reads it).
             hiring_service.record_extraction(db, rid, extraction)
             hiring_service.record_scoring(db, rid, scoring)
-            hiring_service.upsert_application(
+            # The legacy candidate must lead to exactly one application (spec §6.3): a new
+            # application reuses its id, and when the Person already had one for this campaign
+            # the candidate's id is redirected to it (E0-17, the same rule as the backfill).
+            candidate_id = hiring_service.legacy_candidate_id_for_resume(db, rid)
+            application = hiring_service.upsert_application(
                 db,
                 campaign_id=resume.campaign_id,
                 person_id=resolution.person_id,
                 resume_id=rid,
                 resume_uploaded_at=resume.uploaded_at,
                 scoring=scoring,
+                application_id=candidate_id,
             )
+            if candidate_id is not None:
+                hiring_service.link_legacy_candidate(
+                    db, candidate_id=candidate_id, application_id=application.id
+                )
             resume.status = "done"
             resume.processing_step = None
             db.commit()  # also releases resolve_person's advisory locks
