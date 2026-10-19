@@ -2,7 +2,7 @@
 
 Uploading resumes (validate, de-duplicate, store in object storage, queue extraction), listing
 them, retrying failed ones, and the resume data other parts of the app need: status counts for
-the stats endpoints and deleting the resumes of deleted candidates. The router in ``router.py``
+the stats endpoints, deleting the resumes of deleted candidates and the resumes' upload times. The router in ``router.py``
 only translates HTTP to these calls; ``app.api`` composes these functions with
 ``app.modules.hiring.service`` for the endpoints that span both modules.
 
@@ -14,6 +14,7 @@ carrying the user-facing ``detail``; the router maps them to status codes.
 import hashlib
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol
 
 import structlog
@@ -215,6 +216,14 @@ async def resume_status_counts(
 ) -> dict[str, int]:
     """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
     return await repository.status_counts(db, campaign_id)
+
+
+async def resume_upload_times(
+    db: AsyncSession, resume_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, datetime]:
+    """When each of these resumes was uploaded (unknown ids are left out). Hiring orders a
+    merged application's candidates by it (E0-18, composed in ``app.api``)."""
+    return await repository.uploaded_at(db, resume_ids)
 
 
 async def delete_resumes(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> None:

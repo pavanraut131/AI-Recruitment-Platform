@@ -76,6 +76,18 @@ async def delete_by_ids(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> No
         await db.delete(resume)
 
 
+async def uploaded_at(
+    db: AsyncSession, resume_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, datetime]:
+    """``id -> uploaded_at`` of the resumes among ``resume_ids`` that exist."""
+    if not resume_ids:
+        return {}
+    result = await db.execute(
+        select(Resume.id, Resume.uploaded_at).where(Resume.id.in_(resume_ids))
+    )
+    return {resume_id: uploaded for resume_id, uploaded in result.tuples()}
+
+
 async def commit(db: AsyncSession) -> None:
     await db.commit()
 

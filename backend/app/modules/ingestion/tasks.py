@@ -335,7 +335,9 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
        is itself idempotent per resume.
     4. ``save``: the legacy candidate (exactly as before), ``hiring.upsert_application`` (a new
        application reuses the candidate's id; a candidate merged into an existing application
-       gets a ``legacy_candidate_map`` row, E0-17) and the resume's ``done`` status.
+       gets a ``legacy_candidate_map`` row, E0-17), the application's recruiter fields recomputed
+       from its candidates (E0-18, ``hiring.carry_recruiter_fields``) and the resume's ``done``
+       status.
 
     Steps 3 and 4 are **one transaction**: the Person, its identifiers or conflict, the
     ``person_resumes`` row, ``resumes.person_id``, the legacy candidate and the Application are
@@ -452,6 +454,14 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             if candidate_id is not None:
                 hiring_service.link_legacy_candidate(
                     db, candidate_id=candidate_id, application_id=application.id
+                )
+                # A recruiter may have edited this candidate while it was processing, or the
+                # application may already carry older candidates' fields (E0-18): recompute
+                # them with the backfill's rule.
+                hiring_service.carry_recruiter_fields(
+                    db,
+                    [application.id],
+                    lambda resume_ids: repository.uploaded_at_sync(db, resume_ids),
                 )
             resume.status = "done"
             resume.processing_step = None

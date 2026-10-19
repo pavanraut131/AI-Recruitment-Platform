@@ -195,7 +195,7 @@ The backfill and verification live in `ingestion` because they coordinate across
      - The first candidate for a pair keeps its own ID.
      - When a later candidate for the same pair arrives, the application takes the newer resume's scoring, and the older ID goes into `legacy_candidate_map`.
   3. Set `resumes.person_id` and `resumes.extracted`. The extraction is rebuilt from the candidate's stored fields.
-  4. Carry the recruiter's fields (`pipeline_stage`, `notes`): per field, the value of the newest candidate (by resume `uploaded_at`) of that application that has one; a candidate without a value never clears one. The category travels with the scoring.
+  4. Carry the recruiter's fields (`pipeline_stage`, `notes`): per field, the value of the newest candidate (by resume `uploaded_at`) of that application that has one (not `NULL`; an empty note counts); a candidate without a value never clears one. The category travels with the scoring: it is the category of the candidate of the application's current resume. The same rule (`hiring.service.expected_recruiter_fields`) is applied by every later write, see §6.5.
 - Only candidates whose resume is `done` are backfilled; the others are skipped and counted (the pipeline links them when they finish). A resume already resolved by the dual write keeps its resolution.
 - **One transaction per candidate**, the checkpoint committed after each batch (E0-17). A batch-sized transaction would hold every advisory lock of the batch until its commit (about 3 per candidate) and, making many `resolve_person` calls in one transaction, would void the lock-ordering argument of §5.4 against live uploads.
 - Running the backfill again after it finishes changes nothing.
@@ -208,6 +208,7 @@ The backfill and verification live in `ingestion` because they coordinate across
 - Every resume with status `done` has a `person_id`.
 - No person has zero identifiers unless all of their source resumes lacked identifiers (a region-inferred phone, option A, does not count as one).
 - The counts of people and applications are reported and checked against the expected seed results.
+- Also checked (E0-18): every application's `pipeline_stage`, `notes` and `category` equal the §6.2 rule over its candidates (`recruiter_fields_consistent`).
 - Also checked (E0-17): no `(kind, value_normalized)` twice; an application's resume is in its campaign and resolved to its person; a candidate's application is in its campaign and belongs to its resume's person; every person was resolved from a resume. With a seed manifest that lists `campaign_ids`, the expected counts are taken in those campaigns only, so a rehearsal can upload elsewhere while it runs.
 
 ### 6.4 Seed data generator
@@ -223,6 +224,21 @@ The backfill and verification live in `ingestion` because they coordinate across
 - Candidates with no contact details.
 
 The generator also writes a manifest of the expected number of People, Applications and conflicts, which tests and the verification script assert against.
+
+### 6.5 Switch gate: mirrored legacy writes and deletes (E0-18)
+
+Between the backfill and the read switch the legacy endpoints are still live, so every legacy write keeps the new model complete, in the same transaction, through `hiring.service`. A candidate's application is the one with the candidate's id, else the one `legacy_candidate_map` redirects it to; a candidate with neither (its resume is still processing) is written alone.
+
+- **Recruiter updates** (`PUT /candidates/{id}/category`, `PATCH /candidates/{id}/notes`, `PATCH /candidates/{id}/pipeline`, `PATCH /campaigns/{id}/candidates/bulk-pipeline`): write the candidate, then **recompute** the application's `pipeline_stage`, `notes` and `category` from all its candidates with the §6.2 rule (never "copy the new value", so a merged application stays right whichever candidate is edited). A manual category is therefore mirrored only from the candidate of the application's current resume.
+- **Deletes** (`DELETE /candidates/{id}`, `DELETE /campaigns/{id}/candidates/bulk`):
+  - the application is deleted with its **last** candidate (its map rows go by `ON DELETE CASCADE`);
+  - otherwise it is kept, only the deleted candidates' `legacy_candidate_map` rows are removed, and the recruiter fields are recomputed from the remaining candidates;
+  - if the deleted candidate's id was the application's id, the application **keeps that id** (the remaining candidates' map rows point at it; renaming a primary key would break them). After the switch, the deleted id still resolves to the surviving application;
+  - if the deleted candidate held the application's current resume, the application takes the resume and stored scoring of the newest remaining candidate, as the backfill would. So `applications_have_resumes` stays green.
+- **Upload pipeline:** after linking a candidate it recomputes the same fields (a recruiter may have edited the candidate while its resume was processing).
+- **Locks:** candidates are locked before their applications (`FOR UPDATE`, id order), the order the pipeline writes them in; the recomputation reads the candidates only while holding the application's lock, so two concurrent edits of one application's candidates cannot each miss the other.
+- **Re-sync:** `python -m app.modules.ingestion.backfill --resync-recruiter-fields` recomputes every application with the same rule (idempotent). Run it once after E0-18 is deployed to repair edits made before it, then verify (runbook §8).
+- The endpoints that order candidates by resume upload time (ingestion's data) are composed in `app.api` (ADR 0005); paths, methods, names and responses are unchanged.
 
 ## 7. API compatibility layer
 
