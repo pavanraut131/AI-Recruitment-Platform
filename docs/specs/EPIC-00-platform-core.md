@@ -95,12 +95,14 @@ Each module owns its tables. No module queries another module's tables directly.
 | person_id | UUID | Refers to talent (no cross-module foreign key) |
 | resume_id | UUID | The resume submitted for this application |
 | resume_uploaded_at | timestamptz null | Upload time of `resume_id` (added in E0-16): decides whether a later resume replaces the scoring, since hiring may not read `resumes`. Null counts as older than any resume. |
-| score, score_breakdown, category, summary, strengths, weaknesses, missing_skills, recommendation | as in `candidates` today | |
-| pipeline_stage, notes | as in `candidates` today | |
+| score, score_breakdown, category, summary, strengths, weaknesses, missing_skills, recommendation | as the legacy `candidates` columns | |
+| pipeline_stage, notes | as the legacy `candidates` columns | |
 | created_at, updated_at | timestamptz | |
 | | | **UNIQUE(campaign_id, person_id)** |
 
-**`legacy_candidate_map`**: candidate_id (PK) → application_id (FK → applications, on delete cascade; candidate_id has no FK so the map outlives `candidates`). This redirects the IDs of legacy candidates that were merged into another application.
+**`legacy_candidate_map`**: candidate_id (PK) → application_id (FK → applications, on delete cascade; candidate_id has no FK so the map outlives `candidates`). This redirects the IDs of legacy candidates that were merged into another application. **Since E0-20 it is a historical id map:** `candidates` is dropped, `candidate_id` refers to nothing, no new rows are written, and old ids (bookmarks, links) keep answering with the surviving application (§7).
+
+**`candidates`** (legacy): **dropped by the contract migration `e20c4a7d1b93` (E0-20).** Its text column was copied to `resumes.raw_text` first (for resumes extracted before the switch); everything else it held is on the application or in the resume's extraction snapshot (§7.1). The downgrade re-creates it empty; rebuilding its rows is in the runbook (§8.3).
 
 ### ingestion
 
@@ -114,11 +116,15 @@ E0-19 adds `raw_text text null`: the text extracted from the PDF, which until th
 
 The **status values stay the same** (`pending | extracting | processing | done | failed | quota_exceeded`) because the frontend depends on them (`UploadZone.tsx`). Step-level detail goes in `processing_step` instead.
 
-**`backfill_checkpoints`** (new): name (PK), last_created_at, last_id, updated_at. One row per batch job: the keyset position of the last committed batch (§6.2).
+**`backfill_checkpoints`** (E0-14): name (PK), last_created_at, last_id, updated_at. One row per batch job: the keyset position of the last committed batch (§6.2). **Dropped in E0-20** with the backfill, its only writer.
+
+**`resumes.campaign_id`** refers to hiring's `campaigns`. Its legacy foreign key (`ON DELETE CASCADE`) was the last one between modules; **E0-20 dropped it**, so a campaign delete deletes the resumes explicitly (§7.1).
 
 ### Cross-module references
 
 References between modules are stored as plain UUIDs **without** foreign key constraints. This keeps each module's tables independent, so a module could be split out later. Data consistency between modules is guaranteed by the service layer and checked by the verification script (§6.3).
+
+Since E0-20 **no foreign key crosses a module boundary** (the legacy `resumes.campaign_id → campaigns` and the `candidates` keys are gone). `backend/tests/test_no_cross_module_foreign_keys.py` reads every foreign key from `information_schema`, maps each table to its owning module, and fails on any that crosses modules or on a table without an owner.
 
 ## 5. Upload pipeline and person matching
 
@@ -180,12 +186,12 @@ Only match-eligible identifiers take part in matching: every valid email, and ma
 | Phase | Deliverable | Runtime behaviour |
 |---|---|---|
 | **1 · Expand** | Alembic migration that creates the new tables and the new `resumes` columns. Nothing is dropped. | The worker **dual-writes**: it writes the legacy `candidates` row and the new tables in one transaction. |
-| **2 · Backfill** | `python -m app.modules.ingestion.backfill`: batched, resumable and idempotent | Runs while the app is live |
-| **3 · Verify** | `python -m app.modules.ingestion.verify_backfill`: exits with a non-zero code on any failure | Must pass before Phase 4 |
-
-The backfill and verification live in `ingestion` because they coordinate across modules. They read legacy candidates through `hiring.service.iter_legacy_candidates()`, resolve people through `talent.service`, upsert applications through `hiring.service`, and write `resumes` themselves. No module boundary is crossed.
+| **2 · Backfill** | `python -m app.modules.ingestion.backfill`: batched, resumable and idempotent. *Removed in E0-20 (historical).* | Runs while the app is live |
+| **3 · Verify** | `python -m app.modules.ingestion.verify_backfill`: exits with a non-zero code on any failure. *Since E0-20 `verify_people_applications`, without the legacy checks (§6.3).* | Must pass before Phase 4 |
 | **4 · Switch** | Compatibility endpoints read from `applications` and `people`. Writes to `candidates` stop. **Done (E0-19)**, see the notes below and §7. | Frontend unchanged |
-| **5 · Contract** | Migration that drops `candidates`, after one full sprint without issues | — |
+| **5 · Contract** | Migration that drops `candidates`, after one full sprint without issues. **Done (E0-20)**, right after the switch's live rehearsal (Sprint 4 decision, option A: no production users yet); see the notes below. | Frontend unchanged |
+
+The backfill and verification lived in `ingestion` because they coordinate across modules. They read legacy candidates through `hiring.service`, resolved people through `talent.service`, upserted applications through `hiring.service`, and wrote `resumes` themselves. No module boundary was crossed.
 
 **Phase 4 done-notes (E0-19).**
 
@@ -195,7 +201,17 @@ The backfill and verification live in `ingestion` because they coordinate across
 - **Equivalence on live data:** `app.devtools.capture_api` / `compare_api` (runbook §8); a local rehearsal on the Compose-size seed (1,125 candidates, edits and deletes through the E0-18 API) compared 2,467 responses: 2,267 identical, 200 expected (the 24 merged legacy ids and the rows, lists, exports and stats that contain them), 0 other differences.
 - **Behaviour change (decided 2026-10-19, option A):** a resume that is still being analysed (or failed after its text was extracted) no longer shows as an empty placeholder row; 8 snapshots record it (§7.1).
 
+**Phase 5 done-notes (E0-20).**
+
+- **Migration `e20c4a7d1b93`:** copies the text of resumes extracted before the switch from `candidates.raw_text` to `resumes.raw_text` (where it is `NULL`), then drops the foreign key `resumes.campaign_id → campaigns`, the `candidates` table and `backfill_checkpoints`, under `lock_timeout`. `legacy_candidate_map` stays as a historical id map (§4). The downgrade re-creates both tables **empty** with their original schema and the foreign key; it does not restore rows (rebuild SQL: runbook §8.3). Tested upgrade → downgrade → upgrade in `tests/migrations/test_contract_e0_20.py`.
+- **No cross-module foreign key remains** (ADR 0003): checked on the whole schema by `tests/test_no_cross_module_foreign_keys.py`.
+- **Campaign delete** moved to `app.api` (ADR 0005): hiring deletes the campaign and its applications (same-module cascade, and their map rows), ingestion deletes the campaign's resumes, in one transaction; the stored PDFs are deleted after the commit. Candidate deletes delete their PDFs the same way. This fixes B6 (§7.1).
+- **Removed:** the backfill command, the legacy candidate model, repository and service functions (reading candidates, linking them, the recruiter-field rule), the pipeline's fallback to the candidate's text and its legacy-id linking, `make_legacy_candidate`. `verify_backfill` became `verify_people_applications` (§6.3). The seed creates People and Applications through the pipeline's services (§6.4).
+- **Snapshots:** every response is byte-identical, the OpenAPI document included. The three delete snapshots that record object storage now record the PDFs being deleted (B6): campaign delete 1 → 0 objects left, bulk delete 4 → 2, candidate delete 2 → 1.
+
 ### 6.2 Backfill algorithm
+
+*Historical: the backfill ran in E0-17 to E0-19 and was removed with `candidates` in E0-20. Kept as the record of how the existing People, Applications and `legacy_candidate_map` rows were made.*
 
 - Iterate over `candidates` ordered by `(created_at, id)` in batches of 500, using **keyset pagination**: each batch starts after the last `(created_at, id)` processed.
 - Save a checkpoint (`last_created_at`, `last_id`) in a `backfill_checkpoints` table after each batch.
@@ -213,6 +229,10 @@ The backfill and verification live in `ingestion` because they coordinate across
 
 ### 6.3 Verification checks
 
+**Since E0-20:** `python -m app.modules.ingestion.verify_people_applications [--manifest seed-manifest.json]` (read-only, exit `0` / `1`, `2` for bad input). It checks: `applications_have_people`, `applications_have_resumes` (exists, same campaign, same person), `done_resumes_have_people` (agreeing with talent's `person_resumes`), `identifiers_unique`, `people_without_identifiers_justified`, `people_have_resumes`, `applications_have_extractions`, and with a manifest the expected people, applications and identity conflicts (in the manifest's `campaign_ids` only). `legacy_candidate_map` rows are counted, not checked. Without foreign keys between modules (ADR 0003) it is the check that the services kept them consistent. Removed with `candidates`: `candidates_lead_to_one_application` and the manifest's `legacy_candidate_map_rows` / `legacy_candidates` counts.
+
+The history of the checks (as `verify_backfill`, E0-17 to E0-19):
+
 - Every `candidates.id` either is an `applications.id` or appears in `legacy_candidate_map`.
 - Every application's `person_id` exists in `people`, and its `resume_id` exists in `resumes`.
 - Every resume with status `done` has a `person_id`.
@@ -224,7 +244,7 @@ The backfill and verification live in `ingestion` because they coordinate across
 
 ### 6.4 Seed data generator
 
-`python -m app.devtools.seed --people 800 --campaigns 15` uses Faker to produce about 1,000 legacy candidates. The data deliberately includes:
+`python -m app.devtools.seed --people 800 --campaigns 15` uses Faker to produce about 1,100 processed resumes (until E0-20: legacy candidates, which the backfill turned into People and Applications). Since E0-20 it stores each resume with its extraction snapshot and runs it through the pipeline's own services, `talent.resolve_person` and `hiring.upsert_application` (with generated scoring instead of the AI), so the matching code under test produces the People and Applications. The data deliberately includes:
 
 - Emails differing only in letter case.
 - Gmail dot and `+tag` variants.
@@ -232,9 +252,9 @@ The backfill and verification live in `ingestion` because they coordinate across
 - People applying to several campaigns.
 - The same person applying twice to one campaign.
 - An email/phone conflict between two different people.
-- Candidates with no contact details.
+- Resumes with no contact details.
 
-The generator also writes a manifest of the expected number of People, Applications and conflicts, which tests and the verification script assert against.
+The generator also writes a manifest of the expected number of People, Applications and conflicts, derived from its ground truth without running any matching code, which tests and the verification script assert against. (Inserting People and Applications directly would have been simpler, but the seed would then write its own expectations and the comparison would check nothing.)
 
 ### 6.5 Switch gate: mirrored legacy writes and deletes (E0-18)
 
@@ -287,7 +307,10 @@ Other endpoints:
 | `GET /resumes/{id}/candidate` | The application whose current resume it is; for an older resume of a merged application, the application of its Person in its campaign; 404 `Candidate not yet processed` while it has none. |
 | `PUT …/category`, `PATCH …/notes`, `PATCH …/pipeline` | Write the application (legacy ids resolved); the response is its `CandidateDetail`. |
 | Bulk pipeline | Updates the campaign's applications the ids name (own or merged legacy ids), each once; returns how many applications. |
-| `DELETE /candidates/{id}`, bulk delete | Delete the application, its current resume and every other resume of its Person in its campaign (each was one legacy candidate of the row the recruiter sees); their legacy candidates go with them (`candidates.resume_id ON DELETE CASCADE`), its map rows with it. Bulk returns how many applications were deleted. PDFs stay in storage (B6, recorded). |
+| `DELETE /candidates/{id}`, bulk delete | Delete the application, its current resume and every other resume of its Person in its campaign (each was one legacy candidate of the row the recruiter sees), and its map rows with it. Bulk returns how many applications were deleted. Since E0-20 the resumes' stored PDFs are deleted after the commit (B6 fixed; until then they stayed in storage). |
+| `DELETE /campaigns/{id}` (E0-20) | Composed in `app.api`: hiring deletes the campaign and its applications (and their map rows), ingestion the campaign's resumes, in one transaction; then the stored PDFs. Same 204 / 404 responses. |
+
+**Deletes and object storage (E0-20).** The rows go first, in one transaction; the PDFs only after it commits (`ingestion.service.delete_stored_files`). Object storage is not part of the transaction, so one failure mode is unavoidable, and this order picks the harmless one: a failed commit deletes nothing (deleting the PDFs first could lose the file of a row that survives), and a storage failure after the commit leaves a PDF that nothing refers to. That failure never fails the request (the delete has happened): it is logged (`stored_file_delete_failed`) and `python -m app.devtools.storage_orphans` reports such objects (with `--delete`, removes them; objects younger than `--min-age-minutes`, default 10, are skipped as possible uploads in flight).
 | Campaign stats | Category counts and average scores over applications; top skills over the snapshots' skills (oldest application first). Resume counts from ingestion, unchanged. |
 | Global stats | `total_candidates` counts applications. |
 

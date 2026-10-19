@@ -7,7 +7,8 @@ Usage (from ``backend/``, or inside the backend container)::
 
 Then compare two captures with ``python -m app.devtools.compare_api before.json after.json``.
 The E0-19 live rehearsal (runbook §8): capture on the E0-18 code, deploy E0-19, capture again
-with ``--ids-from before.json``, compare.
+with ``--ids-from before.json``, compare. The same around any later deploy that must not change
+the API, e.g. the E0-20 contract (runbook §9), where every response must be identical.
 
 What it requests (all under ``/api/v1``)
     * ``GET /campaigns`` (every campaign), and per selected campaign ``GET /campaigns/{id}``,

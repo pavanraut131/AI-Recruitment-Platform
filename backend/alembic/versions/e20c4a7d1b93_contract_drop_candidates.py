@@ -26,10 +26,11 @@ here on refers to nothing: it is a historical id map.
 Downgrade: re-creates ``backfill_checkpoints`` and ``candidates`` **empty**, with their original
 schema (columns in their original order, the same constraint names), and the foreign key from
 ``resumes`` to ``campaigns``. It does not bring the legacy rows back: the E0-18 code would
-then list no candidates. If that code ever has to run again, rebuild the rows from People,
-Applications and the resumes' extraction snapshots with the SQL in
-``docs/runbooks/person-application-backfill.md`` §8.3 ("Rebuilding ``candidates``"), after this
-downgrade and before starting that code. The foreign key is added back validated: it fails if a
+then list no candidates (the E0-19 code does not need them: it serves applications). If the
+E0-18 code ever has to run again, rebuild the rows from Applications and the resumes'
+extraction snapshots with ``REBUILD_CANDIDATES`` below (shown in
+``docs/runbooks/person-application-backfill.md`` §8.3), after this downgrade and before
+starting that code. The foreign key is added back validated: it fails if a
 resume refers to a deleted campaign (not possible through the API, whose campaign delete
 removes the resumes in the same transaction).
 
@@ -59,6 +60,32 @@ WHERE c.resume_id = r.id
 """
 
 RESUMES_CAMPAIGN_FK = "resumes_campaign_id_fkey"
+
+# Not run by the migration: the rebuild documented in the runbook (§8.3), kept here so that
+# ``tests/migrations/test_contract_e0_20.py`` runs the exact SQL the runbook shows. After the
+# downgrade, one legacy candidate per application, under the application's id, from the
+# application (scoring, recruiter fields, timestamps) and its current resume (extraction
+# snapshot, text): the row the E0-19 read path showed. Older resumes of merged applications get
+# none (their own scoring is not kept anywhere), and ``legacy_candidate_map`` is left as it is.
+REBUILD_CANDIDATES = """
+INSERT INTO candidates (id, resume_id, campaign_id, name, email, phone, github_url, linkedin_url,
+    skills, education, work_experience, certifications, projects, years_of_experience, summary,
+    strengths, weaknesses, missing_skills, recommendation, score, score_breakdown, category,
+    notes, pipeline_stage, raw_text, created_at, updated_at)
+SELECT a.id, r.id, a.campaign_id,
+       r.extracted->>'name', r.extracted->>'email', r.extracted->>'phone',
+       r.extracted->>'github_url', r.extracted->>'linkedin_url',
+       coalesce(r.extracted->'skills', '[]'), coalesce(r.extracted->'education', '[]'),
+       coalesce(r.extracted->'work_experience', '[]'),
+       coalesce(r.extracted->'certifications', '[]'), coalesce(r.extracted->'projects', '[]'),
+       (r.extracted->>'years_of_experience')::float,
+       a.summary, a.strengths, a.weaknesses, a.missing_skills, a.recommendation, a.score,
+       a.score_breakdown, a.category, a.notes, a.pipeline_stage, r.raw_text,
+       a.created_at, a.updated_at
+FROM applications AS a
+JOIN resumes AS r ON r.id = a.resume_id
+WHERE NOT EXISTS (SELECT 1 FROM candidates AS c WHERE c.id = a.id OR c.resume_id = r.id)
+"""
 
 
 def upgrade() -> None:

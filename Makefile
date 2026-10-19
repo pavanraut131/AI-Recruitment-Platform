@@ -27,14 +27,25 @@ migrate-down:
 	docker compose exec backend alembic downgrade -1
 
 # ── Seed data (dev only; refuses when APP_ENV=production) ────
-# Fake campaigns/resumes/candidates plus backend/seed-manifest.json (expected backfill results).
-# Refuses if candidates exist; `make seed SEED_FLAGS=--reset` deletes campaigns, resumes and
-# candidates first. Override sizes with e.g. `make seed SEED_ARGS="--people 100 --campaigns 4"`.
+# Fake campaigns and processed resumes, run through the pipeline's matching and scoring
+# services (People + Applications), plus backend/seed-manifest.json (expected results; check
+# with `make verify`). Refuses if applications exist; `make seed SEED_FLAGS=--reset` deletes
+# campaigns, resumes, applications and people first. Override sizes with e.g.
+# `make seed SEED_ARGS="--people 100 --campaigns 4"`.
 .PHONY: seed
 SEED_ARGS ?= --people 800 --campaigns 15 --seed 42
 SEED_FLAGS ?=
 seed:
 	docker compose exec -T backend python -m app.devtools.seed $(SEED_ARGS) $(SEED_FLAGS)
+
+# Cross-module consistency of People, Applications and resumes (spec §6.3), against the seed
+# manifest; and stored PDFs that no resume refers to any more (add `--delete` to remove them).
+.PHONY: verify storage-orphans
+verify:
+	docker compose exec -T backend python -m app.modules.ingestion.verify_people_applications --manifest /app/seed-manifest.json
+
+storage-orphans:
+	docker compose exec -T backend python -m app.devtools.storage_orphans
 
 # ── Shell access ─────────────────────────────────────────────
 shell-backend:

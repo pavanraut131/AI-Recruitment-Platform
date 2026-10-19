@@ -9,17 +9,22 @@ head with legacy rows:
   and every other row;
 - the downgrade re-creates both tables **empty** with exactly the schema they had (columns in
   order, types, defaults, constraint names) and the foreign key;
+- the runbook's rebuild SQL (``REBUILD_CANDIDATES``, §8.3) then gives one candidate per
+  application, idempotently;
 - a final ``alembic check`` is clean.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import uuid
 from typing import Any
 
 from alembic import command
 from sqlalchemy import Connection, create_engine, inspect, text
 
+from tests import postgres
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -28,6 +33,9 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
 BEFORE = "e19b7f3a9c42"
 CONTRACT = "e20c4a7d1b93"
 DROPPED = ("candidates", "backfill_checkpoints")
+MIGRATION = (
+    postgres.BACKEND_DIR / "alembic" / "versions" / f"{CONTRACT}_contract_drop_candidates.py"
+)
 
 
 def _schema(conn: Connection) -> dict[str, Any]:
@@ -113,6 +121,14 @@ def _insert_legacy_rows(conn: Connection) -> dict[str, uuid.UUID]:
     return ids
 
 
+def _rebuild_sql() -> str:
+    spec = importlib.util.spec_from_file_location(CONTRACT, MIGRATION)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(module.REBUILD_CANDIDATES)
+
+
 def _raw_texts(conn: Connection) -> dict[uuid.UUID, str | None]:
     return {row[0]: row[1] for row in conn.execute(text("SELECT id, raw_text FROM resumes"))}
 
@@ -156,6 +172,26 @@ def test_upgrade_contracts_then_downgrade_recreates_the_tables_empty(scratch_db:
                 assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar() == 0
             assert _raw_texts(conn) == {ids["pre"]: "candidate text", ids["post"]: "resume text"}
             assert conn.execute(text("SELECT count(*) FROM legacy_candidate_map")).scalar() == 1
+
+        # The runbook's rebuild (§8.3): one candidate per application, as the read path showed it.
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE resumes SET extracted = CAST(:x AS jsonb) WHERE id = :id"),
+                {
+                    "x": json.dumps({"name": "Ann", "skills": ["Py"], "years_of_experience": 3}),
+                    "id": ids["post"],
+                },
+            )
+            conn.execute(text(_rebuild_sql()))
+            conn.execute(text(_rebuild_sql()))  # idempotent
+            rows = conn.execute(
+                text(
+                    "SELECT id, resume_id, name, skills, years_of_experience, raw_text FROM candidates"
+                )
+            ).all()
+        assert [tuple(r) for r in rows] == [
+            (ids["app"], ids["post"], "Ann", ["Py"], 3.0, "resume text")
+        ]
 
         command.upgrade(cfg, "head")
         command.check(cfg)  # raises if the models and the migrated schema differ
