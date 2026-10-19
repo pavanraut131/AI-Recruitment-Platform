@@ -1,7 +1,7 @@
 """``app.modules.ingestion.service`` against real Postgres (the ``db_session`` transaction).
 
 The HTTP behaviour is pinned by the characterization snapshots; these call the service directly,
-including the functions only ``app.api`` uses (status counts, deleting resumes).
+including the functions only ``app.api`` uses (status counts, deleting resumes and PDFs).
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from sqlalchemy import func, select
@@ -60,27 +61,70 @@ async def test_resume_status_counts_per_campaign_and_overall(db_session: AsyncSe
     assert await service.resume_status_counts(db_session, uuid.uuid4()) == {}
 
 
-# ── Delete ────────────────────────────────────────────────────
-async def test_delete_resumes_deletes_only_the_given_ids(db_session: AsyncSession) -> None:
+# ── Delete (E0-20: rows in the caller's transaction, PDFs after its commit) ──
+async def test_delete_campaign_resumes_deletes_only_that_campaigns_and_returns_their_keys(
+    db_session: AsyncSession,
+) -> None:
     campaign = await make_campaign(db_session)
-    doomed = [await make_resume(db_session, campaign) for _ in range(2)]
-    kept = await make_resume(db_session, campaign)
+    other = await make_campaign(db_session, title="Other")
+    doomed = [await make_resume(db_session, campaign, original_filename=f"{n}.pdf") for n in "ab"]
+    kept = await make_resume(db_session, other)
 
-    await service.delete_resumes(db_session, [r.id for r in doomed] + [uuid.uuid4()])
-    await db_session.flush()
+    files = await service.delete_campaign_resumes(db_session, campaign.id)
 
+    assert sorted(files.keys) == sorted(r.storage_path for r in doomed)
     remaining = (await db_session.execute(select(Resume.id))).scalars().all()
     assert remaining == [kept.id]
 
 
-async def test_delete_resumes_does_not_commit(db_session: AsyncSession) -> None:
+async def test_resume_deletes_do_not_commit(db_session: AsyncSession) -> None:
     resume = await make_resume(db_session)
     await db_session.commit()  # (releases the test's savepoint; the outer transaction stays)
 
-    await service.delete_resumes(db_session, [resume.id])
+    await service.delete_campaign_resumes(db_session, resume.campaign_id)
     await db_session.rollback()
 
     assert await _count(db_session) == 1
+
+
+async def test_delete_stored_files_deletes_the_objects(fake_storage: InMemoryStorage) -> None:
+    for key in ("campaigns/c/resumes/1/a.pdf", "campaigns/c/resumes/2/b.pdf"):
+        fake_storage.upload_file(PDF, key)
+
+    failed = await service.delete_stored_files(
+        service.StoredFiles(("campaigns/c/resumes/1/a.pdf", "campaigns/c/resumes/9/gone.pdf"))
+    )
+
+    assert failed == []  # a missing object is not an error (S3 semantics)
+    assert list(fake_storage.objects) == ["campaigns/c/resumes/2/b.pdf"]
+
+
+async def test_delete_stored_files_logs_a_failure_and_carries_on(
+    fake_storage: InMemoryStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for key in ("k/fails.pdf", "k/ok.pdf"):
+        fake_storage.upload_file(PDF, key)
+
+    def delete_file(key: str) -> None:
+        if key == "k/fails.pdf":
+            raise ConnectionError("storage is down")
+        fake_storage.delete_file(key)
+
+    errors: list[tuple[str, dict[str, Any]]] = []
+
+    class Logger:
+        def error(self, event: str, **fields: Any) -> None:
+            errors.append((event, fields))
+
+    monkeypatch.setattr(service.storage, "delete_file", delete_file)
+    monkeypatch.setattr(service, "logger", Logger())
+    failed = await service.delete_stored_files(service.StoredFiles(("k/fails.pdf", "k/ok.pdf")))
+
+    assert failed == ["k/fails.pdf"]
+    assert list(fake_storage.objects) == ["k/fails.pdf"]  # left as an orphan
+    assert errors == [
+        ("stored_file_delete_failed", {"key": "k/fails.pdf", "error": "storage is down"})
+    ]
 
 
 # ── Upload ────────────────────────────────────────────────────

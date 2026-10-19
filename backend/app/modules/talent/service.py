@@ -1,9 +1,10 @@
 """talent public interface: decide which Person a resume belongs to (EPIC-00 spec §5.3–5.4).
 
 Other modules call :func:`resolve_person` (and use the types in ``app.modules.talent.schemas``);
-they never touch talent's tables. The callers are the upload pipeline (E0-16) and the backfill
-(E0-17), both running a synchronous ``Session``. The backfill verification (E0-17) reads through
-the functions under "Reads for the backfill verification".
+they never touch talent's tables. The callers are the upload pipeline (E0-16) and the seed
+generator (``app.devtools.seed``; until E0-20 also the backfill), all running a synchronous
+``Session``. The verification (``app.modules.ingestion.verify_people_applications``) reads
+through the functions under "Reads for the verification".
 
 Matching policy: ADR 0004 and its 2026-10-16 amendment (phones without a country code).
 
@@ -145,11 +146,11 @@ def has_match_eligible_identifier(
 ) -> bool:
     """Whether a resume with these raw contact details has an identifier that can match a
     Person (spec §5.3): a valid email, or a match-eligible phone (ADR 0004 amendment, option A).
-    An inferred phone does not count. Pure; used by the backfill verification (spec §6.3)."""
+    An inferred phone does not count. Pure; used by the verification (spec §6.3)."""
     return any(not ident.inferred for ident in _normalise(email, phone, default_region))
 
 
-# ── Reads for the backfill verification (spec §6.3) ───────────
+# ── Reads for the verification (spec §6.3) ────────────────────
 @dataclass(frozen=True)
 class TalentCounts:
     people: int

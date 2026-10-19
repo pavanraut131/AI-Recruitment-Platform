@@ -55,7 +55,6 @@ app.include_router(hiring.campaigns_router, prefix=PREFIX)
 app.include_router(composed.campaigns_router, prefix=PREFIX)
 app.include_router(hiring.parse_jd_router, prefix=PREFIX)
 app.include_router(ingestion.router, prefix=PREFIX)
-app.include_router(hiring.candidates_router, prefix=PREFIX)
 app.include_router(composed.candidates_router, prefix=PREFIX)
 app.include_router(composed.stats_router, prefix=PREFIX)
 

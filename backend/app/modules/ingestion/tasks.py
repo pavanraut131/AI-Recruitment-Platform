@@ -2,16 +2,17 @@
 
 1. :func:`extract_resume` (``extract_queue``, step ``extract_text``): download the PDF from object
    storage, extract its text (pdfplumber, then PyMuPDF, then OCR through the AI service for
-   scanned PDFs), store the text on the resume's candidate (creating it), and queue
+   scanned PDFs), store the text on the resume (``resumes.raw_text``), and queue
    :func:`process_candidate_ai`.
 2. :func:`process_candidate_ai` (``ai_queue``): extract a profile and score it against the
-   campaign with the AI service, resolve the Person, and write the legacy candidate **and** the
-   Application in one transaction (dual write, EPIC-00 spec §5.1, §6.1 phase 1); mark the
-   resume ``done``.
+   campaign with the AI service, resolve the Person, and write the Application in one
+   transaction (EPIC-00 spec §5.1); mark the resume ``done``. Since the read switch (E0-19,
+   spec §6.1 phase 4) no legacy candidate is written, and the contract (E0-20) dropped the table.
 
-Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`. Candidates and
-applications are read and written only through ``app.modules.hiring.service``, People only
-through ``app.modules.talent.service``, and the language model only through
+Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`, on the channel of
+the resume's campaign (B3, E0-21): every publish names the campaign, and a resume deleted while
+it was processing publishes nothing. Applications go only through ``app.modules.hiring.service``,
+People only through ``app.modules.talent.service``, and the language model only through
 ``app.modules.ai.service``.
 
 **Steps.** ``resumes.processing_step`` records the step in progress, and the step that failed
@@ -123,7 +124,9 @@ class ExtractTask(_ResumeTask):
                 if resume.retry_count >= 3:
                     resume.status = "failed"
                     resume.error_message = str(exc)
-                    publish_resume_event(resume_id, "failed", {"error": str(exc)})
+                    publish_resume_event(
+                        resume_id, "failed", {"error": str(exc)}, campaign_id=resume.campaign_id
+                    )
                 db.commit()
 
 
@@ -155,9 +158,12 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
         # Read all needed values NOW, inside the session, before it closes
         original_filename = resume.original_filename
         storage_path = resume.storage_path
+        campaign_id = resume.campaign_id
 
     try:
-        publish_resume_event(resume_id, "extracting", {"filename": original_filename})
+        publish_resume_event(
+            resume_id, "extracting", {"filename": original_filename}, campaign_id=campaign_id
+        )
 
         # Download from MinIO
         log.info("downloading_pdf", path=storage_path)
@@ -181,15 +187,13 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
 
         log.info("text_extracted", chars=len(raw_text))
 
-        # Store the text on the (placeholder) candidate, in one transaction with the status
+        # Store the text on the resume, in one transaction with the status
         with SyncSession() as db:
             resume = repository.get_sync(db, uuid.UUID(resume_id))
             if not resume:
                 raise ValueError("Resume not found")
             resume.status = "processing"
-            hiring_service.save_resume_text(
-                db, resume_id=resume.id, campaign_id=resume.campaign_id, raw_text=raw_text
-            )
+            resume.raw_text = raw_text
             db.commit()
 
         enqueue_analysis(resume_id)
@@ -205,7 +209,7 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
                     failed.status = "failed"
                     failed.error_message = str(exc)
                     db.commit()
-            publish_resume_event(resume_id, "failed", {"error": str(exc)})
+            publish_resume_event(resume_id, "failed", {"error": str(exc)}, campaign_id=campaign_id)
             return
         raise self.retry(exc=exc, countdown=30) from exc
 
@@ -250,13 +254,17 @@ def _require_resume(db: Session, rid: uuid.UUID) -> Resume:
     return resume
 
 
-def _mark_failed(resume_id: str, error_message: str) -> None:
+def _mark_failed(resume_id: str, error_message: str) -> uuid.UUID | None:
+    """Mark the resume ``failed``; returns its campaign id (the channel its event goes to), or
+    ``None`` if the resume no longer exists."""
     with SyncSession() as db:
         resume = repository.get_sync(db, uuid.UUID(resume_id))
-        if resume:
-            resume.status = "failed"
-            resume.error_message = error_message
-            db.commit()
+        if not resume:
+            return None
+        resume.status = "failed"
+        resume.error_message = error_message
+        db.commit()
+        return resume.campaign_id
 
 
 def _record_failed_step(resume_id: str, step: str, log: Any) -> None:
@@ -280,12 +288,16 @@ def _mark_quota_exceeded(resume_id: str, step: str, log: Any) -> None:
     log.warning("quota_exceeded", resume_id=resume_id, step=step)
     with SyncSession() as db:
         resume = repository.get_sync(db, uuid.UUID(resume_id))
-        if resume:
-            resume.status = "quota_exceeded"
-            resume.error_message = QUOTA_EXCEEDED_MESSAGE
-            resume.processing_step = step
-            db.commit()
-    publish_resume_event(resume_id, "quota_exceeded", {"error": QUOTA_EXCEEDED_MESSAGE})
+        if not resume:
+            return  # deleted meanwhile: no campaign page to tell
+        resume.status = "quota_exceeded"
+        resume.error_message = QUOTA_EXCEEDED_MESSAGE
+        resume.processing_step = step
+        db.commit()
+        campaign_id = resume.campaign_id
+    publish_resume_event(
+        resume_id, "quota_exceeded", {"error": QUOTA_EXCEEDED_MESSAGE}, campaign_id=campaign_id
+    )
 
 
 def quota_retry_delay(exc: AIQuotaExceeded) -> float:
@@ -309,8 +321,9 @@ class AITask(_ResumeTask):
     ) -> None:
         resume_id = _resume_id_arg(args, kwargs)
         logger.error("ai_task_failed", resume_id=resume_id, error=str(exc))
-        _mark_failed(resume_id, f"AI processing failed: {str(exc)}")
-        publish_resume_event(resume_id, "failed", {"error": str(exc)})
+        campaign_id = _mark_failed(resume_id, f"AI processing failed: {str(exc)}")
+        if campaign_id is not None:  # a deleted resume has no campaign page to tell
+            publish_resume_event(resume_id, "failed", {"error": str(exc)}, campaign_id=campaign_id)
 
 
 @celery_app.task(
@@ -322,7 +335,7 @@ class AITask(_ResumeTask):
     queue="ai_queue",
 )
 def process_candidate_ai(self: AITask, resume_id: str) -> None:
-    """Analyse a resume and dual-write the result (spec §5.1, §6.1 phase 1).
+    """Analyse a resume and write its Application (spec §5.1).
 
     Steps, each safe to re-run (a retry runs the whole task again):
 
@@ -333,14 +346,15 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
     3. ``resolve_person``: ``talent.resolve_person``, storing ``resumes.person_id``. **Skipped**
        when ``resumes.person_id`` is set (the stored result is read instead). ``resolve_person``
        is itself idempotent per resume.
-    4. ``save``: the legacy candidate (exactly as before), ``hiring.upsert_application`` (a new
-       application reuses the candidate's id; a candidate merged into an existing application
-       gets a ``legacy_candidate_map`` row, E0-17) and the resume's ``done`` status.
+    4. ``save``: ``hiring.upsert_application`` (a new application gets a fresh id) and the
+       resume's ``done`` status.
 
     Steps 3 and 4 are **one transaction**: the Person, its identifiers or conflict, the
-    ``person_resumes`` row, ``resumes.person_id``, the legacy candidate and the Application are
-    committed together or not at all, so a failure at either step leaves nothing behind for the
-    retry to duplicate.
+    ``person_resumes`` row, ``resumes.person_id`` and the Application are committed together or
+    not at all, so a failure at either step leaves nothing behind for the retry to duplicate.
+
+    The text comes from ``resumes.raw_text`` (for a resume extracted before the read switch, the
+    contract migration copied it there from the legacy candidate).
 
     **Why score before resolving** (spec §5.1 lists resolve first). ``resolve_person`` takes
     transaction-level advisory locks on the resume's email and phone, held until the commit.
@@ -367,7 +381,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 log.error("resume_not_found")
                 return
 
-            raw_text = hiring_service.get_resume_text(db, rid)
+            raw_text = resume.raw_text
             if not raw_text:
                 raise ValueError("No raw text found for candidate")
 
@@ -376,6 +390,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 raise ValueError("Campaign not found")
 
             snapshot = resume.extracted
+            campaign_id = resume.campaign_id
             resume.status = "processing"  # back from quota_exceeded / pending on a retry
             resume.error_message = None
             resume.processing_step = step
@@ -402,6 +417,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 resume_id,
                 "failed",
                 {"error": "Not a resume — no candidate information could be extracted"},
+                campaign_id=campaign_id,
             )
             return  # Stop here — do NOT retry, this is a data quality issue
 
@@ -433,26 +449,14 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             resolution = _resolve_person(db, resume, extraction)
 
             step = STEP_SAVE
-            # Legacy candidate, exactly as before the split (the API still reads it).
-            hiring_service.record_extraction(db, rid, extraction)
-            hiring_service.record_scoring(db, rid, scoring)
-            # The legacy candidate must lead to exactly one application (spec §6.3): a new
-            # application reuses its id, and when the Person already had one for this campaign
-            # the candidate's id is redirected to it (E0-17, the same rule as the backfill).
-            candidate_id = hiring_service.legacy_candidate_id_for_resume(db, rid)
-            application = hiring_service.upsert_application(
+            hiring_service.upsert_application(
                 db,
                 campaign_id=resume.campaign_id,
                 person_id=resolution.person_id,
                 resume_id=rid,
                 resume_uploaded_at=resume.uploaded_at,
                 scoring=scoring,
-                application_id=candidate_id,
             )
-            if candidate_id is not None:
-                hiring_service.link_legacy_candidate(
-                    db, candidate_id=candidate_id, application_id=application.id
-                )
             resume.status = "done"
             resume.processing_step = None
             db.commit()  # also releases resolve_person's advisory locks
@@ -479,6 +483,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 "person_id": str(resolution.person_id),
                 "matched_existing": resolution.matched_existing,
             },
+            campaign_id=campaign_id,
         )
 
     except AIQuotaExceeded as exc:

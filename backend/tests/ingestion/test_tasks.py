@@ -2,7 +2,7 @@
 
 Database, SSE and eager-retry fixtures: ``tests/ingestion/conftest.py``. Object storage, Redis
 and Celery dispatch are the usual in-memory fakes (``tests/conftest.py``). The Person /
-Application dual write is covered in ``test_dual_write.py``.
+Application writes are covered in ``test_pipeline.py``.
 """
 
 from __future__ import annotations
@@ -17,10 +17,11 @@ from sqlalchemy.orm import Session
 from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult
 from app.modules.ai.service import AIQuotaExceeded
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
+from app.modules.ingestion.events import campaign_channel
 from app.modules.ingestion.models import Resume
-from tests.fakes import CeleryRecorder, InMemoryStorage
+from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.conftest import Events
 
 RESUME_TEXT = """Jane Doe
@@ -63,12 +64,12 @@ def _arrange(db: Session, storage: InMemoryStorage, pdf_bytes: bytes) -> Resume:
     return resume
 
 
-def _candidate(db: Session, resume_id: uuid.UUID) -> Candidate | None:
+def _application(db: Session, resume_id: uuid.UUID) -> Application | None:
     db.expire_all()
-    return db.query(Candidate).filter(Candidate.resume_id == resume_id).first()
+    return db.query(Application).filter(Application.resume_id == resume_id).first()
 
 
-def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
+def test_pipeline_with_the_fake_ai_creates_a_scored_application(
     sync_db: Session,
     fake_storage: InMemoryStorage,
     celery_calls: CeleryRecorder,
@@ -80,11 +81,9 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
 
     tasks.extract_resume.apply(args=(rid,))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None and candidate.raw_text is not None
-    assert "Jane Doe" in candidate.raw_text
-    assert candidate.score is None  # not analysed yet
     sync_db.refresh(resume)
+    assert resume.raw_text is not None and "Jane Doe" in resume.raw_text
+    assert _application(sync_db, resume.id) is None  # not analysed yet
     assert resume.status == "processing"
     assert resume.celery_task_id is not None
     assert [(c.task, c.args, c.options) for c in celery_calls.calls] == [
@@ -93,14 +92,14 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
 
     tasks.process_candidate_ai.apply(args=(rid,))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None
-    expected = fake_ai.extract_profile(candidate.raw_text or "")
-    assert (candidate.name, candidate.email) == ("Jane Doe", "jane.doe@example.com")
-    assert candidate.skills == expected.skills
-    assert candidate.missing_skills == ["Go"]
-    assert candidate.score is not None and candidate.category is not None
+    application = _application(sync_db, resume.id)
+    assert application is not None
     sync_db.refresh(resume)
+    expected = fake_ai.extract_profile(resume.raw_text or "")
+    assert resume.extracted == expected.model_dump(mode="json")
+    assert (expected.name, expected.email) == ("Jane Doe", "jane.doe@example.com")
+    assert application.missing_skills == ["Go"]
+    assert application.score is not None and application.category is not None
     assert resume.status == "done"
     assert resume.processing_step is None
     assert resume.person_id is not None
@@ -110,13 +109,49 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
             "resume_id": rid,
             "status": "done",
             "candidate_name": "Jane Doe",
-            "score": candidate.score,
-            "category": candidate.category,
+            "score": application.score,
+            "category": application.category,
             "filename": "jane.pdf",
             "person_id": str(resume.person_id),
             "matched_existing": False,
         },
     ]
+
+
+def test_events_go_to_the_resumes_campaign_channel_only(
+    sync_db: Session,
+    fake_storage: InMemoryStorage,
+    fake_redis: FakeRedis,
+    fake_ai: FakeAIService,
+) -> None:
+    # B3 (fixed in E0-21): each campaign has its own channel, so a stream subscribed to another
+    # campaign's channel never sees this resume's events.
+    resume = _arrange(sync_db, fake_storage, make_pdf(RESUME_TEXT))
+    pubsub = fake_redis.sync_client().pubsub()
+    pubsub.psubscribe(campaign_channel("*"))
+
+    tasks.extract_resume.apply(args=(str(resume.id),))
+    tasks.process_candidate_ai.apply(args=(str(resume.id),))
+
+    channels = []
+    while (message := pubsub.get_message()) is not None:
+        if message["type"] == "pmessage":
+            channels.append(message["channel"].decode())
+    pubsub.close()
+    assert channels == [f"campaign:{resume.campaign_id}:events"] * 2  # extracting, done
+
+
+def test_a_resume_deleted_while_processing_publishes_nothing(
+    sync_db: Session, events: Events
+) -> None:
+    # Its campaign is unknown (the row is gone), so there is no channel, and no page, to tell.
+    gone = str(uuid.uuid4())
+
+    einfo: Any = None  # unused by on_failure
+    tasks.process_candidate_ai.on_failure(RuntimeError("boom"), "task-id", (gone,), {}, einfo)
+    tasks._mark_quota_exceeded(gone, tasks.STEP_SCORE, tasks.logger)
+
+    assert events() == []
 
 
 def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(
@@ -126,9 +161,8 @@ def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(
 
     tasks.extract_resume.apply(args=(str(resume.id),))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None
-    assert candidate.raw_text is not None and "Scanned resume (1 page(s)" in candidate.raw_text
+    sync_db.refresh(resume)
+    assert resume.raw_text is not None and "Scanned resume (1 page(s)" in resume.raw_text
 
 
 class _QuotaExhaustedAI(FakeAIService):

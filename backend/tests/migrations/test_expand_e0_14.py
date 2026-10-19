@@ -3,7 +3,8 @@
 Two kinds of test:
 
 - **Schema and constraints** on the session database (already at ``head``, see
-  ``tests/postgres.py``): the new tables, columns, indexes and constraints exist as in spec §4, and
+  ``tests/postgres.py``, so after the E0-20 contract: no ``candidates``, no
+  ``backfill_checkpoints``): the new tables, columns, indexes and constraints exist as in spec §4, and
   the unique / cascade rules hold. Each test runs in the usual rolled-back transaction.
 - **Upgrade → downgrade → upgrade** on a *separate, throwaway* database in the same container, so
   the session database is never downgraded: legacy rows written at the previous head survive the
@@ -42,6 +43,22 @@ NEW_TABLES = {
     "backfill_checkpoints",
 }
 NEW_RESUME_COLUMNS = {"person_id", "extracted", "processing_step"}
+# At head: the contract migration (E0-20) dropped backfill_checkpoints (and candidates).
+HEAD_TABLES = NEW_TABLES - {"backfill_checkpoints"}
+# The legacy candidates columns that applications mirrored (type, nullable), as created by the
+# initial migrations; candidates itself no longer exists at head.
+LEGACY_CANDIDATE_TYPES = {
+    "score": ("DOUBLE PRECISION", True),
+    "score_breakdown": ("JSONB", True),
+    "category": ("VARCHAR(30)", True),
+    "summary": ("TEXT", True),
+    "strengths": ("JSONB", False),
+    "weaknesses": ("JSONB", False),
+    "missing_skills": ("JSONB", False),
+    "recommendation": ("TEXT", True),
+    "pipeline_stage": ("VARCHAR(30)", True),
+    "notes": ("TEXT", True),
+}
 
 
 # ── Schema on the session database ────────────────────────────
@@ -52,14 +69,15 @@ async def _inspect(db: AsyncSession, fn: Any) -> Any:
 
 async def test_new_tables_exist(db_session: AsyncSession) -> None:
     tables = set(await _inspect(db_session, lambda i: i.get_table_names()))
-    assert tables >= NEW_TABLES
+    assert tables >= HEAD_TABLES
+    assert not {"candidates", "backfill_checkpoints"} & tables  # contracted in E0-20
 
 
 async def test_columns_match_spec(db_session: AsyncSession) -> None:
     def columns(i: Any) -> dict[str, dict[str, tuple[str, bool]]]:
         return {
             table: {c["name"]: (str(c["type"]), c["nullable"]) for c in i.get_columns(table)}
-            for table in [*NEW_TABLES, "resumes", "candidates"]
+            for table in [*HEAD_TABLES, "resumes"]
         }
 
     cols = await _inspect(db_session, columns)
@@ -72,28 +90,11 @@ async def test_columns_match_spec(db_session: AsyncSession) -> None:
     assert cols["people"]["latest_resume_id"] == ("UUID", True)
     assert cols["identity_conflicts"]["resolved_at"] == ("TIMESTAMP", True)
     assert cols["legacy_candidate_map"].keys() == {"candidate_id", "application_id"}
-    assert cols["backfill_checkpoints"].keys() == {
-        "name",
-        "last_created_at",
-        "last_id",
-        "updated_at",
-    }
 
-    # Scoring, insight and recruiter columns mirror candidates exactly (type and nullability).
-    mirrored = [
-        "score",
-        "score_breakdown",
-        "category",
-        "summary",
-        "strengths",
-        "weaknesses",
-        "missing_skills",
-        "recommendation",
-        "pipeline_stage",
-        "notes",
-    ]
-    for name in mirrored:
-        assert cols["applications"][name] == cols["candidates"][name], name
+    # Scoring, insight and recruiter columns mirror the legacy candidates columns exactly (type
+    # and nullability).
+    for name, legacy in LEGACY_CANDIDATE_TYPES.items():
+        assert cols["applications"][name] == legacy, name
     assert cols["applications"]["person_id"] == ("UUID", False)
     assert cols["applications"]["resume_id"] == ("UUID", False)
 
@@ -130,7 +131,7 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
                     )
                     for fk in i.get_foreign_keys(t)
                 }
-                for t in NEW_TABLES | {"resumes"}
+                for t in HEAD_TABLES | {"resumes"}
             },
         }
 
@@ -158,9 +159,9 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
     assert fks["applications"] == {(("campaign_id",), "campaigns", "CASCADE")}
     assert fks["legacy_candidate_map"] == {(("application_id",), "applications", "CASCADE")}
     assert fks["people"] == set()
-    assert fks["backfill_checkpoints"] == set()
-    # resumes keeps only its legacy campaign FK; the new person_id has none.
-    assert fks["resumes"] == {(("campaign_id",), "campaigns", "CASCADE")}
+    # resumes has none: the new person_id never had one, and the contract migration (E0-20)
+    # dropped the legacy campaign FK (tests/test_no_cross_module_foreign_keys.py).
+    assert fks["resumes"] == set()
 
 
 # ── Constraint behaviour ──────────────────────────────────────

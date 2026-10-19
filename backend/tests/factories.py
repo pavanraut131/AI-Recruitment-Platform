@@ -1,9 +1,19 @@
 """Small async factories for test data: ``make_campaign``, ``make_resume``, ``make_candidate``.
 
-Each one adds an ORM row to the given session, flushes it (so it is visible to the app, which
-shares the test's session, see ``tests/conftest.py``) and returns it. Defaults are realistic and
-**constant** (no counters or random values), so a test's data never depends on which tests ran
-before it. Override any column with a keyword argument.
+Each one adds ORM rows to the given session, flushes them (so they are visible to the app, which
+shares the test's session, see ``tests/conftest.py``) and returns the main one. Defaults are
+realistic and **constant** (no counters or random values), so a test's data never depends on
+which tests ran before it. Override any column with a keyword argument.
+
+Since the read switch (E0-19) the API serves the legacy "candidate" endpoints from People and
+Applications, so :func:`make_candidate` builds what the upload pipeline leaves behind for one
+processed resume: a ``Person``, an ``Application`` and the resume's extraction snapshot
+(``resumes.extracted``). It takes the legacy candidate's column names as keywords and puts each
+value where the read path takes it from (spec §7): name, contacts and profile into the
+snapshot, scoring and recruiter fields onto the application. Each call creates its own Person
+(no identifiers, no matching), so tests can add several "candidates" with the same email to one
+campaign, as they could with legacy rows. (The legacy ``candidates`` table itself was dropped by
+the contract migration, E0-20.)
 
 Timestamps: inside one test everything runs in one database transaction, where Postgres ``now()``
 is frozen, so rows created with server defaults all get the *same* timestamp and ``ORDER BY
@@ -20,10 +30,27 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
+from app.modules.talent.models import Person
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
+
+# The legacy candidate columns that come from the AI extraction: the read path takes them from
+# the resume's ``extracted`` snapshot (an ``ExtractionResult`` dumped to JSON).
+EXTRACTION_FIELDS = (
+    "name",
+    "email",
+    "phone",
+    "github_url",
+    "linkedin_url",
+    "skills",
+    "education",
+    "work_experience",
+    "certifications",
+    "projects",
+    "years_of_experience",
+)
 
 
 def at(minutes: int) -> datetime:
@@ -76,18 +103,9 @@ async def make_resume(
     return await _save(db, Resume(**fields))
 
 
-async def make_candidate(
-    db: AsyncSession,
-    campaign: Campaign | None = None,
-    resume: Resume | None = None,
-    **overrides: Any,
-) -> Candidate:
-    """A fully processed candidate. Creates its resume (and campaign) if not given."""
-    if resume is None:
-        resume = await make_resume(db, campaign)
+def candidate_fields(**overrides: Any) -> dict[str, Any]:
+    """A fully processed legacy candidate's columns (without ids), with ``overrides`` applied."""
     fields: dict[str, Any] = {
-        "resume_id": resume.id,
-        "campaign_id": resume.campaign_id,
         "name": "Jane Doe",
         "email": "jane.doe@example.com",
         "phone": "+1 555 0100",
@@ -122,4 +140,53 @@ async def make_candidate(
         "updated_at": BASE_TIME,
     }
     fields.update(overrides)
-    return await _save(db, Candidate(**fields))
+    return fields
+
+
+async def make_candidate(
+    db: AsyncSession,
+    campaign: Campaign | None = None,
+    resume: Resume | None = None,
+    **overrides: Any,
+) -> Application:
+    """A fully processed "candidate" as the switched read path sees it: its resume (created if
+    not given, with its campaign) with the extraction snapshot and text, a Person resolved from
+    it, and the Person's application to the campaign. Takes the legacy candidate's column names
+    (and ``id``, the application's id); returns the application, whose ``id`` and ``resume_id``
+    are what the API returns as the candidate's."""
+    if resume is None:
+        resume = await make_resume(db, campaign)
+    application_id = overrides.pop("id", None) or uuid.uuid4()
+    fields = candidate_fields(**overrides)
+    extracted = {name: fields.pop(name) for name in EXTRACTION_FIELDS}
+    person = await _save(
+        db,
+        Person(
+            full_name=extracted["name"],
+            github_url=extracted["github_url"],
+            linkedin_url=extracted["linkedin_url"],
+            skills=extracted["skills"],
+            education=extracted["education"],
+            work_experience=extracted["work_experience"],
+            certifications=extracted["certifications"],
+            projects=extracted["projects"],
+            years_of_experience=extracted["years_of_experience"],
+            latest_resume_id=resume.id,
+            created_at=fields["created_at"],
+            updated_at=fields["updated_at"],
+        ),
+    )
+    resume.extracted = extracted
+    resume.raw_text = fields.pop("raw_text")
+    resume.person_id = person.id
+    return await _save(
+        db,
+        Application(
+            id=application_id,
+            campaign_id=resume.campaign_id,
+            person_id=person.id,
+            resume_id=resume.id,
+            resume_uploaded_at=resume.uploaded_at,
+            **fields,
+        ),
+    )

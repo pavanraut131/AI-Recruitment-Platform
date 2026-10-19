@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import boto3
@@ -68,6 +69,20 @@ def delete_file(object_key: str) -> None:
     client = get_s3_client()
     client.delete_object(Bucket=settings.MINIO_BUCKET_NAME, Key=object_key)
     logger.info("file_deleted", key=object_key)
+
+
+def list_objects(prefix: str = "") -> dict[str, datetime]:
+    """Every object in the bucket whose key starts with ``prefix`` (all pages): key -> when it
+    was last modified (timezone-aware)."""
+    client = get_s3_client()
+    objects: dict[str, datetime] = {}
+    for page in client.get_paginator("list_objects_v2").paginate(
+        Bucket=settings.MINIO_BUCKET_NAME, Prefix=prefix
+    ):
+        for obj in page.get("Contents", []):
+            if "Key" in obj and "LastModified" in obj:
+                objects[obj["Key"]] = obj["LastModified"]
+    return objects
 
 
 def get_presigned_url(object_key: str, expires_in: int = 3600) -> str:

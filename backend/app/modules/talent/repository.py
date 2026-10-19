@@ -1,7 +1,7 @@
 """talent data access: the SQL behind ``talent.service``. Private to the talent module.
 
-Synchronous ``Session`` only: ``resolve_person`` runs in Celery workers and the backfill, which
-have no event loop (see ``app.modules.ingestion.tasks``); so do the verification reads at the end.
+Synchronous ``Session`` only: ``resolve_person`` runs in Celery workers and the seed generator,
+which have no event loop (see ``app.modules.ingestion.tasks``); so do the verification reads at the end.
 """
 
 import uuid
@@ -75,7 +75,7 @@ def lock_person(session: Session, person_id: uuid.UUID) -> Person:
     ).scalar_one()
 
 
-# ── Reads for the backfill verification (spec §6.3) ───────────
+# ── Reads for the verification (spec §6.3) ────────────────────
 def table_counts(session: Session) -> dict[str, int]:
     def count(model: type[Person | PersonIdentifier | IdentityConflict | PersonResume]) -> int:
         return session.execute(select(func.count()).select_from(model)).scalar_one()

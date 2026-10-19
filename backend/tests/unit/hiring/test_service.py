@@ -80,38 +80,47 @@ def test_build_global_stats() -> None:
 
 def _sql(filters: service.CandidateFilters) -> list[str]:
     dialect = postgresql.dialect()
-    return [str(c.compile(dialect=dialect)) for c in service.build_candidate_filters(filters)]
+    return [str(c.compile(dialect=dialect)) for c in service.build_application_filters(filters)]
 
 
 def test_candidate_filters_default_to_the_campaign_only() -> None:
-    assert _sql(service.CandidateFilters(campaign_id=uuid.uuid4())) == [
-        "candidates.campaign_id = %(campaign_id_1)s::UUID"
-    ]
+    filters = service.CandidateFilters(campaign_id=uuid.uuid4())
+    assert _sql(filters) == ["applications.campaign_id = %(campaign_id_1)s::UUID"]
+    assert not filters.profile().active
 
 
-def test_candidate_filters_build_one_clause_per_filter() -> None:
-    clauses = _sql(
-        service.CandidateFilters(
-            campaign_id=uuid.uuid4(),
-            skill="py",
-            category="strong_match",
-            min_score=1,
-            max_score=2,
-            min_experience=3,
-            search="ada",
-            pipeline_stage="offer",
-        )
+def test_candidate_filters_split_into_application_and_profile_filters() -> None:
+    filters = service.CandidateFilters(
+        campaign_id=uuid.uuid4(),
+        skill="py",
+        category="strong_match",
+        min_score=1,
+        max_score=2,
+        min_experience=3,
+        search="ada",
+        pipeline_stage="offer",
     )
-    assert len(clauses) == 8
-    assert any("jsonb_array_elements_text(candidates.skills)" in c for c in clauses)
-    assert any("candidates.name ILIKE" in c and "candidates.email ILIKE" in c for c in clauses)
+    # On applications: campaign, category, score range, pipeline stage.
+    clauses = _sql(filters)
+    assert len(clauses) == 5
+    assert all(c.startswith("applications.") for c in clauses)
+    # On the resume's extraction snapshot (ingestion): search, skill, experience.
+    assert filters.profile() == service.ProfileFilters(search="ada", skill="py", min_experience=3)
+    assert filters.profile().active
 
 
 def test_empty_string_filters_are_ignored() -> None:
     filters = service.CandidateFilters(
         campaign_id=uuid.uuid4(), skill="", category="", search="", pipeline_stage=""
     )
-    assert len(service.build_candidate_filters(filters)) == 1
+    assert len(service.build_application_filters(filters)) == 1
+    assert filters.profile() == service.ProfileFilters()
+    assert not filters.profile().active
+
+
+def test_zero_min_experience_is_a_profile_filter() -> None:
+    filters = service.CandidateFilters(campaign_id=uuid.uuid4(), min_experience=0)
+    assert filters.profile().active
 
 
 @pytest.mark.parametrize(

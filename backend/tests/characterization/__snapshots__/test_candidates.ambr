@@ -20,7 +20,7 @@
       }),
       'status_code': 200,
     }),
-    'stored_objects': 4,
+    'stored_objects': 2,
   })
 # ---
 # name: test_bulk_delete_candidates_empty_list
@@ -238,7 +238,7 @@
       'content': '',
       'status_code': 204,
     }),
-    'stored_objects': 2,
+    'stored_objects': 1,
   })
 # ---
 # name: test_delete_candidate_invalid_id
@@ -289,7 +289,6 @@
       'Bob Brown,bob@sample.org,+1 555 0100,74,moderate_match,screened,3.0,JavaScript | React | Node.js,Python,Frontend,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
       '"Chen, Carol",carol@example.com,+1 555 0100,55,weak_match,,1.5,Java | Spring,Python | FastAPI,"Says ""hello world"" fluently","Maybe, for a junior role.",https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
       'Dan Diaz,dan@sample.org,,12,rejected,rejected_manual,0.0,PHP,Python | FastAPI | PostgreSQL,,Proceed to technical interview.,,',
-      ',,,,,,,,,,,,',
       '',
     ]),
     'status_code': 200,
@@ -387,7 +386,6 @@
       'Bob Brown,bob@sample.org,+1 555 0100,74,moderate_match,screened,3.0,JavaScript | React | Node.js,Python,Frontend,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
       '"Chen, Carol",carol@example.com,+1 555 0100,55,weak_match,,1.5,Java | Spring,Python | FastAPI,"Says ""hello world"" fluently","Maybe, for a junior role.",https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
       'Dan Diaz,dan@sample.org,,12,rejected,rejected_manual,0.0,PHP,Python | FastAPI | PostgreSQL,,Proceed to technical interview.,,',
-      ',,,,,,,,,,,,',
       '',
     ]),
     'status_code': 200,
@@ -678,50 +676,6 @@
     'status_code': 404,
   })
 # ---
-# name: test_get_candidate_placeholder
-  dict({
-    'body': dict({
-      'campaign_id': '<uuid:1>',
-      'category': None,
-      'certifications': list([
-      ]),
-      'created_at': '<datetime>',
-      'education': list([
-      ]),
-      'email': None,
-      'github_url': None,
-      'id': '<uuid:2>',
-      'linkedin_url': None,
-      'missing_skills': list([
-      ]),
-      'name': None,
-      'notes': None,
-      'phone': None,
-      'pipeline_stage': None,
-      'projects': list([
-      ]),
-      'recommendation': None,
-      'resume_id': '<uuid:3>',
-      'score': None,
-      'score_breakdown': None,
-      'skills': list([
-      ]),
-      'strengths': list([
-      ]),
-      'summary': None,
-      'updated_at': '<datetime>',
-      'weaknesses': list([
-      ]),
-      'work_experience': list([
-      ]),
-      'years_of_experience': None,
-    }),
-    'headers': dict({
-      'content-type': 'application/json',
-    }),
-    'status_code': 200,
-  })
-# ---
 # name: test_list_candidates[bounds]
   dict({
     'body': list([
@@ -910,21 +864,6 @@
         ]),
         'summary': 'Backend engineer with five years of Python API experience.',
         'years_of_experience': 0.0,
-      }),
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': None,
-        'created_at': '<datetime>',
-        'email': None,
-        'id': '<uuid:10>',
-        'name': None,
-        'pipeline_stage': None,
-        'resume_id': '<uuid:11>',
-        'score': None,
-        'skills': list([
-        ]),
-        'summary': None,
-        'years_of_experience': None,
       }),
     ]),
     'headers': dict({
@@ -1463,21 +1402,6 @@
         'summary': 'Backend engineer with five years of Python API experience.',
         'years_of_experience': 0.0,
       }),
-      dict({
-        'campaign_id': '<uuid:1>',
-        'category': None,
-        'created_at': '<datetime>',
-        'email': None,
-        'id': '<uuid:10>',
-        'name': None,
-        'pipeline_stage': None,
-        'resume_id': '<uuid:11>',
-        'score': None,
-        'skills': list([
-        ]),
-        'summary': None,
-        'years_of_experience': None,
-      }),
     ]),
     'headers': dict({
       'content-type': 'application/json',
@@ -1840,6 +1764,27 @@
       'content-type': 'application/json',
     }),
     'status_code': 422,
+  })
+# ---
+# name: test_resume_being_analysed_has_no_candidate_yet
+  dict({
+    'by_resume': dict({
+      'body': dict({
+        'detail': 'Candidate not yet processed',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 404,
+    }),
+    'list': dict({
+      'body': list([
+      ]),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
   })
 # ---
 # name: test_update_category[moderate_match]

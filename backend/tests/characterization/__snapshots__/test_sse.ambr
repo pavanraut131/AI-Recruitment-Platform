@@ -1,4 +1,25 @@
 # serializer version: 1
+# name: test_stream_delivers_only_its_campaigns_events
+  dict({
+    'events': list([
+      dict({
+        'data': dict({
+          'campaign_id': '<uuid:1>',
+        }),
+        'event': 'connected',
+      }),
+      dict({
+        'data': dict({
+          'filename': 'watched.pdf',
+          'resume_id': '<uuid:2>',
+          'status': 'extracting',
+        }),
+        'event': 'resume_update',
+      }),
+    ]),
+    'watched_campaign': '<uuid:1>',
+  })
+# ---
 # name: test_stream_event_for_each_resume_status
   dict({
     'events': list([
@@ -69,35 +90,6 @@
       'x-accel-buffering': 'no',
     }),
     'status_code': 200,
-  })
-# ---
-# name: test_stream_forwards_events_of_other_campaigns
-  dict({
-    'events': list([
-      dict({
-        'data': dict({
-          'campaign_id': '<uuid:1>',
-        }),
-        'event': 'connected',
-      }),
-      dict({
-        'data': dict({
-          'filename': 'other.pdf',
-          'resume_id': '<uuid:2>',
-          'status': 'extracting',
-        }),
-        'event': 'resume_update',
-      }),
-      dict({
-        'data': dict({
-          'error': 'x',
-          'resume_id': 'not-a-resume-id',
-          'status': 'failed',
-        }),
-        'event': 'resume_update',
-      }),
-    ]),
-    'watched_campaign': '<uuid:1>',
   })
 # ---
 # name: test_stream_invalid_campaign_id

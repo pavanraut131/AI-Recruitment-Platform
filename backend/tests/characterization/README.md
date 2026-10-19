@@ -32,13 +32,15 @@ behaviour, not intended behaviour: some snapshots deliberately record bugs (look
 | `test_campaigns.py` | `/campaigns` CRUD, `/campaigns/{id}/stats`, `/campaigns/parse-jd` |
 | `test_candidates.py` | candidate list (every filter, sort, pagination), CSV export, detail, category / notes / pipeline updates, `/resumes/{id}/candidate`, bulk pipeline, bulk delete, delete |
 | `test_resumes.py` | upload (accepted, not a PDF, too large, too many files, duplicates), resume list / detail, retry-failed |
-| `test_sse.py` | `/campaigns/{id}/stream`: event payload for each resume status |
+| `test_sse.py` | `/campaigns/{id}/stream`: event payload for each resume status; only the requested campaign's events are delivered (B3, fixed in E0-21) |
 | `test_stats_health.py` | `/stats`, `/health`, `/health/ready`, `/api/v1/health`, OpenAPI schema |
 | `__snapshots__/*.ambr` | the recorded snapshots (syrupy's Amber format) |
 | `snapshot_utils.py` | masking serializer and helpers that turn responses into plain data |
 | `sse.py` | reads a bounded number of SSE events over raw ASGI, with a timeout |
 
-Test data comes from the factories in `tests/factories.py`; Redis, Gemini, MinIO and Celery are
+Test data comes from the factories in `tests/factories.py` (since the read switch, E0-19, a
+"candidate" is built as a Person, an Application and its resume's extraction snapshot, so these
+tests run the new read path); Redis, Gemini, MinIO and Celery are
 faked by the autouse fixtures in `tests/conftest.py`. No test touches the network.
 
 ## Masking

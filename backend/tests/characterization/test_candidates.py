@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from tests.characterization.snapshot_utils import response_data
 from tests.factories import at, make_campaign, make_candidate, make_resume
@@ -21,14 +21,15 @@ UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
 
 
 async def _seed_pool(db: AsyncSession) -> Campaign:
-    """Five candidates covering every filter dimension, plus one in another campaign.
+    """Four candidates covering every filter dimension, a resume still being analysed (no
+    candidate yet), plus one candidate in another campaign.
 
     | name           | email              | score | category       | exp | stage           |
     | Alice Anderson | alice@example.com  | 91    | strong_match   | 7   | technical       |
     | Bob Brown      | bob@sample.org     | 74    | moderate_match | 3   | screened        |
     | Chen, Carol    | carol@example.com  | 55    | weak_match     | 1.5 | -               |
     | Dan Diaz       | dan@sample.org     | 12    | rejected       | 0   | rejected_manual |
-    | (placeholder)  | -                  | -     | -              | -   | -               |
+    | (in progress: no row)                                                            |
     """
     campaign = await make_campaign(db)
     rows: list[dict[str, Any]] = [
@@ -80,29 +81,22 @@ async def _seed_pool(db: AsyncSession) -> Campaign:
             "linkedin_url": None,
             "phone": None,
         },
-        {
-            # Extraction done, AI scoring not yet: everything but raw_text is empty.
-            "name": None,
-            "email": None,
-            "phone": None,
-            "github_url": None,
-            "linkedin_url": None,
-            "score": None,
-            "category": None,
-            "years_of_experience": None,
-            "pipeline_stage": None,
-            "skills": [],
-            "missing_skills": [],
-            "strengths": [],
-            "summary": None,
-            "recommendation": None,
-        },
     ]
     for i, fields in enumerate(rows):
         resume = await make_resume(
             db, campaign, original_filename=f"candidate_{i}.pdf", uploaded_at=at(i)
         )
         await make_candidate(db, resume=resume, created_at=at(i), **fields)
+    # Text extracted, AI scoring not done yet: no application, so no row (E0-19; before the
+    # read switch the extract step created an empty placeholder candidate for it).
+    await make_resume(
+        db,
+        campaign,
+        original_filename="candidate_4.pdf",
+        uploaded_at=at(4),
+        status="processing",
+        raw_text="text",
+    )
 
     other = await make_campaign(db, title="Other campaign")
     await make_candidate(db, other, name="Alice Elsewhere", email="alice@elsewhere.com")
@@ -262,17 +256,16 @@ async def test_get_candidate(
     assert response_data(resp) == snapshot
 
 
-async def test_get_candidate_placeholder(
+async def test_resume_being_analysed_has_no_candidate_yet(
     client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
 ) -> None:
-    # The row the extract worker creates before AI scoring: only ids, raw_text and defaults.
-    resume = await make_resume(db_session, status="processing")
-    candidate = Candidate(resume_id=resume.id, campaign_id=resume.campaign_id, raw_text="text")
-    candidate.created_at = candidate.updated_at = at(0)
-    db_session.add(candidate)
-    await db_session.flush()
-    resp = await client.get(f"{API}/candidates/{candidate.id}")
-    assert response_data(resp) == snapshot
+    # E0-19 (decided 2026-10-19, spec §7.1): a candidate (application) exists only once its
+    # resume is scored. Before the read switch the extract step created an empty placeholder
+    # candidate here, listed as an unscored row and returned by /resumes/{id}/candidate.
+    resume = await make_resume(db_session, status="processing", raw_text="text")
+    by_resume = await client.get(f"{API}/resumes/{resume.id}/candidate")
+    listed = await client.get(f"{API}/campaigns/{resume.campaign_id}/candidates")
+    assert {"by_resume": response_data(by_resume), "list": response_data(listed)} == snapshot
 
 
 async def test_get_candidate_not_found(client: AsyncClient, snapshot: SnapshotAssertion) -> None:
@@ -451,9 +444,12 @@ async def test_get_candidate_by_resume_invalid_id(
 
 # ── PATCH /campaigns/{id}/candidates/bulk-pipeline ────────────
 async def _stages(db: AsyncSession) -> list[tuple[str | None, str | None]]:
+    """``(name, pipeline_stage)`` of every candidate (application), by name."""
     db.expire_all()
     rows = await db.execute(
-        select(Candidate.name, Candidate.pipeline_stage).order_by(Candidate.name)
+        select(Resume.extracted["name"].astext, Application.pipeline_stage)
+        .join(Resume, Resume.id == Application.resume_id)
+        .order_by(Resume.extracted["name"].astext)
     )
     return [(name, stage) for name, stage in rows.all()]
 
@@ -518,8 +514,12 @@ async def test_bulk_update_pipeline_validation_error(
 
 # ── DELETE /campaigns/{id}/candidates/bulk ────────────────────
 async def _remaining(db: AsyncSession) -> dict[str, list[str]]:
+    """The names of the candidates (applications) left, and the file names of the resumes."""
     db.expire_all()
-    candidates = await db.execute(select(Candidate.name).order_by(Candidate.name))
+    name = Resume.extracted["name"].astext
+    candidates = await db.execute(
+        select(name).join(Application, Application.resume_id == Resume.id).order_by(name)
+    )
     resumes = await db.execute(select(Resume.original_filename).order_by(Resume.original_filename))
     return {
         "candidates": [n for (n,) in candidates.all()],
@@ -529,7 +529,7 @@ async def _remaining(db: AsyncSession) -> dict[str, list[str]]:
 
 async def _candidate_with_stored_pdf(
     db: AsyncSession, storage: InMemoryStorage, campaign: Campaign, name: str
-) -> Candidate:
+) -> Application:
     resume = await make_resume(db, campaign, original_filename=f"{name}.pdf")
     storage.upload_file(b"%PDF-1.4", resume.storage_path)
     return await make_candidate(db, resume=resume, name=name)
@@ -555,7 +555,8 @@ async def test_bulk_delete_candidates(
     assert {
         "response": response_data(resp),
         "remaining": await _remaining(db_session),
-        # Stored PDFs are not deleted (orphaned objects).
+        # The deleted resumes' PDFs are deleted after the commit (B6 fixed in E0-20; they used
+        # to be left behind, the snapshot recorded 4).
         "stored_objects": len(fake_storage.objects),
     } == snapshot
 
@@ -601,6 +602,7 @@ async def test_delete_candidate_also_deletes_resume(
     assert {
         "response": {"status_code": resp.status_code, "content": resp.text},
         "remaining": await _remaining(db_session),
+        # The PDF is deleted after the commit (B6 fixed in E0-20; the snapshot recorded 2).
         "stored_objects": len(fake_storage.objects),
         "get_after_delete": (await client.get(f"{API}/candidates/{target.id}")).status_code,
     } == snapshot
