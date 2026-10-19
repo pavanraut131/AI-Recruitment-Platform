@@ -22,6 +22,12 @@ Checks (spec §6.3, plus the invariants the Sprint 4 read switch relies on)
       none of its resumes had a match-eligible one (ADR 0004 amendment, option A: an inferred
       phone does not count as usable).
     * ``people_have_resumes``: every Person was resolved from at least one resume.
+    * ``recruiter_fields_consistent`` (E0-18): every application's ``pipeline_stage`` and
+      ``notes`` equal the newest non-``NULL`` value of its candidates (by resume upload time),
+      and its ``category`` equals that of the candidate of its current resume
+      (``hiring.expected_recruiter_fields``, the rule the API's mirrored writes, the pipeline,
+      the backfill and ``backfill --resync-recruiter-fields`` apply). A failure on a database
+      backfilled before E0-18 means recruiter edits made since: run the re-sync.
     * With ``--manifest``: ``expected.{people, applications, identity_conflicts,
       legacy_candidate_map_rows}`` of the seed manifest (``app.devtools.seed``), exactly, and
       the number of legacy candidates (``counts.legacy_candidates``). When the manifest lists its
@@ -212,6 +218,13 @@ def verify(
     resolved_people = set(resolutions.values())
     for person_id in sorted(people - resolved_people):
         check.fail(f"person {person_id} was resolved from no resume")
+    report.checks.append(check)
+
+    check = Check("recruiter_fields_consistent")
+    for problem in hiring_service.recruiter_field_mismatches(
+        db, lambda resume_ids: repository.uploaded_at_sync(db, resume_ids)
+    ):
+        check.fail(problem)
     report.checks.append(check)
 
     if manifest is not None:

@@ -308,11 +308,13 @@ def make_legacy(
 
 
 def dual_write(
-    db: Session, candidate: hiring_service.LegacyCandidate, *, link: bool
+    db: Session, candidate: hiring_service.LegacyCandidate, *, link: bool, carry: bool = False
 ) -> hiring_service.ApplicationRef:
     """What the pipeline's resolve + save steps write for an analysed resume, using the
     candidate's stored extraction and scoring: ``link=True`` is the E0-17 pipeline
-    (application id = candidate id, map row when merged), ``link=False`` the E0-16 one."""
+    (application id = candidate id, map row when merged), ``link=False`` the E0-16 one, and
+    ``carry=True`` adds what the E0-18 pipeline does after linking (recompute the recruiter
+    fields from the candidates)."""
     resume = db.get_one(Resume, candidate.resume_id)
     extraction = candidate.extraction()
     resume.extracted = extraction.model_dump(mode="json")
@@ -337,6 +339,8 @@ def dual_write(
     )
     if link:
         hiring_service.link_legacy_candidate(db, candidate_id=candidate.id, application_id=app.id)
+    if carry:
+        backfill.carry_recruiter_fields(db, [app.id])
     db.commit()
     return hiring_service.ApplicationRef(app.id, app.campaign_id, app.person_id, app.resume_id)
 
@@ -488,7 +492,7 @@ def test_a_crash_in_the_middle_of_a_batch_loses_nothing_on_resume(
 
 
 # ── Mixed database: part of it already went through the dual-write pipeline ──
-@pytest.mark.parametrize("pipeline", ["e0_17_linking", "e0_16_unlinked"])
+@pytest.mark.parametrize("pipeline", ["e0_18_carrying", "e0_17_linking", "e0_16_unlinked"])
 def test_resumes_already_processed_by_the_dual_write_are_reused(
     sessions: sessionmaker[Session], pipeline: str
 ) -> None:
@@ -500,11 +504,14 @@ def test_resumes_already_processed_by_the_dual_write_are_reused(
     conflicts = expected["identity_conflicts"]
     processed = candidates[: len(candidates) - conflicts : 3]
     with sessions() as db:
-        written = [dual_write(db, c, link=pipeline == "e0_17_linking") for c in processed]
+        linking = pipeline in ("e0_18_carrying", "e0_17_linking")
+        written = [
+            dual_write(db, c, link=linking, carry=pipeline == "e0_18_carrying") for c in processed
+        ]
 
     summary = run(sessions)
 
-    if pipeline == "e0_17_linking":  # linked by the pipeline: nothing left to do
+    if linking:  # linked by the pipeline: nothing left to do
         assert summary.skipped == {backfill.SKIP_ALREADY_BACKFILLED: len(processed)}
         assert summary.processed == len(candidates) - len(processed)
         assert summary.resolutions_reused == 0
@@ -512,11 +519,18 @@ def test_resumes_already_processed_by_the_dual_write_are_reused(
         assert summary.processed == len(candidates)
         assert summary.resolutions_reused == len(processed)
     report = verify(sessions, manifest)
+    if pipeline == "e0_17_linking":
+        # The E0-17 pipeline did not carry the (seeded) recruiter fields of the candidates it
+        # linked, and the backfill skips them as already_backfilled: exactly what the E0-18
+        # re-sync is for.
+        assert {c.name for c in report.checks if not c.ok} == {"recruiter_fields_consistent"}
+        assert backfill.run_resync_recruiter_fields(sessions, progress=lambda _: None).changed
+        report = verify(sessions, manifest)
     results = manifest_results(report)
     assert all(check.ok for check in report.checks), report.render()
     for key in ("people", "applications", "identity_conflicts"):
         assert results[f"expected.{key}"] == (expected[key], expected[key]), key
-    if pipeline == "e0_17_linking":
+    if linking:
         assert report.ok, report.render()
     else:
         # The E0-16 pipeline gave new applications random ids, so each of their candidates
