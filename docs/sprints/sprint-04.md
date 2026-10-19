@@ -12,14 +12,14 @@ This sprint covers phases 4–5 of the migration (spec §6.1): **switch → cont
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | todo |
+| E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | in review |
 | E0-19 | Switch reads to People + Applications (phase 4) | L | todo |
 | E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | todo |
 | E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | todo |
 
 **Order:** E0-18 → E0-19 → E0-20 → E0-21. The chain is strictly sequential, each PR stacked on the previous one. **Merge stacked PRs with "Create a merge commit"** (Sprint 3 retro).
 
-## Decision needed: when to contract (drop `candidates`)
+## Decision: when to contract (decided 2026-10-19: Option A — contract this sprint after a live rehearsal)
 
 Spec §6.1 says to drop `candidates` "after one full sprint without issues". That rule protects real users from a bad switch. We have no production users yet.
 
@@ -31,17 +31,17 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-18 · Close the switch gate
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-18-switch-gate`
+**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-18-switch-gate`
 
 **Goal:** People + Applications stay complete while the legacy endpoints are still live, so the switch loses no recruiter work.
 
 **Acceptance criteria**
-- [ ] `PATCH /candidates/{id}/category`, `/notes`, `/pipeline` and `PATCH …/candidates/bulk-pipeline` also update the candidate's application, resolved directly by id or via `legacy_candidate_map`. This happens in the same transaction, through `hiring.service`. The category follows the same rule as the backfill.
-- [ ] `DELETE /candidates/{id}` and bulk delete delete the application when **no other** legacy candidate maps to it. Otherwise they keep it and remove only the map row. The rule is documented and tested.
-- [ ] `backfill --resync-recruiter-fields` re-applies `pipeline_stage` / `notes` from `candidates` (newest non-null per field, `carry_recruiter_fields`). It is idempotent.
-- [ ] `verify_backfill` gains a check that recruiter fields on applications equal the rule's result over their candidates.
-- [ ] All snapshots are byte-identical; the API is unchanged.
-- [ ] Every runbook §8 item is ticked, with evidence in the PR.
+- [x] `PATCH /candidates/{id}/category`, `/notes`, `/pipeline` and `PATCH …/candidates/bulk-pipeline` also update the candidate's application, resolved directly by id or via `legacy_candidate_map`. This happens in the same transaction, through `hiring.service`. The category follows the same rule as the backfill.
+- [x] `DELETE /candidates/{id}` and bulk delete delete the application when **no other** legacy candidate maps to it. Otherwise they keep it and remove only the map row. The rule is documented and tested.
+- [x] `backfill --resync-recruiter-fields` re-applies `pipeline_stage` / `notes` from `candidates` (newest non-null per field, `carry_recruiter_fields`). It is idempotent.
+- [x] `verify_backfill` gains a check that recruiter fields on applications equal the rule's result over their candidates.
+- [x] All snapshots are byte-identical; the API is unchanged.
+- [ ] Every runbook §8 item is ticked, with evidence in the PR. *(E0-18 closes the two code items; the environment items are re-run by the pre-switch procedure in runbook §8 at the start of E0-19.)*
 
 **Concept to learn:** Keeping two write models consistent during a migration window.
 

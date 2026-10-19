@@ -37,6 +37,7 @@ Options:
 | `--max-batches N` | none | Stop after N pages (a controlled partial run) |
 | `--checkpoint-name NAME` | `person_application_v1` | Row in `backfill_checkpoints`; a new name starts a new, independent run |
 | `--reset-checkpoint` | off | Start again from the first candidate. Already backfilled candidates are skipped, so on a finished database it changes nothing |
+| `--resync-recruiter-fields` | off | Instead of backfilling: recompute every application's `pipeline_stage`, `notes` and `category` from its candidates (E0-18, section 5a). `--batch-size` is then applications per page/transaction |
 
 How it commits: **one transaction per candidate** (resolve the Person, upsert the Application, map row, recruiter fields, `resumes.person_id` / `extracted`), and the checkpoint after each page. One transaction per candidate keeps `resolve_person`'s advisory locks to at most 3 per transaction for milliseconds, exactly like one more pipeline worker, and keeps spec §5.4's lock-ordering argument (no deadlock with live uploads) valid. A page-sized transaction would hold every lock of the page until its commit (measured: 193 locks for the 86 candidates of the small test seed, so roughly 1,100 to 1,500 for a page of 500) and could deadlock with a live upload.
 
@@ -95,7 +96,8 @@ Read-only, one consistent snapshot (`REPEATABLE READ`). Exit `0` = every check p
 |---|---|---|
 | `candidates_lead_to_one_application` | A candidate with a `done` resume is neither an application id nor in `legacy_candidate_map` (or is both, or leads to another campaign or person) | Run the backfill with `--reset-checkpoint`; if it persists, a worker is on pre-E0-17 code |
 | `applications_have_people` | An application points at a missing Person | Investigate; nothing deletes People today |
-| `applications_have_resumes` | An application's resume is missing, in another campaign or resolved to another person | A candidate/resume was deleted through the legacy API after its application existed (the legacy delete does not delete applications yet). Note for the Sprint 4 switch |
+| `applications_have_resumes` | An application's resume is missing, in another campaign or resolved to another person | Before E0-18 the legacy delete left applications behind. From E0-18 the delete applies the delete rule (below), so a failure means a delete ran on pre-E0-18 code: investigate, delete the orphaned application by hand |
+| `recruiter_fields_consistent` | An application's `pipeline_stage`, `notes` or `category` differs from the rule over its candidates | Recruiter edits made before E0-18 was deployed: run `--resync-recruiter-fields` (section 5a) |
 | `done_resumes_have_people` | A `done` resume has no `person_id`, or it disagrees with `person_resumes` | Backfill with `--reset-checkpoint` |
 | `identifiers_unique` | A `(kind, value_normalized)` stored twice | Cannot happen with the unique constraint; stop and investigate |
 | `people_without_identifiers_justified` | A Person without identifiers has a resume with a usable one (valid email, or a match-eligible phone, ADR 0004 option A) | Investigate the resolution of that resume |
@@ -103,6 +105,24 @@ Read-only, one consistent snapshot (`REPEATABLE READ`). Exit `0` = every check p
 | `expected.*` / `counts.legacy_candidates` (with `--manifest`) | Numbers differ from the seed manifest | Wrong manifest for this database, uploads into seeded campaigns, or a matching bug |
 
 With `--manifest`, the counts are taken **only in the manifest's `campaign_ids`** (seed manifests written from E0-17 on list them), so uploads to other campaigns during the rehearsal do not change them. The integrity checks always cover the whole database.
+
+## 5a. Re-sync the recruiter fields (E0-18)
+
+```bash
+docker compose exec backend python -m app.modules.ingestion.backfill --resync-recruiter-fields
+```
+
+Recomputes every application's `pipeline_stage`, `notes` and `category` from its candidates with the rule below, one transaction per page of `--batch-size` applications (each page's applications are locked `FOR UPDATE` while they are recomputed, so a concurrent API edit waits a few milliseconds and then recomputes on top). Online and idempotent: a second run reports `applications changed: 0`. Expected output:
+
+```
+resync: batch 1: 500 applications, changed <n>
+...
+resync: finished after 3 batch(es) in <seconds>s
+  applications checked:   1101
+  applications changed:   <n> (category <a>, notes <b>, pipeline_stage <c>)
+```
+
+Each change is logged as `resync_recruiter_fields_changed` with the application id and fields. Exit code `0`, or `1` if a page failed (committed pages are kept; run again).
 
 ## 6. Roll back
 
@@ -166,15 +186,23 @@ Optional: run the backfill a second time (`--reset-checkpoint`) and confirm `pro
 
 ## 8. Go/no-go for the Sprint 4 read switch
 
-Go only if **all** hold:
+Go only if **all** hold. Items 1 to 5 are properties of the target environment: they are (re)confirmed by the pre-switch procedure below, run at the start of E0-19 (automated equivalents: `tests/ingestion/test_backfill.py`, `tests/ingestion/test_switch_gate.py`). Items 6 and 7 were code changes, closed by E0-18.
 
-- [ ] `verify_backfill` exits `0` on the target environment, run after uploads have drained.
-- [ ] The backfill summary has no unexplained skips (`resume_not_done` only for resumes genuinely in progress or failed).
-- [ ] The Compose rehearsal (section 7) passed with uploads running, with the numbers above.
-- [ ] A second backfill run reports `processed: 0`.
-- [ ] Workers have run the E0-17 pipeline since before the backfill started (section 1).
-- [ ] **Recruiter edits after the backfill are accounted for.** Until the switch, the legacy endpoints (`PATCH /candidates/{id}/...`) still write only `candidates`: a stage or note changed after a candidate was backfilled is not on its application, and re-running the backfill does not copy it (the candidate is `already_backfilled`). The switch must either re-sync `pipeline_stage` / `notes` from `candidates` (newest non-null per field, `hiring.service.carry_recruiter_fields`) immediately before reads move, or the legacy writes must be mirrored first.
-- [ ] Candidates deleted through the legacy API after the backfill: their applications remain (`applications_have_resumes` fails for them). Decide in the switch ticket whether the delete endpoints also delete the application.
+- [ ] `verify_backfill` exits `0` on the target environment, run after uploads have drained. *(Pre-switch procedure, step 4. It now includes `recruiter_fields_consistent`.)*
+- [ ] The backfill summary has no unexplained skips (`resume_not_done` only for resumes genuinely in progress or failed). *(Step 2.)*
+- [ ] The Compose rehearsal (section 7) passed with uploads running, with the numbers above. *(Step 2; E0-19's live rehearsal.)*
+- [ ] A second backfill run reports `processed: 0`. *(Step 2.)*
+- [ ] Workers have run the E0-17 pipeline since before the backfill started (section 1). *(Step 1: E0-18 workers include it.)*
+- [x] **Recruiter edits after the backfill are accounted for** (E0-18). The legacy recruiter endpoints (`PUT /candidates/{id}/category`, `PATCH /candidates/{id}/notes`, `PATCH /candidates/{id}/pipeline`, `PATCH …/candidates/bulk-pipeline`) now mirror every write onto the application in the same transaction (rule below), the pipeline recomputes when it links a candidate, and `--resync-recruiter-fields` (section 5a) repairs edits made before E0-18 was deployed. `verify_backfill`'s `recruiter_fields_consistent` proves it. Evidence: `tests/hiring/test_mirror_legacy_writes.py`, `tests/ingestion/test_switch_gate.py`.
+- [x] **Candidates deleted through the legacy API after the backfill** (E0-18). The delete endpoints apply the delete rule (below); `applications_have_resumes` stays green after legacy deletes. Evidence: same tests.
+
+**Pre-switch procedure** (the first steps of E0-19, on the Compose stack, then on any later environment):
+
+1. **Deploy E0-18** (backend and both workers) and restart the workers: `docker compose restart backend worker_extract worker_ai`. From here on every legacy write is mirrored.
+2. If not already done on this database: run the backfill (section 3) and confirm a second run reports `processed: 0`; for the rehearsal, the section 7 numbers.
+3. **Re-sync** the recruiter fields once, to repair edits made before step 1: `docker compose exec backend python -m app.modules.ingestion.backfill --resync-recruiter-fields`. Running it again must report `applications changed: 0`.
+4. **Verify**, after uploads have drained: `docker compose exec backend python -m app.modules.ingestion.verify_backfill` (plus `--manifest /app/seed-manifest.json` on a seeded stack). Must exit `0`.
+5. Tick items 1 to 5 above with the outputs in the E0-19 PR, then switch reads.
 
 No-go: fix, re-run the backfill (`--reset-checkpoint` if needed) and verify again.
 
@@ -182,5 +210,7 @@ No-go: fix, re-run the backfill (`--reset-checkpoint` if needed) and verify agai
 
 - **Profile and scoring follow upload time, not processing order.** `resolve_person` refreshes the profile from the most recently *uploaded* resume; `upsert_application` keeps the scoring of the newest resume (`uploaded_at`, ties by resume id). Identity matching itself is order-sensitive in one case (a resume carrying one person's email and another's phone creates a conflict only if both People exist), which is why candidates are processed in `created_at` order, the order they were uploaded in.
 - **Application ids:** the first candidate of a `(campaign, person)` pair processed keeps its id; every other candidate of the pair gets a `legacy_candidate_map` row.
-- **Recruiter fields** (`pipeline_stage`, `notes`): per field, the value of the **newest candidate (by resume upload time) that has one** among all candidates of the application. A candidate without a value never clears one. Independent of processing order.
-- **Category** travels with the scoring (newest resume wins), including a manual change on that candidate; a manual category on an older, merged candidate is not kept.
+- **Recruiter fields** (`pipeline_stage`, `notes`): per field, the value of the **newest candidate (by resume upload time) that has one** (not `NULL`; an empty note is a value) among all candidates of the application; `NULL` if none has one. A candidate without a value never clears one. Independent of processing order.
+- **Category** travels with the scoring (newest resume wins): it is the category of the candidate of the application's current resume, including a manual change on that candidate; a manual category on an older, merged candidate is not kept.
+- **One rule everywhere** (E0-18): the backfill, the upload pipeline, the mirrored legacy writes, `--resync-recruiter-fields` and `verify_backfill` all use `hiring.service.expected_recruiter_fields`. A legacy write updates the candidate and then *recomputes* the application from all its candidates; it never copies the new value.
+- **Delete rule** (E0-18, `DELETE /candidates/{id}` and bulk delete, same transaction as the candidate and resume delete): the application is deleted with its **last** candidate. Otherwise it is kept, only the deleted candidates' `legacy_candidate_map` rows are removed, and its recruiter fields are recomputed from the remaining candidates. If the deleted candidate's id was the application's id, the application **keeps that id** (the remaining candidates' map rows point at it). If the deleted candidate held the current resume, the application takes the newest remaining candidate's resume and scoring.
