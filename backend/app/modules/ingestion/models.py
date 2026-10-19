@@ -12,7 +12,8 @@ deletes its resumes in the database.
 (ADR 0003). It, ``extracted`` and ``processing_step`` were added by the E0-14 expand migration as
 nullable columns (a metadata-only ``ADD COLUMN`` in Postgres, no table rewrite). The upload
 pipeline (``tasks.process_candidate_ai``) writes them since E0-16; resumes processed before keep
-``NULL`` until the backfill (E0-17).
+``NULL`` until the backfill (E0-17). Since the read switch (E0-19) ``extracted`` is also what
+the legacy candidate endpoints show as the candidate's name, contacts and profile.
 """
 
 import uuid
@@ -68,6 +69,10 @@ class Resume(Base):
     # processing, the failed step after a failure. No CHECK constraint: adding one to an existing
     # table scans it under an exclusive lock, and the values are owned by the pipeline code.
     processing_step: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The text extracted from the PDF (step ``extract_text``), read by the AI step. Added by the
+    # E0-19 expand migration: until the read switch it lived on the legacy candidate
+    # (``candidates.raw_text``), which nothing writes any more. Never part of an API response.
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class BackfillCheckpoint(Base):

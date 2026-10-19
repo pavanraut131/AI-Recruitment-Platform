@@ -2,8 +2,9 @@
 
 Tables ``campaigns``, ``candidates`` (legacy, dropped in phase 5 of spec §6.1), ``applications``
 and ``legacy_candidate_map`` (both created by the E0-14 expand migration). Since E0-16 the upload
-pipeline writes ``applications`` through ``service.upsert_application`` (dual write, spec §6.1);
-nothing reads them yet.
+pipeline writes ``applications`` through ``service.upsert_application``; since the read switch
+(E0-19, spec §6.1 phase 4) the API reads and writes them, and nothing writes ``candidates`` any
+more (it is read by the backfill and its verification until E0-20 drops it).
 
 Private to the hiring module: other modules use ``app.modules.hiring.service`` instead.
 

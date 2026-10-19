@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from tests.characterization.snapshot_utils import response_data
 from tests.factories import at, make_campaign, make_candidate, make_resume
@@ -252,7 +252,8 @@ async def test_delete_campaign_cascades_to_resumes_and_candidates(
         "rows_left": {
             "campaigns": await count(Campaign),
             "resumes": await count(Resume),
-            "candidates": await count(Candidate),
+            # Since the read switch a "candidate" is an application (E0-19).
+            "candidates": await count(Application),
         },
         # The PDF in object storage is not deleted (orphaned).
         "stored_object_keys_left": len(fake_storage.objects),

@@ -10,12 +10,26 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, delete, func, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Row,
+    and_,
+    any_,
+    column,
+    delete,
+    exists,
+    func,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.ingestion.models import BackfillCheckpoint, Resume
+from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 FAILED_STATUSES = ("failed", "quota_exceeded")
 
@@ -76,16 +90,105 @@ async def delete_by_ids(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> No
         await db.delete(resume)
 
 
-async def uploaded_at(
+async def extractions(
     db: AsyncSession, resume_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, datetime]:
-    """``id -> uploaded_at`` of the resumes among ``resume_ids`` that exist."""
+) -> dict[uuid.UUID, dict[str, Any] | None]:
+    """``id -> extracted`` of the resumes among ``resume_ids`` that exist (one query)."""
     if not resume_ids:
         return {}
     result = await db.execute(
-        select(Resume.id, Resume.uploaded_at).where(Resume.id.in_(resume_ids))
+        select(Resume.id, Resume.extracted).where(Resume.id == any_(uuid_array(resume_ids)))
     )
-    return {resume_id: uploaded for resume_id, uploaded in result.tuples()}
+    return {resume_id: extracted for resume_id, extracted in result.tuples()}
+
+
+async def skill_lists(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Any]:
+    """``id -> extracted['skills']`` of the resumes among ``resume_ids`` that exist."""
+    if not resume_ids:
+        return {}
+    result = await db.execute(
+        select(Resume.id, Resume.extracted["skills"]).where(
+            Resume.id == any_(uuid_array(resume_ids))
+        )
+    )
+    return {resume_id: skills for resume_id, skills in result.tuples()}
+
+
+async def matching_extractions(
+    db: AsyncSession,
+    resume_ids: Sequence[uuid.UUID],
+    *,
+    search: str | None,
+    skill: str | None,
+    min_experience: float | None,
+) -> list[uuid.UUID]:
+    """The resumes among ``resume_ids`` whose extraction matches every given filter.
+
+    The same SQL the legacy list ran on ``candidates`` (B2), on the snapshot's fields:
+
+    - ``search``: ``extracted->>'name'`` or ``extracted->>'email'`` contains it (``ILIKE``,
+      wildcards escaped);
+    - ``skill``: ``EXISTS (SELECT 1 FROM jsonb_array_elements_text(extracted->'skills') AS
+      skill WHERE skill.value ILIKE :pattern)``: any one skill contains it, never the JSON text;
+    - ``min_experience``: ``(extracted->>'years_of_experience')::float >= :min``; an unknown
+      experience never matches.
+    """
+    if not resume_ids:
+        return []
+    clauses: list[ColumnElement[bool]] = [Resume.id == any_(uuid_array(resume_ids))]
+    if search:
+        pattern = f"%{escape_like(search)}%"
+        clauses.append(
+            or_(
+                Resume.extracted["name"].astext.ilike(pattern, escape=LIKE_ESCAPE),
+                Resume.extracted["email"].astext.ilike(pattern, escape=LIKE_ESCAPE),
+            )
+        )
+    if skill:
+        skill_elem = (
+            func.jsonb_array_elements_text(Resume.extracted["skills"])
+            .table_valued(column("value"))
+            .alias("skill")
+        )
+        clauses.append(
+            exists()
+            .select_from(skill_elem)
+            .where(skill_elem.c.value.ilike(f"%{escape_like(skill)}%", escape=LIKE_ESCAPE))
+        )
+    if min_experience is not None:
+        clauses.append(Resume.extracted["years_of_experience"].as_float() >= min_experience)
+    result = await db.execute(select(Resume.id).where(and_(*clauses)))
+    return list(result.scalars())
+
+
+async def owner(
+    db: AsyncSession, resume_id: uuid.UUID
+) -> tuple[uuid.UUID, uuid.UUID | None] | None:
+    """``(campaign_id, person_id)`` of the resume, or ``None`` if it does not exist."""
+    result = await db.execute(
+        select(Resume.campaign_id, Resume.person_id).where(Resume.id == resume_id)
+    )
+    row = result.one_or_none()
+    return (row.campaign_id, row.person_id) if row is not None else None
+
+
+async def delete_of_people(
+    db: AsyncSession,
+    resume_ids: Sequence[uuid.UUID],
+    people: Sequence[tuple[uuid.UUID, uuid.UUID]],
+) -> None:
+    """Mark for deletion the resumes with these ids and every resume of these ``(campaign_id,
+    person_id)`` pairs; the caller commits."""
+    clauses: list[ColumnElement[bool]] = []
+    if resume_ids:
+        clauses.append(Resume.id == any_(uuid_array(resume_ids)))
+    if people:
+        clauses.append(tuple_(Resume.campaign_id, Resume.person_id).in_(people))
+    if not clauses:
+        return
+    result = await db.execute(select(Resume).where(or_(*clauses)))
+    for resume in result.scalars().all():
+        await db.delete(resume)
 
 
 async def commit(db: AsyncSession) -> None:

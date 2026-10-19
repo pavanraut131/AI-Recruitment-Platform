@@ -2,13 +2,16 @@
 and ``legacy_candidate_map`` tables.
 
 Private to the hiring module (only ``service.py`` calls it). The async functions take the
-request's ``AsyncSession``; the ones that end a unit of work commit, exactly where the endpoints
-committed before the move, so the SQL issued per request is unchanged. The ``*_sync`` functions
+request's ``AsyncSession``; the ones that end a unit of work commit. The ``*_sync`` functions
 serve the upload pipeline's Celery tasks and the backfill / verification commands, which use a
 synchronous ``Session``; they never commit (the caller owns the transaction).
 
-Hiring never queries another module's tables (the ``resumes`` counts and deletes live in
-``app.modules.ingestion``).
+Since the read switch (E0-19) the API reads and writes ``applications`` only; ``candidates`` is
+read by the backfill, the verification and the pipeline's fallback for pre-switch resume text,
+and written by nothing (E0-20 drops it).
+
+Hiring never queries another module's tables (the ``resumes`` counts, extractions and deletes
+live in ``app.modules.ingestion``).
 """
 
 import uuid
@@ -22,7 +25,7 @@ from sqlalchemy import (
     Row,
     Select,
     and_,
-    delete,
+    any_,
     func,
     literal,
     or_,
@@ -35,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.hiring.models import Application, Campaign, Candidate, LegacyCandidateMap
+from app.platform.sql import uuid_array
 
 
 # ── Campaigns ─────────────────────────────────────────────────
@@ -69,19 +73,24 @@ async def campaign_status_counts(db: AsyncSession) -> dict[str, int]:
     return {status: count for status, count in result.tuples()}
 
 
-# ── Candidates ────────────────────────────────────────────────
-async def list_candidates(
+# ── Applications: the legacy candidate endpoints (E0-19, spec §7) ──
+# Best score first, unscored last (the legacy order), then the id. Legacy ties came back in
+# whatever order Postgres happened to sort them; the id makes pages of tied scores stable.
+_LIST_ORDER = (Application.score.desc().nullslast(), Application.id)
+
+
+async def list_applications(
     db: AsyncSession,
     filters: Sequence[ColumnElement[bool]],
     *,
     offset: int | None = None,
     limit: int | None = None,
-) -> Sequence[Candidate]:
-    """Candidates matching ``filters``, best score first (unscored last).
+) -> Sequence[Application]:
+    """Applications matching ``filters``, best score first (unscored last, ties by id).
 
     ``offset``/``limit`` are applied only when given (the CSV export pages nothing).
     """
-    query = select(Candidate).where(and_(*filters)).order_by(Candidate.score.desc().nullslast())
+    query = select(Application).where(and_(*filters)).order_by(*_LIST_ORDER)
     if offset is not None:
         query = query.offset(offset)
     if limit is not None:
@@ -90,146 +99,109 @@ async def list_candidates(
     return result.scalars().all()
 
 
-async def get_candidate(
-    db: AsyncSession, candidate_id: uuid.UUID, *, for_update: bool = False
-) -> Candidate | None:
-    """The candidate, or ``None``. ``for_update`` locks its row (``SELECT … FOR UPDATE``) until
-    the transaction ends: a recruiter write locks the candidate before its application (E0-18,
-    the pipeline's order; see ``service.py``)."""
-    query = select(Candidate).where(Candidate.id == candidate_id)
-    if for_update:
-        query = query.with_for_update()
-    result = await db.execute(query)
+async def application_resume_ids(
+    db: AsyncSession, filters: Sequence[ColumnElement[bool]]
+) -> list[uuid.UUID]:
+    """The ``resume_id`` of every application matching ``filters`` (unordered)."""
+    result = await db.execute(select(Application.resume_id).where(and_(*filters)))
+    return list(result.scalars())
+
+
+async def get_application(db: AsyncSession, application_id: uuid.UUID) -> Application | None:
+    """The application with this id, else the one ``legacy_candidate_map`` redirects this
+    (merged legacy candidate's) id to; ``None`` if neither exists."""
+    application = await db.get(Application, application_id)
+    if application is not None:
+        return application
+    redirect = select(LegacyCandidateMap.application_id).where(
+        LegacyCandidateMap.candidate_id == application_id
+    )
+    result = await db.execute(select(Application).where(Application.id.in_(redirect)))
     return result.scalar_one_or_none()
 
 
-async def get_candidate_by_resume(db: AsyncSession, resume_id: uuid.UUID) -> Candidate | None:
-    result = await db.execute(select(Candidate).where(Candidate.resume_id == resume_id))
+async def get_application_by_resume(db: AsyncSession, resume_id: uuid.UUID) -> Application | None:
+    """The application whose current resume is ``resume_id``."""
+    result = await db.execute(select(Application).where(Application.resume_id == resume_id))
+    return result.scalars().first()
+
+
+async def get_application_of_person(
+    db: AsyncSession, campaign_id: uuid.UUID, person_id: uuid.UUID
+) -> Application | None:
+    result = await db.execute(
+        select(Application).where(
+            Application.campaign_id == campaign_id, Application.person_id == person_id
+        )
+    )
     return result.scalar_one_or_none()
 
 
-async def candidates_in_campaign(
+async def applications_in_campaign(
     db: AsyncSession,
     campaign_id: uuid.UUID,
-    candidate_ids: Sequence[uuid.UUID],
+    ids: Sequence[uuid.UUID],
     *,
     for_update: bool = False,
-) -> Sequence[Candidate]:
-    """The candidates among ``candidate_ids`` that belong to ``campaign_id`` (others are ignored).
-
-    ``for_update`` locks their rows in id order (a fixed order, so two bulk requests over
-    overlapping candidates cannot deadlock) until the transaction ends.
-    """
-    query = select(Candidate).where(
-        Candidate.campaign_id == campaign_id,
-        Candidate.id.in_(candidate_ids),
+) -> Sequence[Application]:
+    """The campaign's applications that ``ids`` name, by their own id or by a merged legacy
+    candidate's id (``legacy_candidate_map``), each once; ids of other campaigns and unknown
+    ids are ignored. ``for_update`` locks them in id order (a fixed order, so two bulk requests
+    over overlapping applications cannot deadlock)."""
+    if not ids:
+        return []
+    redirected = select(LegacyCandidateMap.application_id).where(
+        LegacyCandidateMap.candidate_id == any_(uuid_array(ids))
+    )
+    query = (
+        select(Application)
+        .where(
+            Application.campaign_id == campaign_id,
+            or_(Application.id == any_(uuid_array(ids)), Application.id.in_(redirected)),
+        )
+        .order_by(Application.id)
     )
     if for_update:
-        query = query.order_by(Candidate.id).with_for_update()
+        query = query.with_for_update()
     result = await db.execute(query)
     return result.scalars().all()
 
 
-async def candidate_category_stats(
+async def application_category_stats(
     db: AsyncSession, campaign_id: uuid.UUID
 ) -> list[tuple[str | None, int, float | None]]:
     """One ``(category, count, average score)`` row per category in the campaign."""
     result = await db.execute(
         select(
-            Candidate.category,
-            func.count(Candidate.id),
-            func.avg(Candidate.score),
+            Application.category,
+            func.count(Application.id),
+            func.avg(Application.score),
         )
-        .where(Candidate.campaign_id == campaign_id)
-        .group_by(Candidate.category)
+        .where(Application.campaign_id == campaign_id)
+        .group_by(Application.category)
     )
     return [(category, count, avg) for category, count, avg in result.tuples()]
 
 
-async def candidate_skill_lists(db: AsyncSession, campaign_id: uuid.UUID) -> list[list[str] | None]:
-    """Each candidate's ``skills`` array in the campaign."""
-    result = await db.execute(select(Candidate.skills).where(Candidate.campaign_id == campaign_id))
-    return [skills for (skills,) in result.tuples()]
+async def campaign_resume_ids(db: AsyncSession, campaign_id: uuid.UUID) -> list[uuid.UUID]:
+    """The current resume of each of the campaign's applications, oldest application first."""
+    result = await db.execute(
+        select(Application.resume_id)
+        .where(Application.campaign_id == campaign_id)
+        .order_by(Application.created_at, Application.id)
+    )
+    return list(result.scalars())
 
 
-async def count_candidates(db: AsyncSession) -> int:
-    result = await db.execute(select(func.count(Candidate.id)))
+async def count_applications(db: AsyncSession) -> int:
+    result = await db.execute(select(func.count(Application.id)))
     return result.scalar_one() or 0
-
-
-async def delete_candidate(db: AsyncSession, candidate: Candidate) -> None:
-    """Mark ``candidate`` for deletion; the caller flushes or commits."""
-    await db.delete(candidate)
-
-
-# ── Applications of legacy candidates (E0-18: mirrored recruiter writes and deletes) ──
-def _linked_candidates(*columns: Any) -> Select[Any]:
-    """``(application_id, *columns)`` of every candidate that leads to an existing application:
-    its ``legacy_candidate_map`` redirect if it has one, else the application with its own id."""
-    application_id = func.coalesce(LegacyCandidateMap.application_id, Candidate.id)
-    return (
-        select(application_id.label("application_id"), *columns)
-        .select_from(Candidate)
-        .outerjoin(LegacyCandidateMap, LegacyCandidateMap.candidate_id == Candidate.id)
-        .join(Application, Application.id == application_id)
-    )
-
-
-async def application_links(
-    db: AsyncSession, candidate_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, uuid.UUID]:
-    """``candidate_id -> application_id`` for the candidates among ``candidate_ids`` that lead
-    to an application; the others are left out."""
-    if not candidate_ids:
-        return {}
-    result = await db.execute(
-        _linked_candidates(Candidate.id).where(Candidate.id.in_(candidate_ids))
-    )
-    return {candidate_id: application_id for application_id, candidate_id in result.tuples()}
-
-
-async def lock_applications(
-    db: AsyncSession, application_ids: Sequence[uuid.UUID]
-) -> Sequence[Application]:
-    """The applications with these ids, locked (``FOR UPDATE``) in id order and re-read
-    (``populate_existing``), so a value another transaction committed while this one waited
-    for the lock is the one it sees."""
-    if not application_ids:
-        return []
-    result = await db.execute(
-        select(Application)
-        .where(Application.id.in_(application_ids))
-        .order_by(Application.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
-    return result.scalars().all()
-
-
-async def candidates_linked_to(
-    db: AsyncSession, application_ids: Sequence[uuid.UUID]
-) -> list[tuple[uuid.UUID, Candidate]]:
-    """``(application_id, candidate)`` for every candidate that leads to one of these
-    applications (its own id, or redirected to it)."""
-    if not application_ids:
-        return []
-    result = await db.execute(
-        _linked_candidates(Candidate).where(Application.id.in_(application_ids))
-    )
-    return [(application_id, candidate) for application_id, candidate in result.tuples()]
 
 
 async def delete_application(db: AsyncSession, application: Application) -> None:
     """Mark the application for deletion; its ``legacy_candidate_map`` rows go with it in the
     database (``ON DELETE CASCADE``). The caller flushes or commits."""
     await db.delete(application)
-
-
-async def delete_legacy_map_rows(db: AsyncSession, candidate_ids: Sequence[uuid.UUID]) -> None:
-    if candidate_ids:
-        await db.execute(
-            delete(LegacyCandidateMap).where(LegacyCandidateMap.candidate_id.in_(candidate_ids))
-        )
 
 
 async def flush(db: AsyncSession) -> None:
@@ -240,7 +212,7 @@ async def commit(db: AsyncSession) -> None:
     await db.commit()
 
 
-async def commit_and_refresh(db: AsyncSession, row: Campaign | Candidate) -> None:
+async def commit_and_refresh(db: AsyncSession, row: Campaign | Application) -> None:
     await db.commit()
     await db.refresh(row)
 
@@ -250,12 +222,11 @@ def get_campaign_sync(db: Session, campaign_id: uuid.UUID) -> Campaign | None:
     return db.query(Campaign).filter(Campaign.id == campaign_id).first()
 
 
-def get_candidate_by_resume_sync(db: Session, resume_id: uuid.UUID) -> Candidate | None:
-    return db.query(Candidate).filter(Candidate.resume_id == resume_id).first()
-
-
-def add_sync(db: Session, row: Candidate) -> None:
-    db.add(row)
+def legacy_raw_text_sync(db: Session, resume_id: uuid.UUID) -> str | None:
+    """The text a pre-switch extraction stored on the resume's legacy candidate (read-only)."""
+    return db.execute(
+        select(Candidate.raw_text).where(Candidate.resume_id == resume_id)
+    ).scalar_one_or_none()
 
 
 # Columns the pipeline owns on an application: the resume it holds and that resume's scoring.
@@ -399,6 +370,18 @@ def insert_legacy_map_row_sync(
     return result.scalar_one_or_none() is not None
 
 
+def _linked_candidates(*columns: Any) -> Select[Any]:
+    """``(application_id, *columns)`` of every candidate that leads to an existing application:
+    its ``legacy_candidate_map`` redirect if it has one, else the application with its own id."""
+    application_id = func.coalesce(LegacyCandidateMap.application_id, Candidate.id)
+    return (
+        select(application_id.label("application_id"), *columns)
+        .select_from(Candidate)
+        .outerjoin(LegacyCandidateMap, LegacyCandidateMap.candidate_id == Candidate.id)
+        .join(Application, Application.id == application_id)
+    )
+
+
 # What the recruiter-field rule reads of a candidate (``service.expected_recruiter_fields``).
 RECRUITER_CANDIDATE_COLUMNS = (
     Candidate.id,
@@ -425,7 +408,9 @@ def linked_candidates_sync(
 def lock_applications_sync(
     db: Session, application_ids: Sequence[uuid.UUID]
 ) -> Sequence[Application]:
-    """As :func:`lock_applications`, in a synchronous session."""
+    """The applications with these ids, locked (``FOR UPDATE``) in id order and re-read
+    (``populate_existing``), so a value another transaction committed while this one waited
+    for the lock is the one it sees."""
     if not application_ids:
         return []
     return (
@@ -439,27 +424,6 @@ def lock_applications_sync(
         .scalars()
         .all()
     )
-
-
-def application_ids_after_sync(db: Session, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
-    """The next ``limit`` application ids in id order, strictly after ``after`` (keyset)."""
-    query = select(Application.id).order_by(Application.id).limit(limit)
-    if after is not None:
-        query = query.where(Application.id > after)
-    return list(db.execute(query).scalars())
-
-
-def application_recruiter_states_sync(db: Session) -> Sequence[Row[Any]]:
-    """``(id, resume_id, pipeline_stage, notes, category)`` of every application."""
-    return db.execute(
-        select(
-            Application.id,
-            Application.resume_id,
-            Application.pipeline_stage,
-            Application.notes,
-            Application.category,
-        )
-    ).all()
 
 
 def candidate_refs_sync(db: Session) -> Sequence[Row[Any]]:

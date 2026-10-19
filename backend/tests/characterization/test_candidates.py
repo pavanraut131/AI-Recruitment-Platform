@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from tests.characterization.snapshot_utils import response_data
 from tests.factories import at, make_campaign, make_candidate, make_resume
@@ -265,12 +265,35 @@ async def test_get_candidate(
 async def test_get_candidate_placeholder(
     client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
 ) -> None:
-    # The row the extract worker creates before AI scoring: only ids, raw_text and defaults.
+    # Before the read switch: the row the extract worker created before AI scoring, only ids,
+    # raw_text and defaults. E0-19: the pipeline no longer creates such a row (an application
+    # exists only once the resume is scored, see tests/hiring/test_read_switch.py); the
+    # response shape for an unscored row is kept, built from an unscored application.
     resume = await make_resume(db_session, status="processing")
-    candidate = Candidate(resume_id=resume.id, campaign_id=resume.campaign_id, raw_text="text")
-    candidate.created_at = candidate.updated_at = at(0)
-    db_session.add(candidate)
-    await db_session.flush()
+    candidate = await make_candidate(
+        db_session,
+        resume=resume,
+        **dict.fromkeys(
+            ("name", "email", "phone", "github_url", "linkedin_url", "years_of_experience"),
+        ),
+        **dict.fromkeys(("summary", "recommendation", "score", "score_breakdown", "category")),
+        **dict.fromkeys(
+            (
+                "skills",
+                "education",
+                "work_experience",
+                "certifications",
+                "projects",
+                "strengths",
+                "weaknesses",
+                "missing_skills",
+            ),
+            [],
+        ),
+        raw_text="text",
+        created_at=at(0),
+        updated_at=at(0),
+    )
     resp = await client.get(f"{API}/candidates/{candidate.id}")
     assert response_data(resp) == snapshot
 
@@ -451,9 +474,12 @@ async def test_get_candidate_by_resume_invalid_id(
 
 # ── PATCH /campaigns/{id}/candidates/bulk-pipeline ────────────
 async def _stages(db: AsyncSession) -> list[tuple[str | None, str | None]]:
+    """``(name, pipeline_stage)`` of every candidate (application), by name."""
     db.expire_all()
     rows = await db.execute(
-        select(Candidate.name, Candidate.pipeline_stage).order_by(Candidate.name)
+        select(Resume.extracted["name"].astext, Application.pipeline_stage)
+        .join(Resume, Resume.id == Application.resume_id)
+        .order_by(Resume.extracted["name"].astext)
     )
     return [(name, stage) for name, stage in rows.all()]
 
@@ -518,8 +544,12 @@ async def test_bulk_update_pipeline_validation_error(
 
 # ── DELETE /campaigns/{id}/candidates/bulk ────────────────────
 async def _remaining(db: AsyncSession) -> dict[str, list[str]]:
+    """The names of the candidates (applications) left, and the file names of the resumes."""
     db.expire_all()
-    candidates = await db.execute(select(Candidate.name).order_by(Candidate.name))
+    name = Resume.extracted["name"].astext
+    candidates = await db.execute(
+        select(name).join(Application, Application.resume_id == Resume.id).order_by(name)
+    )
     resumes = await db.execute(select(Resume.original_filename).order_by(Resume.original_filename))
     return {
         "candidates": [n for (n,) in candidates.all()],
@@ -529,7 +559,7 @@ async def _remaining(db: AsyncSession) -> dict[str, list[str]]:
 
 async def _candidate_with_stored_pdf(
     db: AsyncSession, storage: InMemoryStorage, campaign: Campaign, name: str
-) -> Candidate:
+) -> Application:
     resume = await make_resume(db, campaign, original_filename=f"{name}.pdf")
     storage.upload_file(b"%PDF-1.4", resume.storage_path)
     return await make_candidate(db, resume=resume, name=name)

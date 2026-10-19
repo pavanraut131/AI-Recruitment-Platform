@@ -19,7 +19,7 @@ from app.devtools import seed
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.ingestion.models import Resume
 from app.platform.config import settings
-from tests.factories import make_candidate
+from tests.factories import make_legacy_candidate
 
 PEOPLE, CAMPAIGNS, SEED = 60, 4, 7
 
@@ -136,7 +136,7 @@ async def test_every_spec_case_is_in_the_database(db_session: AsyncSession) -> N
 
 
 async def test_refuses_when_candidates_exist(db_session: AsyncSession) -> None:
-    await make_candidate(db_session)
+    await make_legacy_candidate(db_session)
     with pytest.raises(seed.SeedRefused, match="already exist"):
         await run_seed(db_session)
 

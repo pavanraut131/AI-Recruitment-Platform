@@ -19,20 +19,32 @@ Checks (spec §6.3, plus the invariants the Sprint 4 read switch relies on)
       ``people`` and agrees with talent's record of the resolution (``person_resumes``).
     * ``identifiers_unique``: no ``(kind, value_normalized)`` stored twice.
     * ``people_without_identifiers_justified``: a Person with no identifier is allowed only when
-      none of its resumes had a match-eligible one (ADR 0004 amendment, option A: an inferred
-      phone does not count as usable).
+      none of its (remaining) resumes had a match-eligible one (ADR 0004 amendment, option A: an
+      inferred phone does not count as usable).
     * ``people_have_resumes``: every Person was resolved from at least one resume.
-    * ``recruiter_fields_consistent`` (E0-18): every application's ``pipeline_stage`` and
-      ``notes`` equal the newest non-``NULL`` value of its candidates (by resume upload time),
-      and its ``category`` equals that of the candidate of its current resume
-      (``hiring.expected_recruiter_fields``, the rule the API's mirrored writes, the pipeline,
-      the backfill and ``backfill --resync-recruiter-fields`` apply). A failure on a database
-      backfilled before E0-18 means recruiter edits made since: run the re-sync.
+    * ``applications_have_extractions`` (E0-19): every application's current resume has an
+      extraction snapshot (``resumes.extracted``), which the legacy candidate endpoints show as
+      the candidate's name, contacts and profile.
     * With ``--manifest``: ``expected.{people, applications, identity_conflicts,
       legacy_candidate_map_rows}`` of the seed manifest (``app.devtools.seed``), exactly, and
       the number of legacy candidates (``counts.legacy_candidates``). When the manifest lists its
       ``campaign_ids``, the comparison counts only rows in those campaigns, so uploads to other
       campaigns during a rehearsal don't change it; the integrity checks always cover everything.
+
+After the read switch (E0-19)
+    The API serves ``applications``; ``candidates`` is frozen (nothing writes it, E0-20 drops
+    it). The checks stay meaningful on a switched database:
+
+    * candidates created before the switch still each lead to one application (a legacy delete
+      now removes the application with its resumes, and the candidates go with the resumes
+      through the foreign key, so none is left dangling);
+    * applications created after the switch have no candidate and are not expected to: they
+      are counted (``without a legacy candidate (new)``) and covered by every application
+      check;
+    * ``recruiter_fields_consistent`` (E0-18) is gone: after the switch the recruiter edits the
+      application itself, so it no longer equals the rule over its frozen candidates. It was a
+      pre-switch gate, run by the E0-18 code (runbook §8);
+    * ``people_without_identifiers_justified`` skips resumes that were deleted.
 
 Cross-module reads go through each module's service (``hiring.service``, ``talent.service``);
 ingestion reads its own ``resumes``.
@@ -126,6 +138,7 @@ def verify(
 
     done = {rid for rid, row in resumes.items() if row.status == "done"}
     backfillable = [c for c in candidates if c.resume_id in done]
+    with_legacy = {c.id for c in candidates} | set(legacy_map.values())
     report.counts = {
         "legacy candidates": len(candidates),
         "  with a done resume": len(backfillable),
@@ -137,6 +150,7 @@ def verify(
         "identity conflicts": talent_counts.identity_conflicts,
         "resolved resumes (person_resumes)": talent_counts.resolved_resumes,
         "applications": len(applications),
+        "  without a legacy candidate (new)": sum(1 for a in applications if a not in with_legacy),
         "legacy_candidate_map rows": len(legacy_map),
     }
 
@@ -203,6 +217,8 @@ def verify(
     extracted = repository.extracted_sync(db, [r for rids in bare.values() for r in rids])
     for person_id, resume_ids in bare.items():
         for rid in resume_ids:
+            if rid not in resumes:
+                continue  # deleted with its candidate or application: nothing left to check
             snapshot = extracted.get(rid)
             if snapshot is None:
                 check.fail(f"person {person_id}: resume {rid} has no extraction to check")
@@ -220,11 +236,12 @@ def verify(
         check.fail(f"person {person_id} was resolved from no resume")
     report.checks.append(check)
 
-    check = Check("recruiter_fields_consistent")
-    for problem in hiring_service.recruiter_field_mismatches(
-        db, lambda resume_ids: repository.uploaded_at_sync(db, resume_ids)
-    ):
-        check.fail(problem)
+    # The read path shows the extraction of an application's current resume (E0-19, spec §7).
+    check = Check("applications_have_extractions")
+    snapshots = repository.extracted_sync(db, [a.resume_id for a in applications.values()])
+    for app in applications.values():
+        if app.resume_id in snapshots and snapshots[app.resume_id] is None:
+            check.fail(f"application {app.id}: resume {app.resume_id} has no extraction")
     report.checks.append(check)
 
     if manifest is not None:
