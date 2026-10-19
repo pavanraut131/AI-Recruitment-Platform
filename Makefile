@@ -76,6 +76,14 @@ typecheck:
 test:
 	$(BACKEND_RUN) pytest -v
 
+# The full suite, then CI's coverage gate: app/modules/ must stay >= COVERAGE_MIN % (the whole
+# app's coverage is printed by pytest; only the modules are gated, spec EPIC-00 §8).
+.PHONY: coverage
+COVERAGE_MIN ?= 80
+coverage:
+	$(BACKEND_RUN) pytest
+	$(BACKEND_RUN) coverage report --include='app/modules/*' --skip-covered --fail-under=$(COVERAGE_MIN)
+
 # ── Frontend ─────────────────────────────────────────────────
 frontend-install:
 	cd frontend && npm install
