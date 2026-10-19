@@ -122,6 +122,23 @@ def resolve_person(
         return _resolve_locked(session, **args)
 
 
+def get_resolution(session: Session, resume_id: uuid.UUID) -> ResolveResult | None:
+    """The stored result of resolving ``resume_id``, or ``None`` if it was never resolved.
+
+    A plain read: no locks, no writes. For callers that already know the resume is resolved
+    (the pipeline skips :func:`resolve_person` when ``resumes.person_id`` is set) and still
+    need the result, e.g. ``matched_existing``.
+    """
+    done = repository.get_person_resume(session, resume_id)
+    if done is None:
+        return None
+    return ResolveResult(
+        person_id=done.person_id,
+        matched_existing=done.matched_existing,
+        conflict_id=done.conflict_id,
+    )
+
+
 # ── Steps ─────────────────────────────────────────────────────
 def _normalise(email: str | None, phone: str | None, default_region: str) -> list[_Identifier]:
     identifiers: list[_Identifier] = []

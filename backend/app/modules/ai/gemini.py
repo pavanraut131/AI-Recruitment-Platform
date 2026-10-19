@@ -4,10 +4,12 @@ The only place in the app that imports ``google.*`` (import-linter enforces it).
 ``app.services.gemini``, ``hiring.service.parse_job_description`` and the OCR fallback in
 ``workers.extract_task`` (E0-10) with unchanged behaviour:
 
-- Extraction and scoring use ``settings.GEMINI_MODEL`` with JSON output, and retry with tenacity:
-  any error up to 3 attempts with exponential backoff, and on top of that ``ResourceExhausted``
-  (quota / rate limit) up to 3 rounds 65 s apart. A ``ResourceExhausted`` that survives the
-  retries becomes :class:`~app.modules.ai.service.AIQuotaExceeded`.
+- Extraction and scoring use ``settings.GEMINI_MODEL`` with JSON output, and retry any error
+  except a quota error with tenacity, up to 3 attempts with exponential backoff.
+- A quota / rate-limit error (``ResourceExhausted``) is **not** retried here (E0-16, spec §5.5;
+  before, it was retried for up to 3 rounds 65 s apart, so the resume's status took minutes to
+  change). It becomes :class:`~app.modules.ai.service.AIQuotaExceeded` at once, carrying Google's
+  retry delay (``retry_after``) when the error has one; the pipeline schedules the retry.
 - Job description parsing uses ``gemini-2.5-flash`` (a fixed model name, not the setting), needs
   ``GEMINI_API_KEY`` (else :class:`~app.modules.ai.service.AIConfigurationError`), strips a
   Markdown code fence from the answer and falls back to defaults for missing keys.
@@ -18,6 +20,7 @@ replacing ``google.generativeai.GenerativeModel`` is enough to fake Gemini in te
 """
 
 import json
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -27,9 +30,9 @@ from google.api_core.exceptions import ResourceExhausted
 from tenacity import (
     retry,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
-    wait_fixed,
 )
 
 from app.modules.ai import prompts
@@ -65,6 +68,57 @@ def _model(name: str | None = None) -> Any:
     return genai.GenerativeModel(name or settings.GEMINI_MODEL)
 
 
+# Transient failures (network, invalid model output, ...) are retried here, up to 3 attempts with
+# exponential backoff. A quota error (ResourceExhausted) is not: it surfaces at once as
+# AIQuotaExceeded, so the pipeline can show it and schedule its own retry (spec §5.5).
+_retry_transient_errors = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception) & retry_if_not_exception_type(ResourceExhausted),
+    reraise=True,
+)
+
+_RETRY_DELAY_PATTERNS = (
+    # gRPC: the RetryInfo detail as protobuf text, e.g. "retry_delay { seconds: 43 }"
+    re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)"),
+    # REST / message text, e.g. "Please retry in 43.2s." or "retryDelay": "43s"
+    re.compile(r"retry in (\d+(?:\.\d+)?)\s*s", re.IGNORECASE),
+    re.compile(r"retryDelay\W+(\d+(?:\.\d+)?)s"),
+)
+
+
+def quota_retry_after(exc: ResourceExhausted) -> float | None:
+    """The delay (seconds) Google asks for before retrying, if the error carries one.
+
+    Read from the ``google.rpc.RetryInfo`` detail (a protobuf message over gRPC, a dict with
+    ``retryDelay`` such as ``"43s"`` over REST), else from the message text. ``None`` when
+    there is none.
+    """
+    for detail in exc.details or ():
+        delay = getattr(detail, "retry_delay", None)
+        if delay is not None and hasattr(delay, "seconds"):
+            seconds = float(delay.seconds) + float(getattr(delay, "nanos", 0)) / 1e9
+            if seconds > 0:
+                return seconds
+        if isinstance(detail, dict):
+            raw = detail.get("retryDelay") or detail.get("retry_delay")
+            if isinstance(raw, str) and raw.endswith("s"):
+                try:
+                    return float(raw[:-1])
+                except ValueError:
+                    pass
+    text = str(exc)
+    for pattern in _RETRY_DELAY_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def _quota_exceeded(exc: ResourceExhausted) -> AIQuotaExceeded:
+    return AIQuotaExceeded(str(exc), retry_after=quota_retry_after(exc))
+
+
 def category_for_score(score: float) -> str:
     """The category a score implies (the scoring prompt's rules)."""
     if score >= 75:
@@ -76,18 +130,7 @@ def category_for_score(score: float) -> str:
     return "rejected"
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_fixed(65),  # Gemini free-tier rate limit resets in ~60s
-    retry=retry_if_exception_type(ResourceExhausted),
-    reraise=True,
-)
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(Exception),
-    reraise=True,
-)
+@_retry_transient_errors
 def extract_candidate_info(resume_text: str) -> ExtractionResult:
     """Call Gemini to extract structured candidate info from raw resume text."""
     response = _model().generate_content(
@@ -105,18 +148,7 @@ def extract_candidate_info(resume_text: str) -> ExtractionResult:
     return ExtractionResult(**data)
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_fixed(65),  # Gemini free-tier rate limit resets in ~60s
-    retry=retry_if_exception_type(ResourceExhausted),
-    reraise=True,
-)
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(Exception),
-    reraise=True,
-)
+@_retry_transient_errors
 def score_candidate(
     candidate_profile: dict[str, Any],
     role: str,
@@ -149,7 +181,7 @@ class GeminiAIService:
         try:
             return extract_candidate_info(text)
         except ResourceExhausted as e:
-            raise AIQuotaExceeded(str(e)) from e
+            raise _quota_exceeded(e) from e
 
     def score(self, profile: ExtractionResult, requirements: JobRequirements) -> ScoringResult:
         try:
@@ -157,7 +189,7 @@ class GeminiAIService:
                 profile.model_dump(), requirements.role, requirements.required_skills
             )
         except ResourceExhausted as e:
-            raise AIQuotaExceeded(str(e)) from e
+            raise _quota_exceeded(e) from e
 
     async def parse_job_description(self, text: str) -> JDParseResult:
         if not settings.GEMINI_API_KEY:
@@ -191,5 +223,5 @@ class GeminiAIService:
                 )
                 all_text.append(str(response.text))
         except ResourceExhausted as e:
-            raise AIQuotaExceeded(str(e)) from e
+            raise _quota_exceeded(e) from e
         return "\n".join(all_text)

@@ -10,8 +10,9 @@ deletes its resumes in the database.
 
 ``resumes.person_id`` refers to talent's ``people`` table: a plain UUID with no foreign key
 (ADR 0003). It, ``extracted`` and ``processing_step`` were added by the E0-14 expand migration as
-nullable columns (a metadata-only ``ADD COLUMN`` in Postgres, no table rewrite); nothing writes
-them until E0-16/E0-17.
+nullable columns (a metadata-only ``ADD COLUMN`` in Postgres, no table rewrite). The upload
+pipeline (``tasks.process_candidate_ai``) writes them since E0-16; resumes processed before keep
+``NULL`` until the backfill (E0-17).
 """
 
 import uuid

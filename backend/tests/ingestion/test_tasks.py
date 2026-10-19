@@ -1,35 +1,27 @@
 """The upload pipeline's Celery tasks, run in-process with ``AI_PROVIDER=fake``.
 
-The tasks open their own synchronous sessions (``tasks.SyncSession``). Here that factory is
-replaced by one bound to a single connection inside an outer transaction that is rolled back
-after the test (``join_transaction_mode="create_savepoint"``, like ``db_session``), so the
-tasks' commits never persist. Test data is arranged through the same connection.
-
-Object storage, Redis and Celery dispatch are the usual in-memory fakes (``tests/conftest.py``).
+Database, SSE and eager-retry fixtures: ``tests/ingestion/conftest.py``. Object storage, Redis
+and Celery dispatch are the usual in-memory fakes (``tests/conftest.py``). The Person /
+Application dual write is covered in ``test_dual_write.py``.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import Callable, Iterator
 from typing import Any
 
 import fitz
 import pytest
-from sqlalchemy import Connection, create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import Session
 
 from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult
 from app.modules.ai.service import AIQuotaExceeded
 from app.modules.hiring.models import Campaign, Candidate
 from app.modules.ingestion import tasks
-from app.modules.ingestion.events import ALL_UPDATES_CHANNEL
 from app.modules.ingestion.models import Resume
-from app.platform.config import settings
-from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
+from tests.fakes import CeleryRecorder, InMemoryStorage
+from tests.ingestion.conftest import Events
 
 RESUME_TEXT = """Jane Doe
 jane.doe@example.com | +1 555 0100
@@ -47,47 +39,6 @@ def make_pdf(text: str) -> bytes:
     data: bytes = doc.tobytes()
     doc.close()
     return data
-
-
-@pytest.fixture
-def sync_connection() -> Iterator[Connection]:
-    engine = create_engine(settings.SYNC_DATABASE_URL, poolclass=NullPool)
-    with engine.connect() as conn:
-        outer = conn.begin()
-        try:
-            yield conn
-        finally:
-            outer.rollback()
-    engine.dispose()
-
-
-@pytest.fixture
-def sync_db(sync_connection: Connection, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
-    factory = sessionmaker(bind=sync_connection, join_transaction_mode="create_savepoint")
-    monkeypatch.setattr(tasks, "SyncSession", factory)
-    with factory() as session:
-        yield session
-
-
-Events = Callable[[], list[dict[str, Any]]]
-
-
-@pytest.fixture
-def events(fake_redis: FakeRedis) -> Iterator[Events]:
-    """Call it to get every payload published on the SSE channel so far in the test."""
-    pubsub = fake_redis.sync_client().pubsub()
-    pubsub.subscribe(ALL_UPDATES_CHANNEL)
-    received: list[dict[str, Any]] = []
-
-    def drain() -> list[dict[str, Any]]:
-        # (Not ignore_subscribe_messages: that returns None for the subscribe confirmation.)
-        while (message := pubsub.get_message()) is not None:
-            if message["type"] == "message":
-                received.append(json.loads(message["data"]))
-        return received
-
-    yield drain
-    pubsub.close()
 
 
 def _arrange(db: Session, storage: InMemoryStorage, pdf_bytes: bytes) -> Resume:
@@ -151,6 +102,8 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
     assert candidate.score is not None and candidate.category is not None
     sync_db.refresh(resume)
     assert resume.status == "done"
+    assert resume.processing_step is None
+    assert resume.person_id is not None
     assert events() == [
         {"resume_id": rid, "status": "extracting", "filename": "jane.pdf"},
         {
@@ -160,6 +113,8 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
             "score": candidate.score,
             "category": candidate.category,
             "filename": "jane.pdf",
+            "person_id": str(resume.person_id),
+            "matched_existing": False,
         },
     ]
 
@@ -181,7 +136,7 @@ class _QuotaExhaustedAI(FakeAIService):
         raise AIQuotaExceeded("429 quota")
 
 
-def test_quota_exceeded_marks_the_resume_immediately(
+def test_quota_exceeded_on_every_retry_leaves_the_resume_quota_exceeded(
     sync_db: Session,
     fake_storage: InMemoryStorage,
     monkeypatch: pytest.MonkeyPatch,
@@ -191,18 +146,22 @@ def test_quota_exceeded_marks_the_resume_immediately(
     tasks.extract_resume.apply(args=(str(resume.id),))
     monkeypatch.setattr(tasks, "get_ai_service", _QuotaExhaustedAI)
 
-    tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    result = tasks.process_candidate_ai.apply(args=(str(resume.id),))
 
+    # The first run and its 3 retries all hit the quota; then it stops, without failing.
+    assert result.successful()
     sync_db.refresh(resume)
-    assert (resume.status, resume.error_message) == (
+    assert (resume.status, resume.error_message, resume.processing_step) == (
         "quota_exceeded",
         tasks.QUOTA_EXCEEDED_MESSAGE,
+        "extract_profile",
     )
-    assert events()[-1] == {
+    quota_event = {
         "resume_id": str(resume.id),
         "status": "quota_exceeded",
         "error": tasks.QUOTA_EXCEEDED_MESSAGE,
     }
+    assert [e for e in events() if e["status"] != "extracting"] == [quota_event] * 4
 
 
 def test_text_that_is_not_a_resume_fails_without_retry(

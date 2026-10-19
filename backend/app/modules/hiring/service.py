@@ -27,7 +27,10 @@ the data crosses this interface instead:
 3. **Deleting a campaign** removes its resumes through the database's
    ``resumes.campaign_id ON DELETE CASCADE`` (see ``models.py``), so it stays a hiring endpoint.
 4. **The upload pipeline** (``app.modules.ingestion``) checks campaigns and writes candidates
-   only through the functions under "Upload pipeline" below.
+   only through the functions under "Upload pipeline" below, and applications through
+   :func:`upsert_application` (dual write, E0-16). Its scoring input is the ``ai`` module's
+   ``ScoringResult`` (``app.modules.ai.schemas``, public): the pipeline passes on what the
+   model returned, and hiring keeps no second copy of that shape to keep in sync.
 """
 
 import csv
@@ -35,6 +38,7 @@ import io
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -45,7 +49,7 @@ from sqlalchemy.orm import Session
 from app.modules.ai import service as ai_service
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import repository
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign, Candidate
 from app.modules.hiring.schemas import (
     CampaignCreate,
     CampaignResponse,
@@ -537,3 +541,67 @@ def record_scoring(db: Session, resume_id: uuid.UUID, scoring: ScoringResult) ->
     candidate.weaknesses = scoring.weaknesses
     candidate.missing_skills = scoring.missing_skills
     candidate.recommendation = scoring.recommendation
+
+
+# ── Applications (Person/Application split, dual write) ───────
+def upsert_application(
+    db: Session,
+    *,
+    campaign_id: uuid.UUID,
+    person_id: uuid.UUID,
+    resume_id: uuid.UUID,
+    resume_uploaded_at: datetime,
+    scoring: ScoringResult,
+    application_id: uuid.UUID | None = None,
+) -> Application:
+    """Create or update the Person's application to the campaign from one scored resume.
+
+    ``INSERT … ON CONFLICT (campaign_id, person_id) DO UPDATE`` (spec §5.1 step 4, §6.2), so
+    concurrent calls for the same pair cannot create two applications. Runs in the caller's
+    transaction and never commits.
+
+    **Newer resume wins.** ``resume_uploaded_at`` (timezone-aware) is when ``resume_id`` was
+    uploaded; resumes are ordered by ``(uploaded_at, resume_id)``, the same order
+    ``talent.service.resolve_person`` uses for the profile. When the application already exists:
+
+    - a resume that is newer than the one it holds, **or the same resume** (a retried pipeline
+      step), replaces ``resume_id``, ``resume_uploaded_at`` and every scoring and insight field;
+    - an older resume (processed late) changes nothing: the newer scoring stays;
+    - an application whose resume upload time is unknown (``NULL``, written before E0-16) counts
+      as older than any resume.
+
+    The recruiter's fields (``pipeline_stage``, ``notes``) are never written here, and an
+    existing application keeps its ``id``.
+
+    ``application_id`` is the id for a **new** row (the backfill passes the legacy candidate's
+    id, spec §6.2); it is ignored when the application already exists. Default: a new UUID.
+
+    Returns the application as stored after the call.
+    """
+    if resume_uploaded_at.tzinfo is None:
+        raise ValueError("resume_uploaded_at must be timezone-aware")
+    values: dict[str, Any] = {
+        "id": application_id or uuid.uuid4(),
+        "campaign_id": campaign_id,
+        "person_id": person_id,
+        "resume_id": resume_id,
+        "resume_uploaded_at": resume_uploaded_at,
+        "score": scoring.score,
+        "score_breakdown": scoring.score_breakdown,
+        "category": scoring.category,
+        "summary": scoring.summary,
+        "strengths": scoring.strengths,
+        "weaknesses": scoring.weaknesses,
+        "missing_skills": scoring.missing_skills,
+        "recommendation": scoring.recommendation,
+    }
+    application = repository.upsert_application_sync(db, values)
+    logger.info(
+        "application_upserted",
+        application_id=str(application.id),
+        campaign_id=str(campaign_id),
+        person_id=str(person_id),
+        resume_id=str(resume_id),
+        scoring_replaced=application.resume_id == resume_id,
+    )
+    return application

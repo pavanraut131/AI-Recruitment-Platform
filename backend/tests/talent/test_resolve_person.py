@@ -549,3 +549,16 @@ def test_locks_are_taken_per_identifier_in_lock_id_order(sync_session: Session) 
 def test_uploaded_at_must_be_timezone_aware(sync_session: Session) -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         resolve(sync_session, email="a@example.com", uploaded_at=datetime(2026, 10, 1))
+
+
+def test_get_resolution_returns_the_stored_result(sync_session: Session) -> None:
+    first = resolve(sync_session, email="asha@example.com", phone=IN_MOBILE)
+    resume_id = uuid.uuid4()
+    conflict = resolve(sync_session, email="ravi@example.com", phone="+919123456789")
+    mixed = resolve(
+        sync_session, email="asha@example.com", phone="+919123456789", resume_id=resume_id
+    )
+    assert mixed.conflict_id is not None and conflict.person_id != first.person_id
+
+    assert service.get_resolution(sync_session, resume_id) == mixed
+    assert service.get_resolution(sync_session, uuid.uuid4()) is None
