@@ -224,3 +224,17 @@ def test_cli_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert compare_api.main([str(before), str(after)]) == 1
     assert capsys.readouterr().out.rstrip().endswith("FAILED")
     assert compare_api.main([str(before), str(broken)]) == 2
+
+
+def test_two_switched_captures_compare_exactly_merged_ids_included() -> None:
+    """Across the E0-20 contract both captures serve the switched API: a merged id redirects on
+    both sides, so it is not an expected difference and its responses are compared exactly."""
+    result = compare_api.compare(_after(), _after())
+    assert result.ok and result.merged_ids == 0, result.render()
+    assert not any(result.expected.values())
+
+    changed = _after()
+    changed["responses"][f"detail/{Y}"]["body"]["score"] = 1.0
+    result = compare_api.compare(_after(), changed)
+    assert not result.ok
+    assert any(d.startswith(f"detail/{Y}") for d in result.differences), result.differences

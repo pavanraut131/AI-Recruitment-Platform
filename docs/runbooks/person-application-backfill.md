@@ -1,6 +1,8 @@
-# Runbook · Person/Application backfill and read switch (EPIC-00 phases 2 to 4)
+# Runbook · Person/Application backfill, read switch and contract (EPIC-00 phases 2 to 5)
 
-Converts every legacy `candidates` row into People (`talent`) and Applications (`hiring`), proves the result, then switches the API's reads to them (section 8, E0-19). Spec: [EPIC-00 §6.1–6.3](../specs/EPIC-00-platform-core.md#6-migration-plan-expand--backfill--contract). Code: `app/modules/ingestion/backfill.py`, `app/modules/ingestion/verify_backfill.py` (their module docstrings hold the details).
+> **Historical since E0-20 (contract, section 9).** The `candidates` table, the backfill command and `verify_backfill` are gone; sections 1 to 8 are the record of how phases 2 to 4 were run, and work only on code up to E0-19 (check out `e0-19-read-switch` to run them). What still applies today: section 9 (the contract deploy and its verification), section 8.3's *"After E0-20"* (rollback needs a rebuild), and `python -m app.modules.ingestion.verify_people_applications`, which replaced `verify_backfill` without the legacy checks.
+
+Converts every legacy `candidates` row into People (`talent`) and Applications (`hiring`), proves the result, then switches the API's reads to them (section 8, E0-19). Spec: [EPIC-00 §6.1–6.3](../specs/EPIC-00-platform-core.md#6-migration-plan-expand--backfill--contract). Code (up to E0-19): `app/modules/ingestion/backfill.py`, `app/modules/ingestion/verify_backfill.py` (their module docstrings hold the details).
 
 The backfill is **online** (the app keeps running and uploading), **additive** (it never changes or deletes a legacy row), **idempotent** and **resumable**.
 
@@ -311,7 +313,66 @@ COMMIT;
 
 Then deploy E0-18 and run its `verify_backfill`: it must exit `0`, `recruiter_fields_consistent` included (rehearsed locally: two post-switch uploads, a new person and a returning one, a post-switch edit and a delete; the SQL inserted 2 candidates and 1 map row, and the E0-18 verify passed). Known limits: an older resume of a merged application processed only after the switch (rare: a resume uploaded earlier but analysed later) gets no candidate, and the legacy rows show each candidate separately again, so a post-switch edit appears on the row of the newest resume. Roll back with uploads drained: a resume still being analysed has its text on the resume, where the E0-18 pipeline does not look, so it would fail; re-upload it, or set its `processing_step` to `NULL` and use retry-failed (which then starts again from the PDF).
 
-From E0-20 (contract) `candidates` is dropped and this rollback no longer exists.
+#### After E0-20: not possible without a rebuild
+
+From E0-20 (contract) `candidates` is dropped and the rollback above no longer exists as such. The contract migration's downgrade (`e20c4a7d1b93` → `e19b7f3a9c42`) re-creates `candidates` (and `backfill_checkpoints`) **empty**, with the original schema, and puts the foreign key `resumes.campaign_id → campaigns` back; it restores no rows.
+
+- **Back to the E0-19 code** (it serves applications, not candidates): stop the backend and workers, `docker compose run --rm backend alembic downgrade e19b7f3a9c42`, check out `e0-19-read-switch`, start. Nothing else is needed: the resumes' text stays on `resumes.raw_text` (the upgrade copied it there). The E0-19 code deletes no PDFs again (B6), and its `verify_backfill` reports `0` legacy candidates. The downgrade fails if a resume refers to a deleted campaign (impossible through the API; delete such rows first).
+- **Further back, to the E0-18 code** (it reads candidates): after the downgrade, rebuild one legacy candidate per application, under the application's id, from the application and its current resume (the row the E0-19 read path showed), in one transaction, then follow the rollback above (its step 1 then finds nothing to add; step 2 is a no-op). The SQL is `REBUILD_CANDIDATES` in `backend/alembic/versions/e20c4a7d1b93_contract_drop_candidates.py` (run by `tests/migrations/test_contract_e0_20.py`; idempotent):
+
+  ```sql
+  BEGIN;
+  INSERT INTO candidates (id, resume_id, campaign_id, name, email, phone, github_url, linkedin_url,
+      skills, education, work_experience, certifications, projects, years_of_experience, summary,
+      strengths, weaknesses, missing_skills, recommendation, score, score_breakdown, category,
+      notes, pipeline_stage, raw_text, created_at, updated_at)
+  SELECT a.id, r.id, a.campaign_id,
+         r.extracted->>'name', r.extracted->>'email', r.extracted->>'phone',
+         r.extracted->>'github_url', r.extracted->>'linkedin_url',
+         coalesce(r.extracted->'skills', '[]'), coalesce(r.extracted->'education', '[]'),
+         coalesce(r.extracted->'work_experience', '[]'),
+         coalesce(r.extracted->'certifications', '[]'), coalesce(r.extracted->'projects', '[]'),
+         (r.extracted->>'years_of_experience')::float,
+         a.summary, a.strengths, a.weaknesses, a.missing_skills, a.recommendation, a.score,
+         a.score_breakdown, a.category, a.notes, a.pipeline_stage, r.raw_text,
+         a.created_at, a.updated_at
+  FROM applications AS a
+  JOIN resumes AS r ON r.id = a.resume_id
+  WHERE NOT EXISTS (SELECT 1 FROM candidates AS c WHERE c.id = a.id OR c.resume_id = r.id);
+  COMMIT;
+  ```
+
+  What is lost for good: the separate rows of merged legacy candidates (their own scoring was never kept on the application; the E0-18 code shows one row per application, and merged legacy ids answer 404 there because it reads `candidates`), and the legacy rows' own timestamps (the application's are used).
+
+## 9. The contract (E0-20)
+
+Spec §6.1 phase 5. Migration `e20c4a7d1b93` copies the remaining pre-switch resume text from `candidates.raw_text` to `resumes.raw_text`, drops the foreign key `resumes.campaign_id → campaigns`, the `candidates` table and `backfill_checkpoints`. `legacy_candidate_map` stays (old ids keep resolving). The campaign delete is composed in `app.api` and deletes the campaign's resumes and their stored PDFs; candidate deletes delete their PDFs too (B6).
+
+1. **Capture before** (on the E0-19 code, uploads drained): `docker compose exec backend python -m app.devtools.capture_api --base-url http://localhost:8000 --out /app/e020-before.json`.
+2. **Deploy:** `docker compose stop backend worker_extract worker_ai`, check out `e0-20-contract`, `docker compose run --rm backend alembic upgrade head` (one transaction; `lock_timeout` 5 s on each lock), `docker compose start backend worker_extract worker_ai`.
+3. **Verify:** `docker compose exec backend python -m app.modules.ingestion.verify_people_applications` (plus `--manifest /app/seed-manifest.json` on a seeded stack): must exit `0`.
+4. **Capture after and compare:** `docker compose exec backend python -m app.devtools.capture_api --base-url http://localhost:8000 --out /app/e020-after.json --ids-from /app/e020-before.json`, then `docker compose exec backend python -m app.devtools.compare_api /app/e020-before.json /app/e020-after.json`. Both sides serve the switched model, so **every** response must be identical (`expected (merged legacy id): 0`). Delete the capture files afterwards.
+5. **Delete a campaign** with resumes and check that its resumes and their PDFs are gone, then **upload** to another campaign and see it processed (section 9.1 has the commands).
+6. **Orphans:** `docker compose exec backend python -m app.devtools.storage_orphans`. On a stack that deleted candidates or campaigns before E0-20 it lists their PDFs (B6 left them behind); `--delete` removes them. Seeded resumes have no stored PDF, so `resumes without a stored PDF` is about the seed's size; that is expected.
+
+Rollback: section 8.3, *"After E0-20"*.
+
+### 9.1 Campaign delete and upload, by hand
+
+```bash
+# A campaign with resumes, its resume count and stored objects
+docker compose exec postgres psql -U resumeai -d resumeai -c "SELECT campaign_id, count(*) FROM resumes GROUP BY 1 ORDER BY 2 DESC LIMIT 3;"
+CID=<a campaign id from above>
+# Stored PDFs under the campaign (seeded resumes have none: upload one first, see below)
+docker compose exec backend python -c "from app.platform import storage; print(len(storage.list_objects('campaigns/$CID/')))"
+curl -s -o /dev/null -w "%{http_code}\n" -X DELETE http://localhost:8000/api/v1/campaigns/$CID      # 204
+docker compose exec postgres psql -U resumeai -d resumeai -c "SELECT count(*) FROM resumes WHERE campaign_id = '$CID';"   # 0
+docker compose exec postgres psql -U resumeai -d resumeai -c "SELECT count(*) FROM applications WHERE campaign_id = '$CID';"   # 0
+docker compose exec backend python -c "from app.platform import storage; print(len(storage.list_objects('campaigns/$CID/')))"   # 0
+docker compose exec backend python -m app.devtools.storage_orphans --min-age-minutes 0    # no orphan under that campaign
+```
+
+Upload with `curl -F "files=@cv.pdf" http://localhost:8000/api/v1/campaigns/<id>/upload` (or the UI), wait for `done` (`GET /api/v1/campaigns/<id>/resumes`), and run `verify_people_applications` again. To see the PDF delete, upload to the campaign you are about to delete first.
 
 ## Reference: rules the backfill applies
 

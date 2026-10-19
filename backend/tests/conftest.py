@@ -177,6 +177,7 @@ def fake_storage(monkeypatch: pytest.MonkeyPatch) -> InMemoryStorage:
         "upload_file",
         "download_file",
         "delete_file",
+        "list_objects",
         "get_presigned_url",
     ):
         monkeypatch.setattr(storage, name, getattr(fake, name))

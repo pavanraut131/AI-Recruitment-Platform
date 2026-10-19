@@ -52,7 +52,7 @@ make setup
 
 This builds the images, starts every service, waits until they report
 healthy, runs `alembic upgrade head`, and then seeds fake data with `make seed`
-(skipped if the database already has candidates). Without `make`, run the same steps:
+(skipped if the database already has applications). Without `make`, run the same steps:
 
 ```bash
 docker compose up --build -d --wait
@@ -63,20 +63,25 @@ docker compose exec -T backend python -m app.devtools.seed --people 800 --campai
 #### Seed data
 `make seed` runs `python -m app.devtools.seed` inside the backend container. With the defaults
 (`--people 800 --campaigns 15 --seed 42`) it creates 15 campaigns and about 1,100 processed
-resumes and legacy candidates generated with Faker (no files are uploaded, so downloads of
-seeded resumes do not work). The same `--seed` always produces the same data.
+resumes generated with Faker, and runs each through the upload pipeline's matching and scoring
+services (without the AI: the scoring is generated too), which creates the People and
+Applications (about 800 people and 1,100 applications). No files are uploaded, so downloads of
+seeded resumes do not work. The same `--seed` always produces the same data.
 
 - It refuses to run when `APP_ENV=production`.
-- It refuses if any candidate already exists. `make seed SEED_FLAGS=--reset` first deletes
-  **every** campaign, resume and candidate (and prints how many); nothing else is touched.
+- It refuses if any application already exists. `make seed SEED_FLAGS=--reset` first deletes
+  **every** campaign, resume, application and person (and prints how many); nothing else is
+  touched.
 - Change sizes with `make seed SEED_ARGS="--people 100 --campaigns 4 --seed 7"`.
 - The data deliberately contains the identity edge cases of the person split (spec §6.4):
   emails differing only in case, Gmail dot and `+tag` variants, phone format variants, people
   applying to several campaigns or twice to one, an email/phone conflict between two people,
-  and candidates without contact details.
+  and resumes without contact details.
 - It writes `backend/seed-manifest.json` (gitignored) with the rows it created and the number
-  of People, Applications and identity conflicts the Sprint 3 backfill must produce. How each
-  number is derived is documented in `backend/app/devtools/seed.py`.
+  of People, Applications and identity conflicts the matching rules must produce, derived
+  without running the matching code (documented in `backend/app/devtools/seed.py`). Check them
+  with `docker compose exec backend python -m app.modules.ingestion.verify_people_applications
+  --manifest /app/seed-manifest.json`.
 
 > Upgrading from an older checkout? The Postgres image moved from 15 to 16
 > (`pgvector/pgvector:pg16`), so run `docker compose down -v` once to drop the

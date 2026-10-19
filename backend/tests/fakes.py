@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import fakeredis
@@ -67,6 +68,7 @@ class CeleryRecorder:
 class StoredObject:
     body: bytes
     content_type: str
+    last_modified: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class InMemoryStorage:
@@ -99,6 +101,9 @@ class InMemoryStorage:
     def delete_file(self, object_key: str) -> None:
         # S3/MinIO DeleteObject succeeds for missing keys too.
         self.objects.pop(object_key, None)
+
+    def list_objects(self, prefix: str = "") -> dict[str, datetime]:
+        return {k: o.last_modified for k, o in self.objects.items() if k.startswith(prefix)}
 
     def get_presigned_url(self, object_key: str, expires_in: int = 3600) -> str:
         return f"http://storage.test/{self.bucket}/{object_key}?X-Amz-Expires={expires_in}"

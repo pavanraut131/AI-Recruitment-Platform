@@ -2,8 +2,10 @@
 
 Uploading resumes (validate, de-duplicate, store in object storage, queue extraction), listing
 them, retrying failed ones, and the resume data other parts of the app need: status counts for
-the stats endpoints, the extraction snapshots the candidate endpoints show (E0-19), deleting
-the resumes of deleted applications, and the resumes' upload times. The router in
+the stats endpoints, the extraction snapshots the candidate endpoints show (E0-19), and
+deleting the resumes of deleted applications and campaigns with their stored PDFs (E0-20:
+first the rows, in the caller's transaction, then the PDFs once it has committed; see
+:func:`delete_stored_files`). The router in
 ``router.py`` only translates HTTP to these calls; ``app.api`` composes these functions with
 ``app.modules.hiring.service`` for the endpoints that span both modules.
 
@@ -12,13 +14,16 @@ module may call ingestion (it is the top layer). Errors are :class:`IngestionErr
 carrying the user-facing ``detail``; the router maps them to status codes.
 """
 
+import asyncio
 import hashlib
 import uuid
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
 from app.modules.ingestion import repository, tasks
@@ -31,6 +36,8 @@ logger = structlog.get_logger()
 
 MAX_FILE_SIZE = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 IN_PROGRESS_STATUSES = ("pending", "extracting", "processing")
+# Every uploaded PDF is stored under this prefix (``campaigns/<campaign>/resumes/<resume>/<file>``).
+RESUME_STORAGE_PREFIX = "campaigns/"
 
 
 # ── Errors ────────────────────────────────────────────────────
@@ -128,7 +135,7 @@ async def upload_resumes(
 
         # Upload to MinIO
         resume_id = uuid.uuid4()
-        object_key = f"campaigns/{campaign_id}/resumes/{resume_id}/{filename}"
+        object_key = f"{RESUME_STORAGE_PREFIX}{campaign_id}/resumes/{resume_id}/{filename}"
         storage.upload_file(content, object_key)
 
         repository.add(
@@ -218,30 +225,63 @@ async def resume_status_counts(
     return await repository.status_counts(db, campaign_id)
 
 
-async def delete_resumes(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> None:
-    """Delete the resumes with these ids (unknown ids are ignored). Does not commit: the caller
-    commits, together with whatever made the resumes obsolete.
+@dataclass(frozen=True)
+class StoredFiles:
+    """The object-storage keys of deleted resumes: what :func:`delete_stored_files` removes once
+    the transaction that deleted the rows has committed."""
 
-    The stored PDFs are left in object storage (as they always were).
-    """
-    await repository.delete_by_ids(db, resume_ids)
+    keys: tuple[str, ...] = ()
 
 
 async def delete_application_resumes(
     db: AsyncSession, deleted: Sequence[hiring_service.DeletedApplication]
-) -> None:
+) -> StoredFiles:
     """Delete the resumes of deleted applications (E0-19): each application's current resume
     and every other resume of its Person in its campaign (the older resumes of a merged
-    application). Their legacy candidates go with them (``candidates.resume_id ON DELETE
-    CASCADE``). Does not commit: the caller commits together with the application delete.
-
-    The stored PDFs are left in object storage (as they always were).
+    application). Flushes, does not commit: the caller commits together with the application
+    delete, then passes the result to :func:`delete_stored_files`.
     """
-    await repository.delete_of_people(
+    keys = await repository.delete_of_people(
         db,
         [d.resume_id for d in deleted],
         [(d.campaign_id, d.person_id) for d in deleted],
     )
+    return StoredFiles(tuple(keys))
+
+
+async def delete_campaign_resumes(db: AsyncSession, campaign_id: uuid.UUID) -> StoredFiles:
+    """Delete every resume of a campaign that is being deleted (E0-20: no foreign key cascades
+    from ``campaigns`` to ``resumes`` any more, ADR 0003). Flushes, does not commit: the caller
+    commits together with the campaign delete, then passes the result to
+    :func:`delete_stored_files`."""
+    keys = await repository.delete_for_campaign(db, campaign_id)
+    logger.info("campaign_resumes_deleted", campaign_id=str(campaign_id), count=len(keys))
+    return StoredFiles(tuple(keys))
+
+
+async def delete_stored_files(files: StoredFiles) -> list[str]:
+    """Delete the stored PDFs of resumes whose delete **has committed**; returns the keys that
+    could not be deleted.
+
+    Call it only after the commit: if the transaction failed, the rows (and their PDFs) must
+    stay. A failure here never raises, because the request it belongs to has already succeeded
+    in the database: it is logged (``stored_file_delete_failed``) and the object is left as an
+    orphan (a stored object with no resume row), which ``python -m app.devtools.storage_orphans``
+    reports and can delete. The calls run in a worker thread (boto3 is blocking).
+    """
+    failed: list[str] = []
+    for key in files.keys:
+        try:
+            await asyncio.to_thread(storage.delete_file, key)
+        except Exception as exc:  # any storage error: log, keep going, never fail the request
+            failed.append(key)
+            logger.error("stored_file_delete_failed", key=key, error=str(exc))
+    return failed
+
+
+def stored_resume_paths(db: Session) -> set[str]:
+    """The storage key of every resume row (sync; for ``app.devtools.storage_orphans``)."""
+    return repository.storage_paths_sync(db)
 
 
 class _ResumeProfiles:

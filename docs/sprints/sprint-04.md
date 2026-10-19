@@ -14,7 +14,7 @@ This sprint covers phases 4–5 of the migration (spec §6.1): **switch → cont
 |---|---|---|---|
 | E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | in review |
 | E0-19 | Switch reads to People + Applications (phase 4) | L | in review |
-| E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | todo |
+| E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | in review |
 | E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | todo |
 
 **Order:** E0-18 → E0-19 → E0-20 → E0-21. The chain is strictly sequential, each PR stacked on the previous one. **Merge stacked PRs with "Create a merge commit"** (Sprint 3 retro).
@@ -66,17 +66,17 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-20 · Contract
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-20-contract`
+**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-20-contract`
 
 **Goal:** Phase 5. Remove the legacy model and the last schema coupling between modules (ADR 0003).
 
 **Acceptance criteria**
-- [ ] A migration drops `candidates`. `legacy_candidate_map` is kept, because it is needed for old ids and bookmarks. The downgrade re-creates the table **empty**; the runbook documents how to rebuild it from People + Applications if ever needed.
-- [ ] The cross-module FK `resumes.campaign_id → campaigns` is dropped.
-  - Campaign delete moves to `app/api` (ADR 0005): `hiring` deletes the campaign and its applications, and `ingestion` deletes its resumes and stored PDFs, in one transaction.
-  - This also fixes B6 for this path: PDFs left in storage after delete.
-- [ ] Legacy-only code is removed: dual-write paths, legacy candidate repository functions and the `backfill` command. `verify_backfill` becomes `verify_people_applications`, with no legacy checks.
-- [ ] Snapshots are byte-identical. `alembic check` is clean. import-linter shows no exceptions for legacy code.
+- [x] A migration drops `candidates`. `legacy_candidate_map` is kept, because it is needed for old ids and bookmarks. The downgrade re-creates the table **empty**; the runbook documents how to rebuild it from People + Applications if ever needed. *(`e20c4a7d1b93`; it first copies pre-switch resume text to `resumes.raw_text`, and also drops `backfill_checkpoints`. Rebuild SQL: runbook §8.3 "After E0-20", run by `tests/migrations/test_contract_e0_20.py`.)*
+- [x] The cross-module FK `resumes.campaign_id → campaigns` is dropped. *(No cross-module FK remains: `tests/test_no_cross_module_foreign_keys.py` checks `information_schema` against a table → module map.)*
+  - Campaign delete moves to `app/api` (ADR 0005): `hiring` deletes the campaign and its applications, and `ingestion` deletes its resumes and stored PDFs, in one transaction. *(The rows in one transaction; the PDFs after the commit, since storage is not transactional: a failed storage delete is logged and left as an orphan for `app.devtools.storage_orphans`, never a failed request. Spec §7.1.)*
+  - This also fixes B6 for this path: PDFs left in storage after delete. *(Candidate and bulk deletes too.)*
+- [x] Legacy-only code is removed: dual-write paths, legacy candidate repository functions and the `backfill` command. `verify_backfill` becomes `verify_people_applications`, with no legacy checks. *(Also `make_legacy_candidate` and the seed's legacy path: the seed now runs the pipeline's services, so its manifest still checks the matching code.)*
+- [x] Snapshots are byte-identical. `alembic check` is clean. import-linter shows no exceptions for legacy code. *(Every response body and the OpenAPI document are unchanged; the three delete snapshots that record object storage now record the PDFs being deleted (B6), listed in the PR.)*
 
 **Concept to learn:** The contract phase; deciding what a rollback really requires.
 

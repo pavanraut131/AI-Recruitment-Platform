@@ -1,15 +1,12 @@
 """The upload pipeline's writes (spec §5.1, §5.5), with ``AI_PROVIDER=fake``.
 
 Every processed resume writes a Person (``talent.resolve_person``) and an Application
-(``hiring.upsert_application``), committed together. Until the read switch it also wrote the
-legacy candidate (the dual write of E0-16..E0-18); since E0-19 it writes **no** ``candidates``
-row: the text lives on the resume and a new application gets a fresh id. Covered here:
+(``hiring.upsert_application``), committed together; the text lives on the resume, a new
+application gets a fresh id and no ``legacy_candidate_map`` row is written (the legacy
+``candidates`` table was dropped in E0-20). Covered here:
 
 - matching across campaigns and within one campaign (newer resume's scoring wins), resumes
   without contact details, and an email/phone conflict;
-- a resume extracted before the switch (its text on a legacy placeholder candidate) and
-  analysed after it: the text is read from the candidate, the candidate is not written, and it
-  leads to exactly one application (its id, or a ``legacy_candidate_map`` row);
 - a failure at **each** step, retried (Celery retry) or resumed after the retries ran out
   (what the retry-failed endpoint queues), ends in exactly the state of a clean run: no
   duplicate Person, identifier, conflict or Application;
@@ -35,7 +32,7 @@ from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult, JobRequirements, ScoringResult
 from app.modules.ai.service import AIQuotaExceeded
 from app.modules.hiring import service as hiring_service
-from app.modules.hiring.models import Application, Campaign, Candidate, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
 from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
@@ -86,11 +83,8 @@ def make_resume(
     text: str,
     *,
     uploaded_at: datetime = T0,
-    pre_switch: bool = False,
 ) -> Resume:
-    """A resume as the extract task leaves it: ``processing``, its text on the resume. With
-    ``pre_switch``, as the extract task left it before the read switch: the text on a legacy
-    placeholder candidate (only ids and ``raw_text``), none on the resume."""
+    """A resume as the extract task leaves it: ``processing``, its text on the resume."""
     resume = Resume(
         id=uuid.uuid4(),
         campaign_id=campaign.id,
@@ -100,12 +94,9 @@ def make_resume(
         status="processing",
         processing_step=tasks.STEP_EXTRACT_TEXT,
         uploaded_at=uploaded_at,
-        raw_text=None if pre_switch else text,
+        raw_text=text,
     )
     db.add(resume)
-    db.flush()
-    if pre_switch:
-        db.add(Candidate(resume_id=resume.id, campaign_id=campaign.id, raw_text=text))
     db.commit()
     return resume
 
@@ -143,7 +134,7 @@ COUNTED = {
     "identity_conflicts": IdentityConflict,
     "person_resumes": PersonResume,
     "applications": Application,
-    "candidates": Candidate,
+    "legacy_candidate_map": LegacyCandidateMap,
 }
 
 
@@ -166,10 +157,6 @@ def application_of(db: Session, campaign: Campaign, person_id: uuid.UUID | None)
             Application.campaign_id == campaign.id, Application.person_id == person_id
         )
     ).scalar_one()
-
-
-def candidate_of(db: Session, resume: Resume) -> Candidate:
-    return db.execute(select(Candidate).where(Candidate.resume_id == resume.id)).scalar_one()
 
 
 def fake_scoring(text: str) -> ScoringResult:
@@ -202,7 +189,7 @@ def test_repeat_applicant_to_two_campaigns_is_one_person_with_two_applications(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "candidates": 0,  # no legacy candidate since the read switch (E0-19)
+        "legacy_candidate_map": 0,  # nothing is merged by the pipeline
     }
     first, second = reload(sync_db, first), reload(sync_db, second)
     assert first.person_id is not None and first.person_id == second.person_id
@@ -236,7 +223,6 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
         analyse(resume)
 
     assert counts(sync_db)["applications"] == 1
-    assert counts(sync_db)["candidates"] == 0
     assert counts(sync_db)["people"] == 1
     older, newer = reload(sync_db, older), reload(sync_db, newer)
     application = application_of(sync_db, campaign, newer.person_id)
@@ -252,48 +238,8 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
         newer_scoring.missing_skills,
         newer_scoring.summary,
     )
-    # No legacy candidates, so nothing to redirect.
-    assert sync_db.execute(select(func.count()).select_from(LegacyCandidateMap)).scalar_one() == 0
-
-
-@pytest.mark.parametrize("newer_first", [False, True], ids=["older_first", "newer_first"])
-def test_resumes_extracted_before_the_switch_keep_leading_to_one_application(
-    sync_db: Session, fake_ai: FakeAIService, newer_first: bool
-) -> None:
-    # Extracted by the E0-18 code (text on a placeholder candidate), analysed by the E0-19 code.
-    campaign = make_campaign(sync_db)
-    older = make_resume(sync_db, campaign, resume_text(years=2), pre_switch=True)
-    newer = make_resume(
-        sync_db,
-        campaign,
-        resume_text(skills="Python, Go", years=8),
-        uploaded_at=T0 + timedelta(days=30),
-        pre_switch=True,
-    )
-
-    for resume in (newer, older) if newer_first else (older, newer):
-        analyse(resume)
-
-    older, newer = reload(sync_db, older), reload(sync_db, newer)
-    newer_candidate, older_candidate = candidate_of(sync_db, newer), candidate_of(sync_db, older)
-    application = application_of(sync_db, campaign, newer.person_id)
-    assert counts(sync_db)["applications"] == 1
-    assert application.resume_id == newer.id
-    assert application.score == fake_scoring(newer_candidate.raw_text or "").score
-    # The candidates were read (their text), never written: still the placeholders.
-    for candidate in (newer_candidate, older_candidate):
-        assert (candidate.name, candidate.score, candidate.category) == (None, None, None)
-    assert (older.raw_text, newer.raw_text) == (None, None)
-    # Both lead to the application (E0-17's rule): the first analysed one's id is the
-    # application's, the other is redirected by legacy_candidate_map.
-    first, second = (
-        (newer_candidate, older_candidate) if newer_first else (older_candidate, newer_candidate)
-    )
-    assert application.id == first.id
-    assert hiring_service.legacy_links(sync_db, [first.id, second.id]) == {
-        first.id: application.id,
-        second.id: application.id,
-    }
+    # Nothing to redirect: the application kept its id.
+    assert counts(sync_db)["legacy_candidate_map"] == 0
 
 
 def test_resumes_without_contact_details_each_get_their_own_person(
@@ -314,7 +260,7 @@ def test_resumes_without_contact_details_each_get_their_own_person(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "candidates": 0,
+        "legacy_candidate_map": 0,
     }
     person_ids = {reload(sync_db, r).person_id for r in resumes}
     assert len(person_ids) == 2 and None not in person_ids
@@ -347,7 +293,7 @@ def test_email_and_phone_of_different_people_records_a_conflict_and_uses_the_ema
         "identity_conflicts": 1,
         "person_resumes": 3,
         "applications": 3,
-        "candidates": 0,
+        "legacy_candidate_map": 0,
     }
     asha, ravi, mixed = (reload(sync_db, r) for r in (asha, ravi, mixed))
     assert mixed.person_id == asha.person_id != ravi.person_id
@@ -468,7 +414,7 @@ CLEAN_COUNTS = {
     "identity_conflicts": 0,
     "person_resumes": 1,
     "applications": 1,
-    "candidates": 0,
+    "legacy_candidate_map": 0,
 }
 
 

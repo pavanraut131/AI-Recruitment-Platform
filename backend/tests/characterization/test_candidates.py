@@ -555,7 +555,8 @@ async def test_bulk_delete_candidates(
     assert {
         "response": response_data(resp),
         "remaining": await _remaining(db_session),
-        # Stored PDFs are not deleted (orphaned objects).
+        # The deleted resumes' PDFs are deleted after the commit (B6 fixed in E0-20; they used
+        # to be left behind, the snapshot recorded 4).
         "stored_objects": len(fake_storage.objects),
     } == snapshot
 
@@ -601,6 +602,7 @@ async def test_delete_candidate_also_deletes_resume(
     assert {
         "response": {"status_code": resp.status_code, "content": resp.text},
         "remaining": await _remaining(db_session),
+        # The PDF is deleted after the commit (B6 fixed in E0-20; the snapshot recorded 2).
         "stored_objects": len(fake_storage.objects),
         "get_after_delete": (await client.get(f"{API}/candidates/{target.id}")).status_code,
     } == snapshot

@@ -347,7 +347,7 @@
       'candidates': 1,
       'resumes': 1,
     }),
-    'stored_object_keys_left': 1,
+    'stored_object_keys_left': 0,
   })
 # ---
 # name: test_delete_campaign_invalid_id

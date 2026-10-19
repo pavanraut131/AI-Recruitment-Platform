@@ -7,12 +7,21 @@
   and builds the legacy response from each application and the extraction snapshot of its
   current resume, which ingestion owns. The endpoint hands hiring ingestion's lookup
   (``ingestion.resume_profiles``), nothing more.
-- Candidate delete and bulk delete: hiring deletes the applications, ingestion deletes their
-  resumes, and both are committed in one transaction (the request's ``AsyncSession``).
+- Campaign delete (E0-20), candidate delete and bulk delete: hiring deletes the campaign
+  and/or the applications, ingestion deletes their resumes, and both are committed in one
+  transaction (the request's ``AsyncSession``); then ingestion deletes the resumes' stored PDFs.
 
-Deleting a campaign stays in hiring: its resumes go with it through the database's
-``resumes.campaign_id ON DELETE CASCADE``. When that cross-module foreign key is dropped
-(ADR 0003), the campaign delete moves here and asks ingestion to delete the resumes.
+Deletes: database first, storage after the commit
+    No foreign key links ``resumes`` to ``campaigns`` (ADR 0003, dropped by the contract
+    migration), so the campaign delete cannot rely on a database cascade: it is composed here.
+    The rows go in one transaction; the PDFs are deleted only once it has **committed**
+    (``ingestion.delete_stored_files``). The other order could lose a PDF whose row survives
+    (a failed commit after the objects were deleted); this one can at worst leave a PDF whose
+    row is gone. Object storage is not transactional, so one of the two is unavoidable, and an
+    orphaned object is the harmless one: nothing refers to it. A storage failure after the
+    commit never fails the request (the delete has happened); it is logged
+    (``stored_file_delete_failed``) and ``python -m app.devtools.storage_orphans`` reports (and
+    with ``--delete`` removes) such objects. This fixes B6 (PDFs left in storage after a delete).
 """
 
 import uuid
@@ -71,6 +80,15 @@ async def _campaign_stats(db: AsyncSession, campaign_id: uuid.UUID) -> CampaignS
 
 
 # ── Campaigns ─────────────────────────────────────────────────
+@campaigns_router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
+    with _not_found_as_404():
+        await hiring.delete_campaign(db, campaign_id)
+    files = await ingestion.delete_campaign_resumes(db, campaign_id)
+    await db.commit()
+    await ingestion.delete_stored_files(files)
+
+
 @campaigns_router.get("/{campaign_id}", response_model=CampaignResponse)
 async def get_campaign(
     campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
@@ -195,9 +213,9 @@ async def bulk_delete_candidates(
 ) -> dict[str, int]:
     """Delete multiple candidates (and their resumes) in one request."""
     deleted = await hiring.bulk_delete_candidates(db, campaign_id, payload.candidate_ids)
-    if deleted:
-        await ingestion.delete_application_resumes(db, deleted)
+    files = await ingestion.delete_application_resumes(db, deleted)
     await db.commit()
+    await ingestion.delete_stored_files(files)
     return {"deleted": len(deleted)}
 
 
@@ -205,8 +223,9 @@ async def bulk_delete_candidates(
 async def delete_candidate(candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
     with _not_found_as_404():
         deleted = await hiring.delete_candidate(db, candidate_id)
-    await ingestion.delete_application_resumes(db, [deleted])
+    files = await ingestion.delete_application_resumes(db, [deleted])
     await db.commit()
+    await ingestion.delete_stored_files(files)
 
 
 # ── Candidates: recruiter updates ─────────────────────────────

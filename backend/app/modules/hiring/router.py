@@ -8,8 +8,9 @@ paths, tags, endpoint function names (they are the OpenAPI ``operationId``\\ s) 
 ``tests/characterization/__snapshots__/test_stats_health.ambr``. ``app.main`` includes them.
 
 The endpoints that also need the ``ingestion`` module are composed in ``app.api`` instead:
-campaign detail and stats, the global stats and, since the read switch (E0-19), every
-candidate endpoint (they read the resumes' extraction snapshots).
+campaign detail and stats, the global stats, since the read switch (E0-19) every candidate
+endpoint (they read the resumes' extraction snapshots), and since the contract (E0-20) the
+campaign delete (it deletes the campaign's resumes too).
 """
 
 import uuid
@@ -72,12 +73,6 @@ async def update_campaign(
 ) -> Campaign:
     with _http_errors():
         return await service.update_campaign(db, campaign_id, payload)
-
-
-@campaigns_router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
-    with _http_errors():
-        await service.delete_campaign(db, campaign_id)
 
 
 # ── Job description parsing ───────────────────────────────────

@@ -258,7 +258,8 @@ async def test_delete_campaign_cascades_to_resumes_and_candidates(
             # Since the read switch a "candidate" is an application (E0-19).
             "candidates": await count(Application),
         },
-        # The PDF in object storage is not deleted (orphaned).
+        # The stored PDF is deleted after the commit (B6 fixed in E0-20; it used to be left
+        # behind as an orphan, the snapshot recorded 1).
         "stored_object_keys_left": len(fake_storage.objects),
         "get_after_delete": (await client.get(f"{API}/campaigns/{campaign.id}")).status_code,
     } == snapshot

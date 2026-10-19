@@ -14,7 +14,9 @@ Expected differences (E0-19, spec §7), reported with their counts but never fai
     application (``legacy_candidate_map``). After the switch every one of those ids answers
     with that application, under the application's id and with its newest resume's data; the
     lists, exports and stats show it once. Merged ids are found in the *after* capture: a
-    ``GET /candidates/{id}`` answering with another ``id``. Every response involving an id of
+    ``GET /candidates/{id}`` answering with another ``id``, where the *before* capture still
+    answered with the id asked for. Across a deploy where both captures serve the switched
+    model (the E0-20 contract) there are none, and every response must be identical. Every response involving an id of
     such a group is set aside as expected: the group's detail and resume responses, its list
     rows and CSV lines (removed from both sides before the rest is compared exactly), and the
     candidate-derived numbers of its campaign's stats (category counts, average score, top
@@ -129,17 +131,27 @@ def _csv_key(line: str) -> tuple[str, str]:
     return (fields[0], fields[1]) if len(fields) > 1 else ("", "")
 
 
+def _answered_with(entry: dict[str, Any] | None, candidate_id: str) -> bool:
+    """Whether a capture's ``GET /candidates/{id}`` entry answered with ``candidate_id``."""
+    if entry is None or entry["status"] != 200 or not isinstance(entry["body"], dict):
+        return False
+    return str(entry["body"].get("id")) == candidate_id
+
+
 class _Context:
     """What the comparison learns from the two captures before comparing responses."""
 
     def __init__(self, before: dict[str, Any], after: dict[str, Any]) -> None:
         a, b = before["responses"], after["responses"]
-        # Merged legacy ids: asked for one id, answered with another (the application's).
+        # Merged legacy ids: asked for one id, answered with another (the application's), where
+        # the before capture still answered with the id asked for. When both captures are of
+        # the switched API (e.g. across the E0-20 contract) a merged id redirects on both sides:
+        # not a difference, so compared exactly like everything else.
         self.redirect: dict[str, str] = {}
         for key, entry in b.items():
             if key.startswith("detail/") and entry["status"] == 200:
                 asked, got = key.removeprefix("detail/"), str(entry["body"]["id"])
-                if asked != got:
+                if asked != got and not _answered_with(a.get(key), got):
                     self.redirect[asked] = got
         self.merged: set[str] = set(self.redirect) | set(self.redirect.values())
         before_ids = {k.removeprefix("detail/") for k in a if k.startswith("detail/")}
