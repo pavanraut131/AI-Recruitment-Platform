@@ -615,7 +615,7 @@ def _expected(subs: Sequence[Submission]) -> dict[str, int]:
 
 
 def build_manifest(plan: Plan) -> dict[str, Any]:
-    """Counts and expected backfill results, derived from the plan (see module docstring)."""
+    """Counts and expected results, derived from the plan (see module docstring)."""
     subs = plan.submissions
     expected = _expected(subs)
     cases: dict[str, Any] = {}

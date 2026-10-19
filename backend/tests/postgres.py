@@ -184,7 +184,7 @@ def migrate_to_head() -> None:
 def throwaway_database(prefix: str, **engine_options: Any) -> Iterator[Engine]:
     """A new database in the session's container, migrated to ``head``, dropped afterwards.
 
-    For tests that must **commit** on several connections (concurrency, the backfill), which the
+    For tests that must **commit** on several connections (concurrency, the seed served by the API), which the
     rolled-back ``db_session`` / ``sync_session`` cannot give. The session database is never
     touched. ``engine_options`` go to ``create_engine`` (e.g. ``pool_size``).
     """
