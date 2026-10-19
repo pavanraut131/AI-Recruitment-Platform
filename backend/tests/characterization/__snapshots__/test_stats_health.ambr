@@ -17,10 +17,10 @@
       'archived_campaigns': 1,
       'closed_campaigns': 1,
       'total_campaigns': 4,
-      'total_candidates': 2,
+      'total_candidates': 1,
       'total_failed': 2,
-      'total_processed': 3,
-      'total_processing': 3,
+      'total_processed': 2,
+      'total_processing': 4,
       'total_resumes': 8,
     }),
     'headers': dict({

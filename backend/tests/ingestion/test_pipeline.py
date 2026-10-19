@@ -1,10 +1,15 @@
-"""The AI task's dual write (E0-16, spec §5.1, §5.5, §6.1 phase 1), with ``AI_PROVIDER=fake``.
+"""The upload pipeline's writes (spec §5.1, §5.5), with ``AI_PROVIDER=fake``.
 
-Every processed resume writes the legacy candidate **and** a Person (``talent.resolve_person``)
-and an Application (``hiring.upsert_application``), committed together. Covered here:
+Every processed resume writes a Person (``talent.resolve_person``) and an Application
+(``hiring.upsert_application``), committed together. Until the read switch it also wrote the
+legacy candidate (the dual write of E0-16..E0-18); since E0-19 it writes **no** ``candidates``
+row: the text lives on the resume and a new application gets a fresh id. Covered here:
 
 - matching across campaigns and within one campaign (newer resume's scoring wins), resumes
   without contact details, and an email/phone conflict;
+- a resume extracted before the switch (its text on a legacy placeholder candidate) and
+  analysed after it: the text is read from the candidate, the candidate is not written, and it
+  leads to exactly one application (its id, or a ``legacy_candidate_map`` row);
 - a failure at **each** step, retried (Celery retry) or resumed after the retries ran out
   (what the retry-failed endpoint queues), ends in exactly the state of a clean run: no
   duplicate Person, identifier, conflict or Application;
@@ -76,10 +81,16 @@ def make_campaign(db: Session, title: str = "Backend") -> Campaign:
 
 
 def make_resume(
-    db: Session, campaign: Campaign, text: str, *, uploaded_at: datetime = T0
+    db: Session,
+    campaign: Campaign,
+    text: str,
+    *,
+    uploaded_at: datetime = T0,
+    pre_switch: bool = False,
 ) -> Resume:
-    """A resume as the extract task leaves it: ``processing``, its text on a placeholder
-    candidate."""
+    """A resume as the extract task leaves it: ``processing``, its text on the resume. With
+    ``pre_switch``, as the extract task left it before the read switch: the text on a legacy
+    placeholder candidate (only ids and ``raw_text``), none on the resume."""
     resume = Resume(
         id=uuid.uuid4(),
         campaign_id=campaign.id,
@@ -89,10 +100,12 @@ def make_resume(
         status="processing",
         processing_step=tasks.STEP_EXTRACT_TEXT,
         uploaded_at=uploaded_at,
+        raw_text=None if pre_switch else text,
     )
     db.add(resume)
     db.flush()
-    hiring_service.save_resume_text(db, resume_id=resume.id, campaign_id=campaign.id, raw_text=text)
+    if pre_switch:
+        db.add(Candidate(resume_id=resume.id, campaign_id=campaign.id, raw_text=text))
     db.commit()
     return resume
 
@@ -159,6 +172,15 @@ def candidate_of(db: Session, resume: Resume) -> Candidate:
     return db.execute(select(Candidate).where(Candidate.resume_id == resume.id)).scalar_one()
 
 
+def fake_scoring(text: str) -> ScoringResult:
+    """What the fake AI scores a resume with this text at, against the test campaigns."""
+    ai = FakeAIService()
+    return ai.score(
+        ai.extract_profile(text),
+        JobRequirements(role="Backend Engineer", required_skills=REQUIRED_SKILLS),
+    )
+
+
 def done_events(events: Events) -> list[dict[str, Any]]:
     return [e for e in events() if e["status"] == "done"]
 
@@ -180,7 +202,7 @@ def test_repeat_applicant_to_two_campaigns_is_one_person_with_two_applications(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "candidates": 2,
+        "candidates": 0,  # no legacy candidate since the read switch (E0-19)
     }
     first, second = reload(sync_db, first), reload(sync_db, second)
     assert first.person_id is not None and first.person_id == second.person_id
@@ -188,9 +210,8 @@ def test_repeat_applicant_to_two_campaigns_is_one_person_with_two_applications(
         application = application_of(sync_db, campaign, first.person_id)
         assert application.resume_id == resume.id
         assert application.resume_uploaded_at == resume.uploaded_at
-        candidate = candidate_of(sync_db, resume)  # the legacy row, written as before
-        assert (application.score, application.category) == (candidate.score, candidate.category)
-        assert application.id == candidate.id  # a new application reuses the id (E0-17)
+        scoring = fake_scoring(resume.raw_text or "")
+        assert (application.score, application.category) == (scoring.score, scoring.category)
     person_id = str(first.person_id)
     assert [(e["person_id"], e["matched_existing"]) for e in done_events(events)] == [
         (person_id, False),
@@ -215,22 +236,55 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
         analyse(resume)
 
     assert counts(sync_db)["applications"] == 1
-    assert counts(sync_db)["candidates"] == 2  # legacy: one candidate per resume, as before
+    assert counts(sync_db)["candidates"] == 0
     assert counts(sync_db)["people"] == 1
     older, newer = reload(sync_db, older), reload(sync_db, newer)
     application = application_of(sync_db, campaign, newer.person_id)
-    newer_candidate, older_candidate = candidate_of(sync_db, newer), candidate_of(sync_db, older)
-    assert newer_candidate.score != older_candidate.score  # the test means something
+    newer_scoring, older_scoring = (
+        fake_scoring(newer.raw_text or ""),
+        fake_scoring(older.raw_text or ""),
+    )
+    assert newer_scoring.score != older_scoring.score  # the test means something
     assert application.resume_id == newer.id
     assert application.resume_uploaded_at == newer.uploaded_at
     assert (application.score, application.missing_skills, application.summary) == (
-        newer_candidate.score,
-        newer_candidate.missing_skills,
-        newer_candidate.summary,
+        newer_scoring.score,
+        newer_scoring.missing_skills,
+        newer_scoring.summary,
     )
-    # Each legacy candidate keeps its own resume's scoring.
-    assert older_candidate.missing_skills == ["Go"]
-    # Both candidates lead to the application (E0-17): the first analysed one's id is the
+    # No legacy candidates, so nothing to redirect.
+    assert sync_db.execute(select(func.count()).select_from(LegacyCandidateMap)).scalar_one() == 0
+
+
+@pytest.mark.parametrize("newer_first", [False, True], ids=["older_first", "newer_first"])
+def test_resumes_extracted_before_the_switch_keep_leading_to_one_application(
+    sync_db: Session, fake_ai: FakeAIService, newer_first: bool
+) -> None:
+    # Extracted by the E0-18 code (text on a placeholder candidate), analysed by the E0-19 code.
+    campaign = make_campaign(sync_db)
+    older = make_resume(sync_db, campaign, resume_text(years=2), pre_switch=True)
+    newer = make_resume(
+        sync_db,
+        campaign,
+        resume_text(skills="Python, Go", years=8),
+        uploaded_at=T0 + timedelta(days=30),
+        pre_switch=True,
+    )
+
+    for resume in (newer, older) if newer_first else (older, newer):
+        analyse(resume)
+
+    older, newer = reload(sync_db, older), reload(sync_db, newer)
+    newer_candidate, older_candidate = candidate_of(sync_db, newer), candidate_of(sync_db, older)
+    application = application_of(sync_db, campaign, newer.person_id)
+    assert counts(sync_db)["applications"] == 1
+    assert application.resume_id == newer.id
+    assert application.score == fake_scoring(newer_candidate.raw_text or "").score
+    # The candidates were read (their text), never written: still the placeholders.
+    for candidate in (newer_candidate, older_candidate):
+        assert (candidate.name, candidate.score, candidate.category) == (None, None, None)
+    assert (older.raw_text, newer.raw_text) == (None, None)
+    # Both lead to the application (E0-17's rule): the first analysed one's id is the
     # application's, the other is redirected by legacy_candidate_map.
     first, second = (
         (newer_candidate, older_candidate) if newer_first else (older_candidate, newer_candidate)
@@ -240,7 +294,6 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
         first.id: application.id,
         second.id: application.id,
     }
-    assert sync_db.execute(select(func.count()).select_from(LegacyCandidateMap)).scalar_one() == 1
 
 
 def test_resumes_without_contact_details_each_get_their_own_person(
@@ -261,7 +314,7 @@ def test_resumes_without_contact_details_each_get_their_own_person(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "candidates": 2,
+        "candidates": 0,
     }
     person_ids = {reload(sync_db, r).person_id for r in resumes}
     assert len(person_ids) == 2 and None not in person_ids
@@ -294,7 +347,7 @@ def test_email_and_phone_of_different_people_records_a_conflict_and_uses_the_ema
         "identity_conflicts": 1,
         "person_resumes": 3,
         "applications": 3,
-        "candidates": 3,
+        "candidates": 0,
     }
     asha, ravi, mixed = (reload(sync_db, r) for r in (asha, ravi, mixed))
     assert mixed.person_id == asha.person_id != ravi.person_id
@@ -415,14 +468,13 @@ CLEAN_COUNTS = {
     "identity_conflicts": 0,
     "person_resumes": 1,
     "applications": 1,
-    "candidates": 1,
+    "candidates": 0,
 }
 
 
 def final_state(db: Session, resume: Resume) -> dict[str, Any]:
     """Everything a run writes, without generated ids and timestamps."""
     resume = reload(db, resume)
-    candidate = candidate_of(db, resume)
     application = application_of(db, db.get_one(Campaign, resume.campaign_id), resume.person_id)
     person = db.get_one(Person, resume.person_id)
     identifiers = db.execute(
@@ -434,7 +486,6 @@ def final_state(db: Session, resume: Resume) -> dict[str, Any]:
         "counts": counts(db),
         "resume": (resume.status, resume.processing_step, resume.error_message),
         "extracted": resume.extracted,
-        "candidate": (candidate.name, candidate.email, candidate.score, candidate.category),
         "application": (
             application.resume_id == resume.id,
             application.score,
@@ -448,15 +499,15 @@ def final_state(db: Session, resume: Resume) -> dict[str, Any]:
 def expected_state(db: Session, resume: Resume) -> dict[str, Any]:
     """What a clean run writes, from the fake AI's answers for the resume's stored text."""
     ai = FakeAIService()
-    extraction = ai.extract_profile(candidate_of(db, resume).raw_text or "")
+    extraction = ai.extract_profile(reload(db, resume).raw_text or "")
     scoring = ai.score(
         extraction, JobRequirements(role="Backend Engineer", required_skills=REQUIRED_SKILLS)
     )
+    assert (extraction.name, extraction.email) == ("Asha Rao", ASHA_EMAIL)
     return {
         "counts": CLEAN_COUNTS,
         "resume": ("done", None, None),
         "extracted": extraction.model_dump(mode="json"),
-        "candidate": ("Asha Rao", ASHA_EMAIL, scoring.score, scoring.category),
         "application": (True, scoring.score, scoring.category, scoring.summary),
         "person": ("Asha Rao", True, [("email", ASHA_EMAIL), ("phone", "+919876543210")]),
     }
@@ -510,7 +561,7 @@ def test_after_the_retries_run_out_the_failed_step_is_kept_and_a_rerun_completes
     assert (resume.status, resume.processing_step) == ("failed", step)
     assert resume.person_id is None  # the resolve/save transaction was rolled back every time
     assert events()[-1]["status"] == "failed"
-    assert counts(sync_db) == {**dict.fromkeys(CLEAN_COUNTS, 0), "candidates": 1}
+    assert counts(sync_db) == dict.fromkeys(CLEAN_COUNTS, 0)
     # The retry-failed endpoint re-queues the AI task for a resume failed at an AI step.
     assert resume.processing_step in tasks.AI_STEPS
 

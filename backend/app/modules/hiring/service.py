@@ -1,15 +1,41 @@
 """hiring service: the public interface of the hiring module.
 
-Campaign CRUD and stats, the global stats, job description parsing, and the candidate list,
-export, detail, recruiter updates and deletes. The routers in ``router.py`` only translate HTTP
+Campaign CRUD and stats, the global stats, job description parsing, and the legacy candidate
+endpoints' use cases (list, export, detail, recruiter updates, deletes), served from
+``applications`` since the read switch (E0-19). The routers in ``router.py`` only translate HTTP
 to these calls; other modules (``ingestion``) and the composition layer (``app.api``) may import
 this module and ``app.modules.hiring.schemas``, never ``models`` or ``repository``
 (import-linter enforces it).
 
-Business rules live here: the category / pipeline-stage vocabularies, the candidate filter
-builder shared by the list and the CSV export, and the stats aggregation. Job descriptions are
-parsed by the ``ai`` module. Errors are raised as :class:`HiringError` subclasses carrying the
-user-facing ``detail``; the routers map them to status codes.
+Business rules live here: the category / pipeline-stage vocabularies, the candidate filters
+shared by the list and the CSV export, the legacy response mapping and the stats aggregation.
+Job descriptions are parsed by the ``ai`` module. Errors are raised as :class:`HiringError`
+subclasses carrying the user-facing ``detail``; the routers map them to status codes.
+
+The legacy candidate API after the switch (E0-19, spec §7)
+---------------------------------------------------------
+The ``/candidates`` endpoints keep their paths and exact response shapes, but a "candidate" is
+now an **application**: one row per (campaign, person). A response is built by
+:func:`candidate_detail` / :func:`candidate_list_item` from two sources, field by field (the
+table is in spec §7):
+
+- the **application** (hiring): ``id``, ``campaign_id``, ``resume_id``, the scoring and
+  insights, ``category``, ``notes``, ``pipeline_stage``, ``created_at``, ``updated_at``;
+- the **extraction snapshot of the application's current resume** (``resumes.extracted``,
+  ingestion): name, contact details, URLs, skills, education, work experience,
+  certifications, projects and years of experience. These are per-resume facts, exactly what
+  the legacy candidate of that resume held. The Person's profile is deliberately not used: it
+  follows the person's newest resume across *all* campaigns, so it can differ from what this
+  application was scored on.
+
+Ids: an application id answers directly; the id of a legacy candidate that was merged into
+another application (``legacy_candidate_map``) answers with that application, and the response
+carries the **application's** id. Applications created after the switch get fresh ids and have
+no legacy candidate.
+
+Deletes remove the application and every resume of its person in its campaign (each was one
+legacy candidate of the row the recruiter sees); the legacy candidates of those resumes go with
+them through ``candidates.resume_id ON DELETE CASCADE``. Nothing writes ``candidates`` any more.
 
 Cross-module boundaries (E0-10)
 -------------------------------
@@ -20,80 +46,56 @@ the data crosses this interface instead:
    resume counts by status, which ingestion owns. :func:`campaign_stats` and
    :func:`global_stats` take them as an argument; ``app.api`` asks ingestion for them and
    composes the endpoint.
-2. **Deleting candidates** (``DELETE /candidates/{id}``, ``DELETE
-   /campaigns/{id}/candidates/bulk``) also deletes their resumes. :func:`delete_candidate` and
-   :func:`bulk_delete_candidates` delete (flush, don't commit) and return the resume ids;
-   ``app.api`` has ingestion delete those resumes and commits both in one transaction.
-   Since E0-18 they also keep the candidates' applications consistent (see "Mirroring the
-   legacy writes" below), which needs the resumes' upload times: ``app.api`` passes ingestion's
-   lookup in as the ``uploaded_at`` callable.
-5. **Recruiter updates** (``PUT /candidates/{id}/category``, ``PATCH /candidates/{id}/notes``,
-   ``PATCH /candidates/{id}/pipeline``, ``PATCH /campaigns/{id}/candidates/bulk-pipeline``)
-   mirror the write onto the application (E0-18) and take the same ``uploaded_at`` callable,
-   so they are composed in ``app.api`` as well.
-3. **Deleting a campaign** removes its resumes through the database's
+2. **Resume extractions** (E0-19): every candidate endpoint, and the campaign stats' top skills,
+   read the resumes' extraction snapshots. They take a :class:`ResumeProfiles` (ingestion's
+   ``resume_profiles(db)``), which answers with the snapshots, the resumes matching the list's
+   name/email search, skill and experience filters, and a resume's campaign and person.
+3. **Deleting candidates** (``DELETE /candidates/{id}``, ``DELETE
+   /campaigns/{id}/candidates/bulk``) also deletes resumes. :func:`delete_candidate` and
+   :func:`bulk_delete_candidates` delete the applications (flush, don't commit) and return
+   what ingestion needs to delete their resumes; ``app.api`` has ingestion delete them and
+   commits both in one transaction.
+4. **Deleting a campaign** removes its resumes through the database's
    ``resumes.campaign_id ON DELETE CASCADE`` (see ``models.py``), so it stays a hiring endpoint.
-4. **The upload pipeline** (``app.modules.ingestion``) checks campaigns and writes candidates
-   only through the functions under "Upload pipeline" below, and applications through
-   :func:`upsert_application` (dual write, E0-16) and :func:`link_legacy_candidate` (E0-17).
-   The backfill and its verification (``app.modules.ingestion.backfill`` / ``verify_backfill``)
-   read candidates and applications through the functions under "Legacy candidates ->
-   applications"; resume upload times cross the boundary as arguments. Its scoring input is the ``ai`` module's
-   ``ScoringResult`` (``app.modules.ai.schemas``, public): the pipeline passes on what the
-   model returned, and hiring keeps no second copy of that shape to keep in sync.
-
-Mirroring the legacy writes (E0-18, spec §6.1 "switch gate")
------------------------------------------------------------
-Until the read switch the API still writes ``candidates``; every such write now keeps the
-candidate's application equal to what the backfill would compute from its candidates, in the
-same transaction. A candidate's application is the one with the candidate's id, else the one
-``legacy_candidate_map`` redirects it to; a candidate with neither (resume still processing)
-is written alone.
-
-- **Recruiter fields** (:func:`expected_recruiter_fields`): the application's
-  ``pipeline_stage`` and ``notes`` are, per field, the value of the newest candidate (by resume
-  upload time) whose value is not ``NULL``. Its ``category`` is the category of the candidate
-  of the application's current resume (``applications.resume_id``): it travels with the
-  scoring, so a manual category on an older, merged candidate is not mirrored. A write is
-  "update the candidate, then recompute the application from all its candidates", never "copy
-  the new value", so a merged application stays right whichever candidate is edited.
-- **Deletes**: an application is deleted with its last candidate. While other candidates lead
-  to it, it is kept (with its id, even when that was the deleted candidate's id), only the
-  deleted candidates' map rows go, the scoring moves to the newest remaining resume if the
-  deleted candidate held the current one, and the recruiter fields are recomputed.
-- **Locks**: candidates are locked before their applications (``FOR UPDATE``, each in id
-  order), the order the upload pipeline writes them in, and the recomputation reads the
-  candidates only once it holds the application's lock, so concurrent edits of two candidates
-  of one application cannot each miss the other.
+5. **The upload pipeline** (``app.modules.ingestion``) checks campaigns through
+   :func:`get_campaign_requirements` and writes applications through :func:`upsert_application`.
+   The backfill and its verification (``app.modules.ingestion.backfill`` /
+   ``verify_backfill``) read candidates and applications through the functions under "Legacy
+   candidates -> applications"; resume upload times cross the boundary as arguments. Its
+   scoring input is the ``ai`` module's ``ScoringResult`` (``app.modules.ai.schemas``,
+   public): the pipeline passes on what the model returned, and hiring keeps no second copy of
+   that shape to keep in sync.
 """
 
 import csv
 import io
 import uuid
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypeVar
 
 import structlog
-from sqlalchemy import ColumnElement, column, exists, func, or_
+from sqlalchemy import ColumnElement, any_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.ai import service as ai_service
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import repository
-from app.modules.hiring.models import Application, Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.hiring.schemas import (
     CampaignCreate,
     CampaignResponse,
     CampaignStats,
     CampaignUpdate,
+    CandidateDetail,
+    CandidateListItem,
     GlobalStats,
     JDParseRequest,
     JDParseResponse,
 )
-from app.platform.sql import LIKE_ESCAPE, escape_like
+from app.platform.sql import uuid_array
 
 logger = structlog.get_logger()
 
@@ -168,15 +170,25 @@ async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
 
 # ── Stats ─────────────────────────────────────────────────────
 async def campaign_stats(
-    db: AsyncSession, campaign_id: uuid.UUID, resume_counts: Mapping[str, int]
+    db: AsyncSession,
+    campaign_id: uuid.UUID,
+    resume_counts: Mapping[str, int],
+    profiles: "ResumeProfiles",
 ) -> CampaignStats:
-    """Stats for one campaign, given its resume counts by status (from ingestion).
+    """Stats for one campaign, given its resume counts by status and its resumes' extractions
+    (both from ingestion).
 
+    The category counts and average scores are over the campaign's applications; the top skills
+    over the skills extracted from each application's current resume (what the legacy candidate
+    of that resume held), taken oldest application first so equal counts keep a stable order.
     An unknown campaign id yields all-zero stats, not a 404.
     """
-    category_rows = await repository.candidate_category_stats(db, campaign_id)
-    skill_lists = await repository.candidate_skill_lists(db, campaign_id)
-    return build_campaign_stats(resume_counts, category_rows, skill_lists)
+    category_rows = await repository.application_category_stats(db, campaign_id)
+    resume_ids = await repository.campaign_resume_ids(db, campaign_id)
+    skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
+    return build_campaign_stats(
+        resume_counts, category_rows, (skills.get(rid) for rid in resume_ids)
+    )
 
 
 def build_campaign_stats(
@@ -184,8 +196,8 @@ def build_campaign_stats(
     category_rows: Iterable[tuple[str | None, int, float | None]],
     skill_lists: Iterable[list[str] | None],
 ) -> CampaignStats:
-    """Aggregate a campaign's resume counts by status, candidate ``(category, count, average
-    score)`` rows and candidates' skill lists into :class:`CampaignStats`."""
+    """Aggregate a campaign's resume counts by status, application ``(category, count, average
+    score)`` rows and the applications' skill lists into :class:`CampaignStats`."""
     cat_map: dict[str | None, int] = {}
     avg_scores: list[float] = []
     for category, count, avg in category_rows:
@@ -224,9 +236,9 @@ def build_campaign_stats(
 
 async def global_stats(db: AsyncSession, resume_counts: Mapping[str, int]) -> GlobalStats:
     """Aggregate counts across all campaigns, given the resume counts by status (from
-    ingestion): single-table queries, no joins."""
+    ingestion): single-table queries, no joins. ``total_candidates`` counts applications."""
     campaign_counts = await repository.campaign_status_counts(db)
-    total_candidates = await repository.count_candidates(db)
+    total_candidates = await repository.count_applications(db)
     return build_global_stats(campaign_counts, resume_counts, total_candidates)
 
 
@@ -278,55 +290,200 @@ class CandidateFilters:
     search: str | None = None
     pipeline_stage: str | None = None
 
+    def profile(self) -> "ProfileFilters":
+        """The filters on the resume's extracted profile, which ingestion evaluates."""
+        return ProfileFilters(
+            search=self.search or None,
+            skill=self.skill or None,
+            min_experience=self.min_experience,
+        )
 
-def build_candidate_filters(filters: CandidateFilters) -> list[ColumnElement[bool]]:
-    """The SQL ``WHERE`` clauses (to be AND-ed) for ``filters``."""
-    clauses: list[ColumnElement[bool]] = [Candidate.campaign_id == filters.campaign_id]
+
+@dataclass(frozen=True)
+class ProfileFilters:
+    """The list filters that read a resume's extraction snapshot (``resumes.extracted``), with
+    the legacy semantics (B2): ``search`` is contained in the name or the email, ``skill`` in
+    any one skill, both case-insensitively and with LIKE wildcards taken literally;
+    ``min_experience`` is inclusive and never matches an unknown experience."""
+
+    search: str | None = None
+    skill: str | None = None
+    min_experience: float | None = None
+
+    @property
+    def active(self) -> bool:
+        return bool(self.search) or bool(self.skill) or self.min_experience is not None
+
+
+def build_application_filters(filters: CandidateFilters) -> list[ColumnElement[bool]]:
+    """The SQL ``WHERE`` clauses (to be AND-ed) on ``applications`` for ``filters`` (the profile
+    filters are not among them: see :meth:`CandidateFilters.profile`)."""
+    clauses: list[ColumnElement[bool]] = [Application.campaign_id == filters.campaign_id]
     if filters.category:
-        clauses.append(Candidate.category == filters.category)
+        clauses.append(Application.category == filters.category)
     if filters.min_score is not None:
-        clauses.append(Candidate.score >= filters.min_score)
+        clauses.append(Application.score >= filters.min_score)
     if filters.max_score is not None:
-        clauses.append(Candidate.score <= filters.max_score)
-    if filters.min_experience is not None:
-        clauses.append(Candidate.years_of_experience >= filters.min_experience)
-    if filters.search:
-        search_pattern = f"%{escape_like(filters.search)}%"
-        clauses.append(
-            or_(
-                Candidate.name.ilike(search_pattern, escape=LIKE_ESCAPE),
-                Candidate.email.ilike(search_pattern, escape=LIKE_ESCAPE),
-            )
-        )
-    if filters.skill:
-        # Any skill contains the term, case-insensitively:
-        #   EXISTS (SELECT 1 FROM jsonb_array_elements_text(candidates.skills) AS skill
-        #           WHERE skill.value ILIKE :pattern ESCAPE '\')
-        # Matching each element (rather than `skills::text`) keeps the JSON syntax (quotes,
-        # commas, brackets) out of the match. An empty array has no elements: never matches.
-        skill_elem = (
-            func.jsonb_array_elements_text(Candidate.skills)
-            .table_valued(column("value"))
-            .alias("skill")
-        )
-        clauses.append(
-            exists()
-            .select_from(skill_elem)
-            .where(skill_elem.c.value.ilike(f"%{escape_like(filters.skill)}%", escape=LIKE_ESCAPE))
-        )
+        clauses.append(Application.score <= filters.max_score)
     if filters.pipeline_stage:
-        clauses.append(Candidate.pipeline_stage == filters.pipeline_stage)
+        clauses.append(Application.pipeline_stage == filters.pipeline_stage)
     return clauses
 
 
-# ── Candidates ────────────────────────────────────────────────
-async def list_candidates(
-    db: AsyncSession, filters: CandidateFilters, page: int, page_size: int
-) -> Sequence[Candidate]:
-    """One page of matching candidates, best score first (unscored last)."""
-    return await repository.list_candidates(
-        db, build_candidate_filters(filters), offset=(page - 1) * page_size, limit=page_size
+# ── Resume extractions (ingestion's data, E0-19) ──────────────
+@dataclass(frozen=True)
+class ResumeOwner:
+    """The campaign a resume was uploaded to and the Person it resolved to (``None`` until it
+    is resolved)."""
+
+    campaign_id: uuid.UUID
+    person_id: uuid.UUID | None
+
+
+class ResumeProfiles(Protocol):
+    """What the candidate endpoints need from ingestion's ``resumes`` (``app.api`` passes
+    ``ingestion.service.resume_profiles(db)``). Unknown resume ids are left out of every answer."""
+
+    async def extractions(
+        self, resume_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, Mapping[str, Any] | None]:
+        """``resumes.extracted`` of each resume (``None``: not extracted)."""
+        ...
+
+    async def matching(
+        self, resume_ids: Sequence[uuid.UUID], filters: ProfileFilters
+    ) -> Collection[uuid.UUID]:
+        """The resumes among ``resume_ids`` whose extraction matches ``filters``."""
+        ...
+
+    async def skill_lists(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, Any]:
+        """The extracted ``skills`` of each resume."""
+        ...
+
+    async def owner(self, resume_id: uuid.UUID) -> ResumeOwner | None:
+        """The resume's campaign and Person, or ``None`` if it does not exist."""
+        ...
+
+
+# ── The legacy response, field by field (spec §7) ─────────────
+# From the extraction snapshot of the application's current resume: what the legacy candidate
+# of that resume held (the pre-switch pipeline copied the same ``ExtractionResult`` onto it).
+# A missing snapshot reads like the legacy placeholder row: no values, empty lists.
+_SNAPSHOT_VALUES = ("name", "email", "phone", "github_url", "linkedin_url")
+_SNAPSHOT_LISTS = ("skills", "education", "work_experience", "certifications", "projects")
+
+
+def _profile(extracted: Mapping[str, Any] | None) -> dict[str, Any]:
+    snapshot = extracted or {}
+    profile: dict[str, Any] = {name: snapshot.get(name) for name in _SNAPSHOT_VALUES}
+    for name in _SNAPSHOT_LISTS:
+        value = snapshot.get(name)
+        profile[name] = value if value is not None else []
+    years = snapshot.get("years_of_experience")
+    # A float column on the legacy row; JSON may hold it as an integer.
+    profile["years_of_experience"] = float(years) if years is not None else None
+    return profile
+
+
+def candidate_detail(
+    application: Application, extracted: Mapping[str, Any] | None
+) -> CandidateDetail:
+    """The legacy ``CandidateDetail`` of an application, given its resume's extraction."""
+    return CandidateDetail(
+        id=application.id,
+        resume_id=application.resume_id,
+        campaign_id=application.campaign_id,
+        **_profile(extracted),
+        summary=application.summary,
+        strengths=application.strengths,
+        weaknesses=application.weaknesses,
+        missing_skills=application.missing_skills,
+        recommendation=application.recommendation,
+        score=application.score,
+        category=application.category,
+        notes=application.notes,
+        pipeline_stage=application.pipeline_stage,
+        score_breakdown=application.score_breakdown,
+        created_at=application.created_at,
+        updated_at=application.updated_at,
     )
+
+
+def candidate_list_item(
+    application: Application, extracted: Mapping[str, Any] | None
+) -> CandidateListItem:
+    """The legacy ``CandidateListItem`` of an application, given its resume's extraction."""
+    profile = _profile(extracted)
+    return CandidateListItem(
+        id=application.id,
+        resume_id=application.resume_id,
+        campaign_id=application.campaign_id,
+        name=profile["name"],
+        email=profile["email"],
+        skills=profile["skills"],
+        years_of_experience=profile["years_of_experience"],
+        score=application.score,
+        category=application.category,
+        summary=application.summary,
+        pipeline_stage=application.pipeline_stage,
+        created_at=application.created_at,
+    )
+
+
+async def _snapshots(
+    profiles: ResumeProfiles, applications: Sequence[Application]
+) -> Mapping[uuid.UUID, Mapping[str, Any] | None]:
+    """The extraction of every application's current resume, in one lookup (no N+1)."""
+    if not applications:
+        return {}
+    return await profiles.extractions([a.resume_id for a in applications])
+
+
+async def _detail(profiles: ResumeProfiles, application: Application) -> CandidateDetail:
+    snapshots = await _snapshots(profiles, [application])
+    return candidate_detail(application, snapshots.get(application.resume_id))
+
+
+# ── Candidates ────────────────────────────────────────────────
+async def _find_applications(
+    db: AsyncSession,
+    filters: CandidateFilters,
+    profiles: ResumeProfiles,
+    *,
+    offset: int | None = None,
+    limit: int | None = None,
+) -> Sequence[Application]:
+    """The applications matching ``filters``, best score first (unscored last).
+
+    The application filters run in hiring's query. The profile filters (search, skill,
+    experience) read ingestion's extractions: first the resume ids of the applications that
+    pass the application filters, then ingestion keeps those whose extraction matches, then the
+    page is read restricted to them. Without profile filters that is one query.
+    """
+    clauses = build_application_filters(filters)
+    profile_filters = filters.profile()
+    if profile_filters.active:
+        resume_ids = await repository.application_resume_ids(db, clauses)
+        matched = await profiles.matching(resume_ids, profile_filters) if resume_ids else ()
+        if not matched:
+            return []
+        clauses.append(Application.resume_id == any_(uuid_array(matched)))
+    return await repository.list_applications(db, clauses, offset=offset, limit=limit)
+
+
+async def list_candidates(
+    db: AsyncSession,
+    filters: CandidateFilters,
+    page: int,
+    page_size: int,
+    profiles: ResumeProfiles,
+) -> list[CandidateListItem]:
+    """One page of matching candidates (applications), best score first (unscored last)."""
+    applications = await _find_applications(
+        db, filters, profiles, offset=(page - 1) * page_size, limit=page_size
+    )
+    snapshots = await _snapshots(profiles, applications)
+    return [candidate_list_item(a, snapshots.get(a.resume_id)) for a in applications]
 
 
 CSV_FIELDS = [
@@ -346,17 +503,22 @@ CSV_FIELDS = [
 ]
 
 
-async def export_candidates_csv(db: AsyncSession, filters: CandidateFilters) -> str:
+async def export_candidates_csv(
+    db: AsyncSession, filters: CandidateFilters, profiles: ResumeProfiles
+) -> str:
     """All matching candidates (no paging) as a CSV document, best score first."""
-    candidates = await repository.list_candidates(db, build_candidate_filters(filters))
-    return render_candidates_csv(candidates)
+    applications = await _find_applications(db, filters, profiles)
+    snapshots = await _snapshots(profiles, applications)
+    return render_candidates_csv(
+        candidate_detail(a, snapshots.get(a.resume_id)) for a in applications
+    )
 
 
 def _join(values: Sequence[Any] | None) -> str:
     return " | ".join(str(v) for v in (values or []))
 
 
-def render_candidates_csv(candidates: Iterable[Candidate]) -> str:
+def render_candidates_csv(candidates: Iterable[CandidateDetail]) -> str:
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=CSV_FIELDS)
     writer.writeheader()
@@ -383,24 +545,39 @@ def render_candidates_csv(candidates: Iterable[Candidate]) -> str:
     return output.getvalue()
 
 
-async def _require_candidate(
-    db: AsyncSession, candidate_id: uuid.UUID, *, for_update: bool = False
-) -> Candidate:
-    candidate = await repository.get_candidate(db, candidate_id, for_update=for_update)
-    if not candidate:
+async def _require_application(db: AsyncSession, candidate_id: uuid.UUID) -> Application:
+    """The application ``candidate_id`` names: its own id, or a merged legacy candidate's id
+    redirected by ``legacy_candidate_map``."""
+    application = await repository.get_application(db, candidate_id)
+    if not application:
         raise NotFoundError("Candidate not found")
-    return candidate
+    return application
 
 
-async def get_candidate(db: AsyncSession, candidate_id: uuid.UUID) -> Candidate:
-    return await _require_candidate(db, candidate_id)
+async def get_candidate(
+    db: AsyncSession, candidate_id: uuid.UUID, profiles: ResumeProfiles
+) -> CandidateDetail:
+    """The candidate (application) with this id, or the application a merged legacy candidate
+    with this id was redirected to; the response carries the application's id."""
+    return await _detail(profiles, await _require_application(db, candidate_id))
 
 
-async def get_candidate_by_resume(db: AsyncSession, resume_id: uuid.UUID) -> Candidate:
-    candidate = await repository.get_candidate_by_resume(db, resume_id)
-    if not candidate:
+async def get_candidate_by_resume(
+    db: AsyncSession, resume_id: uuid.UUID, profiles: ResumeProfiles
+) -> CandidateDetail:
+    """The application a resume belongs to: the one it is the current resume of, else (an
+    older resume of a merged application) the application of its Person in its campaign.
+    404 while the resume is not processed yet (no application)."""
+    application = await repository.get_application_by_resume(db, resume_id)
+    if application is None:
+        owner = await profiles.owner(resume_id)
+        if owner is not None and owner.person_id is not None:
+            application = await repository.get_application_of_person(
+                db, owner.campaign_id, owner.person_id
+            )
+    if application is None:
         raise NotFoundError("Candidate not yet processed")
-    return candidate
+    return await _detail(profiles, application)
 
 
 def _check_category(category: str) -> None:
@@ -417,220 +594,123 @@ def _check_pipeline_stage(stage: str) -> None:
         )
 
 
-# The upload time of each of these resumes (ingestion's data; ``app.api`` passes ingestion's
-# lookup). Resumes that do not exist are left out.
-AsyncUploadTimes = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, datetime]]]
-
-
 async def update_candidate_category(
-    db: AsyncSession, candidate_id: uuid.UUID, category: str, uploaded_at: AsyncUploadTimes
-) -> Candidate:
-    """Recruiter override of the AI category. The value is checked before the lookup.
-
-    Mirrored onto the application only when this candidate holds the application's current
-    resume (the category travels with the scoring; module docstring)."""
+    db: AsyncSession, candidate_id: uuid.UUID, category: str, profiles: ResumeProfiles
+) -> CandidateDetail:
+    """Recruiter override of the AI category. The value is checked before the lookup."""
     _check_category(category)
-    candidate = await _require_candidate(db, candidate_id, for_update=True)
-    candidate.category = category
-    await _mirror_to_applications(db, [candidate.id], uploaded_at)
-    await repository.commit_and_refresh(db, candidate)
-    logger.info("category_overridden", candidate_id=str(candidate_id), category=category)
-    return candidate
+    application = await _require_application(db, candidate_id)
+    application.category = category
+    await repository.commit_and_refresh(db, application)
+    logger.info(
+        "category_overridden",
+        candidate_id=str(candidate_id),
+        application_id=str(application.id),
+        category=category,
+    )
+    return await _detail(profiles, application)
 
 
 async def update_candidate_notes(
-    db: AsyncSession, candidate_id: uuid.UUID, notes: str, uploaded_at: AsyncUploadTimes
-) -> Candidate:
-    candidate = await _require_candidate(db, candidate_id, for_update=True)
-    candidate.notes = notes
-    await _mirror_to_applications(db, [candidate.id], uploaded_at)
-    await repository.commit_and_refresh(db, candidate)
-    logger.info("notes_updated", candidate_id=str(candidate_id))
-    return candidate
+    db: AsyncSession, candidate_id: uuid.UUID, notes: str, profiles: ResumeProfiles
+) -> CandidateDetail:
+    application = await _require_application(db, candidate_id)
+    application.notes = notes
+    await repository.commit_and_refresh(db, application)
+    logger.info("notes_updated", candidate_id=str(candidate_id), application_id=str(application.id))
+    return await _detail(profiles, application)
 
 
 async def update_candidate_pipeline(
-    db: AsyncSession, candidate_id: uuid.UUID, stage: str, uploaded_at: AsyncUploadTimes
-) -> Candidate:
+    db: AsyncSession, candidate_id: uuid.UUID, stage: str, profiles: ResumeProfiles
+) -> CandidateDetail:
     """Move one candidate to a pipeline stage. The stage is checked before the lookup."""
     _check_pipeline_stage(stage)
-    candidate = await _require_candidate(db, candidate_id, for_update=True)
-    candidate.pipeline_stage = stage
-    await _mirror_to_applications(db, [candidate.id], uploaded_at)
-    await repository.commit_and_refresh(db, candidate)
-    logger.info("pipeline_updated", candidate_id=str(candidate_id), stage=stage)
-    return candidate
+    application = await _require_application(db, candidate_id)
+    application.pipeline_stage = stage
+    await repository.commit_and_refresh(db, application)
+    logger.info(
+        "pipeline_updated",
+        candidate_id=str(candidate_id),
+        application_id=str(application.id),
+        stage=stage,
+    )
+    return await _detail(profiles, application)
 
 
 async def bulk_update_pipeline(
-    db: AsyncSession,
-    campaign_id: uuid.UUID,
-    candidate_ids: Sequence[uuid.UUID],
-    stage: str,
-    uploaded_at: AsyncUploadTimes,
+    db: AsyncSession, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID], stage: str
 ) -> int:
-    """Move the campaign's candidates among ``candidate_ids`` to ``stage``; returns how many."""
+    """Move the campaign's candidates (applications) that ``candidate_ids`` name to ``stage``;
+    returns how many applications."""
     _check_pipeline_stage(stage)
-    candidates = await repository.candidates_in_campaign(
+    applications = await repository.applications_in_campaign(
         db, campaign_id, candidate_ids, for_update=True
     )
-    for c in candidates:
-        c.pipeline_stage = stage
-    await _mirror_to_applications(db, [c.id for c in candidates], uploaded_at)
+    for application in applications:
+        application.pipeline_stage = stage
     await repository.commit(db)
-    logger.info("bulk_pipeline_updated", count=len(candidates), stage=stage)
-    return len(candidates)
+    logger.info("bulk_pipeline_updated", count=len(applications), stage=stage)
+    return len(applications)
+
+
+@dataclass(frozen=True)
+class DeletedApplication:
+    """A deleted application: ingestion deletes its resume and every other resume of its Person
+    in its campaign (``ingestion.service.delete_application_resumes``)."""
+
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    person_id: uuid.UUID
+    resume_id: uuid.UUID
 
 
 async def bulk_delete_candidates(
-    db: AsyncSession,
-    campaign_id: uuid.UUID,
-    candidate_ids: Sequence[uuid.UUID],
-    uploaded_at: AsyncUploadTimes,
-) -> list[uuid.UUID]:
-    """Delete the campaign's candidates among ``candidate_ids`` (others are ignored), and their
-    applications as the delete rule says (module docstring).
+    db: AsyncSession, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID]
+) -> list[DeletedApplication]:
+    """Delete the campaign's candidates (applications) that ``candidate_ids`` name (others are
+    ignored).
 
-    Flushes but does not commit: the caller deletes the returned resume ids (one per deleted
-    candidate) in the same transaction and commits.
-    """
-    candidates = await repository.candidates_in_campaign(
-        db, campaign_id, candidate_ids, for_update=True
-    )
-    resume_ids = [c.resume_id for c in candidates]
-    await _delete_candidates(db, candidates, uploaded_at)
-    logger.info("bulk_candidates_deleted", count=len(candidates))
-    return resume_ids
-
-
-async def delete_candidate(
-    db: AsyncSession, candidate_id: uuid.UUID, uploaded_at: AsyncUploadTimes
-) -> uuid.UUID:
-    """Delete one candidate, and its application as the delete rule says (module docstring);
-    returns its resume id.
-
-    Flushes but does not commit: the caller deletes the resume in the same transaction and
+    Flushes but does not commit: the caller deletes their resumes in the same transaction and
     commits.
     """
-    candidate = await _require_candidate(db, candidate_id, for_update=True)
-    await _delete_candidates(db, [candidate], uploaded_at)
-    logger.info("candidate_deleted", candidate_id=str(candidate_id))
-    return candidate.resume_id
-
-
-async def _mirror_to_applications(
-    db: AsyncSession, candidate_ids: Sequence[uuid.UUID], uploaded_at: AsyncUploadTimes
-) -> None:
-    """Recompute the mirrored fields of the applications these (already changed, locked)
-    candidates lead to. Candidates without an application are left alone."""
-    links = await repository.application_links(db, candidate_ids)  # autoflush: changes visible
-    applications = await repository.lock_applications(db, sorted(set(links.values())))
-    if not applications:
-        return
-    linked = _group(await repository.candidates_linked_to(db, [a.id for a in applications]))
-    times = await uploaded_at([c.resume_id for cs in linked.values() for c in cs])
-    for application in applications:
-        changed = _apply(
-            application,
-            expected_recruiter_fields(
-                application.resume_id,
-                [_recruiter_view(c) for c in linked.get(application.id, [])],
-                times,
-            ),
-        )
-        if changed:
-            logger.info(
-                "application_recruiter_fields_mirrored",
-                application_id=str(application.id),
-                fields=changed,
-            )
-    await repository.flush(db)
-
-
-async def _delete_candidates(
-    db: AsyncSession, candidates: Sequence[Candidate], uploaded_at: AsyncUploadTimes
-) -> None:
-    """Delete these (locked) candidates and apply the delete rule to their applications."""
-    links = await repository.application_links(db, [c.id for c in candidates])
-    for c in candidates:
-        await repository.delete_candidate(db, c)
-    await repository.flush(db)
-    applications = await repository.lock_applications(db, sorted(set(links.values())))
-    if not applications:
-        return
-
-    deleted_resumes = {c.resume_id for c in candidates}
-    remaining = _group(await repository.candidates_linked_to(db, [a.id for a in applications]))
-    times = await uploaded_at([c.resume_id for cs in remaining.values() for c in cs])
-    for application in applications:
-        survivors = newest_first(remaining.get(application.id, []), times)
-        if not survivors:
-            await repository.delete_application(db, application)
-            logger.info(
-                "application_deleted_with_last_candidate", application_id=str(application.id)
-            )
-            continue
-        # Kept: its id stays, even when it was a deleted candidate's id (its other candidates'
-        # map rows point at it). Only the deleted candidates' own redirects go.
-        await repository.delete_legacy_map_rows(
-            db, [cid for cid, aid in links.items() if aid == application.id]
-        )
-        if application.resume_id in deleted_resumes:
-            _take_scoring(application, survivors[0], times[survivors[0].resume_id])
-        _apply(
-            application,
-            expected_recruiter_fields(
-                application.resume_id, [_recruiter_view(c) for c in survivors], times
-            ),
-        )
-        logger.info(
-            "application_kept_after_candidate_delete",
-            application_id=str(application.id),
-            remaining_candidates=len(survivors),
-        )
-    await repository.flush(db)
-
-
-def _take_scoring(application: Application, candidate: Candidate, uploaded_at: datetime) -> None:
-    """The application's current resume was deleted: it takes the resume and stored scoring of
-    ``candidate`` (the newest remaining one), as the backfill would over the remaining
-    candidates (newer resume wins, manual category included)."""
-    application.resume_id = candidate.resume_id
-    application.resume_uploaded_at = uploaded_at
-    application.score = candidate.score
-    application.score_breakdown = candidate.score_breakdown
-    application.category = candidate.category
-    application.summary = candidate.summary
-    application.strengths = candidate.strengths if candidate.strengths is not None else []
-    application.weaknesses = candidate.weaknesses if candidate.weaknesses is not None else []
-    application.missing_skills = (
-        candidate.missing_skills if candidate.missing_skills is not None else []
+    applications = await repository.applications_in_campaign(
+        db, campaign_id, candidate_ids, for_update=True
     )
-    application.recommendation = candidate.recommendation
+    deleted = await _delete_applications(db, applications)
+    logger.info("bulk_candidates_deleted", count=len(deleted))
+    return deleted
 
 
-def _group(rows: Iterable[tuple[uuid.UUID, Candidate]]) -> dict[uuid.UUID, list[Candidate]]:
-    grouped: dict[uuid.UUID, list[Candidate]] = {}
-    for application_id, candidate in rows:
-        grouped.setdefault(application_id, []).append(candidate)
-    return grouped
+async def delete_candidate(db: AsyncSession, candidate_id: uuid.UUID) -> DeletedApplication:
+    """Delete one candidate (application). Flushes but does not commit: the caller deletes its
+    resumes in the same transaction and commits."""
+    application = await _require_application(db, candidate_id)
+    (deleted,) = await _delete_applications(db, [application])
+    logger.info("candidate_deleted", candidate_id=str(candidate_id), application_id=str(deleted.id))
+    return deleted
 
 
-def _recruiter_view(candidate: Candidate) -> "RecruiterCandidate":
-    return RecruiterCandidate(
-        id=candidate.id,
-        resume_id=candidate.resume_id,
-        pipeline_stage=candidate.pipeline_stage,
-        notes=candidate.notes,
-        category=candidate.category,
-    )
+async def _delete_applications(
+    db: AsyncSession, applications: Sequence[Application]
+) -> list[DeletedApplication]:
+    deleted = [
+        DeletedApplication(
+            id=a.id, campaign_id=a.campaign_id, person_id=a.person_id, resume_id=a.resume_id
+        )
+        for a in applications
+    ]
+    for application in applications:
+        await repository.delete_application(db, application)
+    await repository.flush(db)
+    return deleted
 
 
 # ── Upload pipeline ───────────────────────────────────────────
 # Called by app.modules.ingestion: the upload endpoint (async) and the Celery tasks (sync). The
 # tasks run in worker processes without an event loop and use a synchronous SQLAlchemy Session,
-# so these take that Session and never commit: the task changes the resume's status and the
-# candidate in one transaction and commits it, as before the module split.
+# so these take that Session and never commit: the task writes the resume and the application
+# in one transaction and commits it.
 async def campaign_exists(db: AsyncSession, campaign_id: uuid.UUID) -> bool:
     return await repository.get_campaign(db, campaign_id) is not None
 
@@ -651,63 +731,15 @@ def get_campaign_requirements(db: Session, campaign_id: uuid.UUID) -> CampaignRe
     return CampaignRequirements(role=campaign.role, required_skills=campaign.required_skills or [])
 
 
-def save_resume_text(
-    db: Session, *, resume_id: uuid.UUID, campaign_id: uuid.UUID, raw_text: str
-) -> None:
-    """Store a resume's extracted text on its candidate, creating the (not yet analysed)
-    candidate on first extraction."""
-    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
-    if not candidate:
-        repository.add_sync(
-            db, Candidate(resume_id=resume_id, campaign_id=campaign_id, raw_text=raw_text)
-        )
-    else:
-        candidate.raw_text = raw_text
+def legacy_resume_text(db: Session, resume_id: uuid.UUID) -> str | None:
+    """The text a pre-switch extraction stored on the resume's legacy candidate (``None``: no
+    candidate or no text). Read-only: since E0-19 the pipeline keeps the text on the resume
+    (``resumes.raw_text``) and reads this only for a resume extracted before the switch and
+    analysed after it. Removed with ``candidates`` in E0-20."""
+    return repository.legacy_raw_text_sync(db, resume_id)
 
 
-def get_resume_text(db: Session, resume_id: uuid.UUID) -> str | None:
-    """The extracted text stored for a resume's candidate (``None``: no candidate or no text)."""
-    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
-    return candidate.raw_text if candidate else None
-
-
-def _require_candidate_for_resume(db: Session, resume_id: uuid.UUID) -> Candidate:
-    candidate = repository.get_candidate_by_resume_sync(db, resume_id)
-    if not candidate:
-        raise NotFoundError("Candidate not found")
-    return candidate
-
-
-def record_extraction(db: Session, resume_id: uuid.UUID, profile: ExtractionResult) -> None:
-    """Copy the AI-extracted profile onto the resume's candidate."""
-    candidate = _require_candidate_for_resume(db, resume_id)
-    candidate.name = profile.name
-    candidate.email = profile.email
-    candidate.phone = profile.phone
-    candidate.github_url = profile.github_url
-    candidate.linkedin_url = profile.linkedin_url
-    candidate.skills = profile.skills
-    candidate.education = profile.education
-    candidate.work_experience = profile.work_experience
-    candidate.certifications = profile.certifications
-    candidate.projects = profile.projects
-    candidate.years_of_experience = profile.years_of_experience
-
-
-def record_scoring(db: Session, resume_id: uuid.UUID, scoring: ScoringResult) -> None:
-    """Copy the AI score and assessment onto the resume's candidate."""
-    candidate = _require_candidate_for_resume(db, resume_id)
-    candidate.score = scoring.score
-    candidate.score_breakdown = scoring.score_breakdown
-    candidate.category = scoring.category
-    candidate.summary = scoring.summary
-    candidate.strengths = scoring.strengths
-    candidate.weaknesses = scoring.weaknesses
-    candidate.missing_skills = scoring.missing_skills
-    candidate.recommendation = scoring.recommendation
-
-
-# ── Applications (Person/Application split, dual write) ───────
+# ── Applications (written by the upload pipeline and the backfill) ──
 def upsert_application(
     db: Session,
     *,
@@ -774,8 +806,10 @@ def upsert_application(
 # ── Legacy candidates -> applications (E0-17) ─────────────────
 # Every legacy candidate must lead to exactly one application (spec §6.2–6.3): the application
 # reuses the candidate's id, or ``legacy_candidate_map`` redirects the candidate's id to the
-# application it was merged into. Both the upload pipeline (from E0-17 on) and the backfill
-# (``app.modules.ingestion.backfill``) keep that link with the functions below.
+# application it was merged into. The backfill (``app.modules.ingestion.backfill``) keeps that
+# link with the functions below, and so does the upload pipeline for a resume whose legacy
+# candidate was created before the switch (extracted before it, analysed after it). No legacy
+# candidate is created after the switch (E0-19).
 RECRUITER_FIELDS = ("pipeline_stage", "notes")
 
 
@@ -815,8 +849,9 @@ class LegacyCandidate:
         return (self.created_at, self.id)
 
     def extraction(self) -> ExtractionResult:
-        """The AI extraction this candidate was written from (inverse of
-        :func:`record_extraction`), the shape the pipeline stores in ``resumes.extracted``."""
+        """The AI extraction this candidate was written from (the pre-switch pipeline copied
+        each ``ExtractionResult`` field onto the candidate), the shape the pipeline stores in
+        ``resumes.extracted``."""
         return ExtractionResult(
             name=self.name,
             email=self.email,
@@ -832,8 +867,8 @@ class LegacyCandidate:
         )
 
     def scoring(self) -> ScoringResult:
-        """The scoring stored on this candidate (inverse of :func:`record_scoring`), including a
-        category the recruiter changed by hand.
+        """The scoring stored on this candidate (the pre-switch pipeline copied each
+        ``ScoringResult`` field onto it), including a category the recruiter changed by hand.
 
         Copied **as stored**, without validation: a legacy row may hold ``NULL`` where
         ``ScoringResult`` wants a value (e.g. ``summary``), and the application must mirror the
@@ -907,11 +942,13 @@ def link_legacy_candidate(
     return inserted
 
 
-# ── Recruiter fields: one rule for every write path (E0-18) ──
-# The rule (module docstring, "Mirroring the legacy writes") is computed here only; the API's
-# mirrored writes and deletes, the upload pipeline, the backfill, ``backfill
-# --resync-recruiter-fields`` and ``verify_backfill`` all call it. Hiring does not read
-# ``resumes``: the callers pass the resumes' upload times in.
+# ── Recruiter fields of a backfilled application (E0-17/E0-18) ──
+# Until the switch every write path kept an application's ``pipeline_stage``, ``notes`` and
+# ``category`` equal to this rule over its legacy candidates (spec §6.5). Since E0-19 the
+# application is the source of truth and the API writes it directly; only the backfill still
+# applies the rule, when it links a legacy candidate (on a switched database it links none:
+# see ``app.modules.ingestion.backfill``). Hiring does not read ``resumes``: the callers pass
+# the resumes' upload times in.
 UploadTimes = Callable[[Sequence[uuid.UUID]], Mapping[uuid.UUID, datetime]]
 
 
@@ -1009,11 +1046,9 @@ def carry_recruiter_fields(
     applications from the legacy candidates that lead to them (:func:`expected_recruiter_fields`).
     Never commits.
 
-    Used by the backfill, the upload pipeline (after it links a candidate) and ``backfill
-    --resync-recruiter-fields``. Locks the applications (``FOR UPDATE``, id order) before it
-    reads their candidates, so a concurrent recruiter edit is either seen or waits for this
-    transaction and recomputes after it. Idempotent. ``uploaded_at`` returns the upload time
-    of each resume it is given.
+    Used by the backfill after it links a candidate. Locks the applications (``FOR UPDATE``,
+    id order) before it reads their candidates. Idempotent. ``uploaded_at`` returns the upload
+    time of each resume it is given.
 
     Returns the changed fields per application (only the changed applications).
     """
@@ -1033,28 +1068,6 @@ def carry_recruiter_fields(
     if changed:
         db.flush()
     return changed
-
-
-def application_ids_after(db: Session, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
-    """The next page of application ids in id order, strictly after ``after`` (keyset)."""
-    return repository.application_ids_after_sync(db, after, limit)
-
-
-def recruiter_field_mismatches(db: Session, uploaded_at: UploadTimes) -> list[str]:
-    """Every application whose mirrored fields differ from :func:`expected_recruiter_fields`
-    over its candidates, one message per field (verification, E0-18). Read-only."""
-    linked = _linked_recruiter_candidates(db, None)
-    times = uploaded_at([c.resume_id for cs in linked.values() for c in cs])
-    problems: list[str] = []
-    for app in repository.application_recruiter_states_sync(db):
-        expected = expected_recruiter_fields(app.resume_id, linked.get(app.id, []), times)
-        for name, value in expected.items():
-            if getattr(app, name) != value:
-                problems.append(
-                    f"application {app.id}: {name} is {getattr(app, name)!r}, "
-                    f"its candidates give {value!r}"
-                )
-    return problems
 
 
 def legacy_candidate_refs(db: Session) -> list[LegacyCandidateRef]:

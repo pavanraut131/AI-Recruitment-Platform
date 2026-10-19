@@ -2,15 +2,15 @@
 
 1. :func:`extract_resume` (``extract_queue``, step ``extract_text``): download the PDF from object
    storage, extract its text (pdfplumber, then PyMuPDF, then OCR through the AI service for
-   scanned PDFs), store the text on the resume's candidate (creating it), and queue
+   scanned PDFs), store the text on the resume (``resumes.raw_text``), and queue
    :func:`process_candidate_ai`.
 2. :func:`process_candidate_ai` (``ai_queue``): extract a profile and score it against the
-   campaign with the AI service, resolve the Person, and write the legacy candidate **and** the
-   Application in one transaction (dual write, EPIC-00 spec §5.1, §6.1 phase 1); mark the
-   resume ``done``.
+   campaign with the AI service, resolve the Person, and write the Application in one
+   transaction (EPIC-00 spec §5.1); mark the resume ``done``. Since the read switch (E0-19,
+   spec §6.1 phase 4) no legacy candidate is written: the dual write of phases 1–3 is over.
 
-Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`. Candidates and
-applications are read and written only through ``app.modules.hiring.service``, People only
+Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`. Applications
+(and the legacy candidates still read) go only through ``app.modules.hiring.service``, People only
 through ``app.modules.talent.service``, and the language model only through
 ``app.modules.ai.service``.
 
@@ -181,15 +181,13 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
 
         log.info("text_extracted", chars=len(raw_text))
 
-        # Store the text on the (placeholder) candidate, in one transaction with the status
+        # Store the text on the resume, in one transaction with the status
         with SyncSession() as db:
             resume = repository.get_sync(db, uuid.UUID(resume_id))
             if not resume:
                 raise ValueError("Resume not found")
             resume.status = "processing"
-            hiring_service.save_resume_text(
-                db, resume_id=resume.id, campaign_id=resume.campaign_id, raw_text=raw_text
-            )
+            resume.raw_text = raw_text
             db.commit()
 
         enqueue_analysis(resume_id)
@@ -322,7 +320,7 @@ class AITask(_ResumeTask):
     queue="ai_queue",
 )
 def process_candidate_ai(self: AITask, resume_id: str) -> None:
-    """Analyse a resume and dual-write the result (spec §5.1, §6.1 phase 1).
+    """Analyse a resume and write its Application (spec §5.1).
 
     Steps, each safe to re-run (a retry runs the whole task again):
 
@@ -333,16 +331,18 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
     3. ``resolve_person``: ``talent.resolve_person``, storing ``resumes.person_id``. **Skipped**
        when ``resumes.person_id`` is set (the stored result is read instead). ``resolve_person``
        is itself idempotent per resume.
-    4. ``save``: the legacy candidate (exactly as before), ``hiring.upsert_application`` (a new
-       application reuses the candidate's id; a candidate merged into an existing application
-       gets a ``legacy_candidate_map`` row, E0-17), the application's recruiter fields recomputed
-       from its candidates (E0-18, ``hiring.carry_recruiter_fields``) and the resume's ``done``
-       status.
+    4. ``save``: ``hiring.upsert_application`` (a new application gets a fresh id) and the
+       resume's ``done`` status. A resume extracted before the read switch still has a legacy
+       candidate: its id is reused by a new application, or redirected by a
+       ``legacy_candidate_map`` row to an existing one (E0-17), so it keeps leading to exactly
+       one application. No legacy candidate is written (E0-19).
 
     Steps 3 and 4 are **one transaction**: the Person, its identifiers or conflict, the
-    ``person_resumes`` row, ``resumes.person_id``, the legacy candidate and the Application are
-    committed together or not at all, so a failure at either step leaves nothing behind for the
-    retry to duplicate.
+    ``person_resumes`` row, ``resumes.person_id`` and the Application are committed together or
+    not at all, so a failure at either step leaves nothing behind for the retry to duplicate.
+
+    The text comes from ``resumes.raw_text``; a resume extracted before the switch has it on its
+    legacy candidate instead (``hiring.legacy_resume_text``, read-only).
 
     **Why score before resolving** (spec §5.1 lists resolve first). ``resolve_person`` takes
     transaction-level advisory locks on the resume's email and phone, held until the commit.
@@ -369,7 +369,8 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 log.error("resume_not_found")
                 return
 
-            raw_text = hiring_service.get_resume_text(db, rid)
+            # A resume extracted before the read switch has its text on its legacy candidate.
+            raw_text = resume.raw_text or hiring_service.legacy_resume_text(db, rid)
             if not raw_text:
                 raise ValueError("No raw text found for candidate")
 
@@ -435,12 +436,12 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             resolution = _resolve_person(db, resume, extraction)
 
             step = STEP_SAVE
-            # Legacy candidate, exactly as before the split (the API still reads it).
-            hiring_service.record_extraction(db, rid, extraction)
-            hiring_service.record_scoring(db, rid, scoring)
-            # The legacy candidate must lead to exactly one application (spec §6.3): a new
-            # application reuses its id, and when the Person already had one for this campaign
-            # the candidate's id is redirected to it (E0-17, the same rule as the backfill).
+            # No legacy candidate is written any more (E0-19): a new application gets a fresh
+            # id. Only a resume extracted before the switch has a legacy candidate (a
+            # placeholder with its text); it must still lead to exactly one application (spec
+            # §6.3), so a new application reuses its id, and when the Person already had one
+            # for this campaign its id is redirected there (E0-17, the backfill's rule). The
+            # application's recruiter fields are its own now and are left alone.
             candidate_id = hiring_service.legacy_candidate_id_for_resume(db, rid)
             application = hiring_service.upsert_application(
                 db,
@@ -454,14 +455,6 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             if candidate_id is not None:
                 hiring_service.link_legacy_candidate(
                     db, candidate_id=candidate_id, application_id=application.id
-                )
-                # A recruiter may have edited this candidate while it was processing, or the
-                # application may already carry older candidates' fields (E0-18): recompute
-                # them with the backfill's rule.
-                hiring_service.carry_recruiter_fields(
-                    db,
-                    [application.id],
-                    lambda resume_ids: repository.uploaded_at_sync(db, resume_ids),
                 )
             resume.status = "done"
             resume.processing_step = None

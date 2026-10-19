@@ -31,7 +31,11 @@ async def test_global_stats(
     for status in ("pending", "extracting", "processing", "done", "failed", "quota_exceeded"):
         await make_resume(db_session, active, original_filename=f"{status}.pdf", status=status)
     await make_candidate(db_session, active)
-    await make_candidate(db_session, active, score=None, category=None)
+    # Being analysed: no candidate (application) until scored, so not in total_candidates
+    # (E0-19; before the read switch its placeholder candidate was counted).
+    await make_resume(
+        db_session, active, original_filename="in_progress.pdf", status="processing", raw_text="t"
+    )
     resp = await client.get(f"{API}/stats")
     assert response_data(resp) == snapshot
 

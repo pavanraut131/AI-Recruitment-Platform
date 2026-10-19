@@ -38,7 +38,9 @@ behaviour, not intended behaviour: some snapshots deliberately record bugs (look
 | `snapshot_utils.py` | masking serializer and helpers that turn responses into plain data |
 | `sse.py` | reads a bounded number of SSE events over raw ASGI, with a timeout |
 
-Test data comes from the factories in `tests/factories.py`; Redis, Gemini, MinIO and Celery are
+Test data comes from the factories in `tests/factories.py` (since the read switch, E0-19, a
+"candidate" is built as a Person, an Application and its resume's extraction snapshot, so these
+tests run the new read path); Redis, Gemini, MinIO and Celery are
 faked by the autouse fixtures in `tests/conftest.py`. No test touches the network.
 
 ## Masking

@@ -110,6 +110,8 @@ Each module owns its tables. No module queries another module's tables directly.
 - `extracted JSONB null`: a snapshot of the AI extraction for this file
 - `processing_step varchar(20) null`: one of `extract_text`, `extract_profile`, `resolve_person`, `score`, `save`. It records the current step while processing and the failed step after a failure.
 
+E0-19 adds `raw_text text null`: the text extracted from the PDF, which until the read switch lived on the legacy candidate (`candidates.raw_text`). Never part of an API response.
+
 The **status values stay the same** (`pending | extracting | processing | done | failed | quota_exceeded`) because the frontend depends on them (`UploadZone.tsx`). Step-level detail goes in `processing_step` instead.
 
 **`backfill_checkpoints`** (new): name (PK), last_created_at, last_id, updated_at. One row per batch job: the keyset position of the last committed batch (§6.2).
@@ -123,12 +125,12 @@ References between modules are stored as plain UUIDs **without** foreign key con
 ### 5.1 Pipeline
 
 1. **Upload** (`ingestion.router`): validate the file, hash it, apply the existing check for the same file already in this campaign, store it in MinIO, insert a `resumes` row and enqueue `extract_text`.
-2. **`extract_text`** (extract_queue): convert the PDF to text, then enqueue `analyse_resume`.
+2. **`extract_text`** (extract_queue): convert the PDF to text, store it in `resumes.raw_text` (before E0-19: on a placeholder legacy candidate), then enqueue `analyse_resume`.
 3. **`analyse_resume`** (ai_queue). Each step is safe to retry:
    1. `ai.extract_profile(text)` → store `resumes.extracted`. Skipped if already present.
    2. `ai.score(profile, campaign_requirements)` → ScoringResult. Not stored on its own: a retry scores again.
    3. `talent.resolve_person(identifiers, profile, resume_id)` → `person_id`. Skipped if `resumes.person_id` is already set.
-   4. Write the legacy candidate and `hiring.upsert_application(campaign_id, person_id, resume_id, resume_uploaded_at, scoring)`, an upsert on `(campaign_id, person_id)`: a newer resume (by `uploaded_at`, ties by resume id) or the same one replaces the scoring, an older one changes nothing, and the recruiter's fields are never written. A new application reuses the legacy candidate's id; when the pair already had an application, the candidate's id goes into `legacy_candidate_map` (E0-17, the same rule as the backfill), so every candidate leads to exactly one application (§6.3).
+   4. `hiring.upsert_application(campaign_id, person_id, resume_id, resume_uploaded_at, scoring)`, an upsert on `(campaign_id, person_id)`: a newer resume (by `uploaded_at`, ties by resume id) or the same one replaces the scoring, an older one changes nothing, and the recruiter's fields are never written. Since the read switch (E0-19) **no legacy candidate is written** and a new application gets a fresh id. Until then (E0-16..E0-18) this step also wrote the legacy candidate, a new application reused its id, and when the pair already had an application the candidate's id went into `legacy_candidate_map` (E0-17, the backfill's rule). A resume extracted before the switch and analysed after it still has its placeholder candidate: that candidate is linked the same way (never written), so every candidate keeps leading to exactly one application (§6.3).
 
    Steps 3 and 4 are one transaction, committed once. Scoring runs *before* resolution (E0-16): it does not depend on the Person, and `resolve_person`'s advisory locks are held until the commit, so resolving first would hold them across the multi-second scoring call and serialise every other upload of the same person. `resumes.processing_step` follows the steps and is cleared when the resume is `done`.
 4. **Progress events** keep their current shape; the `done` event adds `person_id` and `matched_existing: bool` (the only event sent after the Person is known).
@@ -182,8 +184,16 @@ Only match-eligible identifiers take part in matching: every valid email, and ma
 | **3 · Verify** | `python -m app.modules.ingestion.verify_backfill`: exits with a non-zero code on any failure | Must pass before Phase 4 |
 
 The backfill and verification live in `ingestion` because they coordinate across modules. They read legacy candidates through `hiring.service.iter_legacy_candidates()`, resolve people through `talent.service`, upsert applications through `hiring.service`, and write `resumes` themselves. No module boundary is crossed.
-| **4 · Switch** | Compatibility endpoints read from `applications` and `people`. Writes to `candidates` stop. | Frontend unchanged |
+| **4 · Switch** | Compatibility endpoints read from `applications` and `people`. Writes to `candidates` stop. **Done (E0-19)**, see the notes below and §7. | Frontend unchanged |
 | **5 · Contract** | Migration that drops `candidates`, after one full sprint without issues | — |
+
+**Phase 4 done-notes (E0-19).**
+
+- **Reads:** every legacy candidate endpoint (list with all filters, sort and pagination; CSV export; detail; `GET /resumes/{id}/candidate`; the recruiter `PATCH`/`PUT`; bulk pipeline; deletes) and the campaign and global stats are served from `applications` plus the extraction snapshot of each application's current resume (`resumes.extracted`), composed in `app.api` (§7 has the field-by-field mapping). The 179 characterization snapshots are byte-identical; the test factories build People + Applications.
+- **Writes to `candidates` stopped:** the extract step stores the PDF's text on the resume (`resumes.raw_text`, expand migration `e19a0c5d2b71`), the AI step writes only the Person and the Application, and a new application gets a fresh id with no map row. The E0-18 mirror code (recruiter writes and deletes recomputed from candidates) is removed; the API writes applications directly. The table, the backfill and `verify_backfill` stay until phase 5 (§6.3 for what verify checks after the switch); `backfill --resync-recruiter-fields` is retired (it would overwrite post-switch edits).
+- **Timestamps:** a data migration (`e19b7f3a9c42`, part of the switch deploy) gives each application the earliest `created_at` and latest `updated_at` of its legacy candidates, so the switched responses carry the timestamps the legacy ones did.
+- **Equivalence on live data:** `app.devtools.capture_api` / `compare_api` (runbook §8); a local rehearsal on the Compose-size seed (1,125 candidates, edits and deletes through the E0-18 API) compared 2,467 responses: 2,267 identical, 200 expected (the 24 merged legacy ids and the rows, lists, exports and stats that contain them), 0 other differences.
+- **Behaviour change (decided 2026-10-19, option A):** a resume that is still being analysed (or failed after its text was extracted) no longer shows as an empty placeholder row; 8 snapshots record it (§7.1).
 
 ### 6.2 Backfill algorithm
 
@@ -208,7 +218,8 @@ The backfill and verification live in `ingestion` because they coordinate across
 - Every resume with status `done` has a `person_id`.
 - No person has zero identifiers unless all of their source resumes lacked identifiers (a region-inferred phone, option A, does not count as one).
 - The counts of people and applications are reported and checked against the expected seed results.
-- Also checked (E0-18): every application's `pipeline_stage`, `notes` and `category` equal the §6.2 rule over its candidates (`recruiter_fields_consistent`).
+- Also checked (E0-18): every application's `pipeline_stage`, `notes` and `category` equal the §6.2 rule over its candidates (`recruiter_fields_consistent`). **Removed in E0-19:** after the switch the recruiter edits the application, so it no longer equals the rule over its frozen candidates. It was the pre-switch gate and is run by the E0-18 code (runbook §8).
+- After the switch (E0-19): candidates created before it still each lead to one application (a delete removes the application with its resumes, and their candidates go with the resumes through the foreign key); applications created after it have no candidate and are only counted (`without a legacy candidate (new)`); `applications_have_extractions` checks that every application's current resume has the extraction the read path shows; `people_without_identifiers_justified` skips deleted resumes.
 - Also checked (E0-17): no `(kind, value_normalized)` twice; an application's resume is in its campaign and resolved to its person; a candidate's application is in its campaign and belongs to its resume's person; every person was resolved from a resume. With a seed manifest that lists `campaign_ids`, the expected counts are taken in those campaigns only, so a rehearsal can upload elsewhere while it runs.
 
 ### 6.4 Seed data generator
@@ -227,6 +238,8 @@ The generator also writes a manifest of the expected number of People, Applicati
 
 ### 6.5 Switch gate: mirrored legacy writes and deletes (E0-18)
 
+*Superseded by the read switch (E0-19): from then on the API writes applications directly and nothing writes `candidates`; the post-switch rules are in §7. Kept as the record of the gate.*
+
 Between the backfill and the read switch the legacy endpoints are still live, so every legacy write keeps the new model complete, in the same transaction, through `hiring.service`. A candidate's application is the one with the candidate's id, else the one `legacy_candidate_map` redirects it to; a candidate with neither (its resume is still processing) is written alone.
 
 - **Recruiter updates** (`PUT /candidates/{id}/category`, `PATCH /candidates/{id}/notes`, `PATCH /candidates/{id}/pipeline`, `PATCH /campaigns/{id}/candidates/bulk-pipeline`): write the candidate, then **recompute** the application's `pipeline_stage`, `notes` and `category` from all its candidates with the §6.2 rule (never "copy the new value", so a merged application stays right whichever candidate is edited). A manual category is therefore mirrored only from the candidate of the application's current resume.
@@ -242,10 +255,47 @@ Between the backfill and the read switch the legacy endpoints are still live, so
 
 ## 7. API compatibility layer
 
-- The existing `/api/v1/candidates*` and `/api/v1/campaigns/{id}/candidates` endpoints keep their **exact response shapes**. They are rebuilt by joining Application with Person.
+- The existing `/api/v1/candidates*` and `/api/v1/campaigns/{id}/candidates` endpoints keep their **exact response shapes**. They are rebuilt from the Application and the extraction snapshot of its current resume (E0-19, table below).
 - A request with a merged legacy ID is resolved through `legacy_candidate_map` and returns the surviving application.
 - Characterization tests (§8) prove the response shapes are unchanged.
 - No new public endpoints in E0. The new resource-oriented API is designed in E1 alongside the generated client.
+
+### 7.1 Field mapping (E0-19)
+
+A legacy "candidate" is now an **application**: one row per (campaign, person). Per-resume facts come from the extraction snapshot of the application's **current** resume (`applications.resume_id` → `resumes.extracted`, an `ExtractionResult` dumped to JSON): exactly what the pre-switch pipeline copied onto that resume's candidate. The judgement and the recruiter's work come from the application. The Person's profile (`people`) is **not** used: it follows the person's newest resume in *any* campaign, so it can differ from what this application was scored on. Hiring builds the responses (`hiring.service.candidate_detail` / `candidate_list_item`); ingestion hands over the snapshots (`ingestion.service.resume_profiles`); `app.api` composes the endpoints.
+
+| Response field (`CandidateDetail`; `CandidateListItem` is a subset) | Source after the switch | Before the switch |
+|---|---|---|
+| `id` | `applications.id` (the legacy candidate's id for backfilled rows; a merged legacy id answers with this id) | `candidates.id` |
+| `resume_id` | `applications.resume_id` (the newest resume of the application) | `candidates.resume_id` |
+| `campaign_id` | `applications.campaign_id` | `candidates.campaign_id` |
+| `name`, `email`, `phone`, `github_url`, `linkedin_url` | `resumes.extracted->>…` of `applications.resume_id` | `candidates.*` (same values: written from the same extraction) |
+| `skills`, `education`, `work_experience`, `certifications`, `projects` | `resumes.extracted->…` (`[]` when absent) | `candidates.*` |
+| `years_of_experience` | `(resumes.extracted->>'years_of_experience')::float` | `candidates.years_of_experience` |
+| `summary`, `strengths`, `weaknesses`, `missing_skills`, `recommendation`, `score`, `score_breakdown` | `applications.*` (scoring of the current resume) | `candidates.*` |
+| `category` | `applications.category` (AI category of the current resume, or the recruiter's override) | `candidates.category` |
+| `notes`, `pipeline_stage` | `applications.*` (the recruiter edits these directly) | `candidates.*` |
+| `created_at`, `updated_at` | `applications.*`; aligned once with the legacy candidates at the switch (earliest `created_at`, latest `updated_at`, migration `e19b7f3a9c42`) | `candidates.*` |
+| `raw_text` | not in any response (moved to `resumes.raw_text`) | not in any response |
+
+Other endpoints:
+
+| Endpoint | After the switch |
+|---|---|
+| List (`GET /campaigns/{id}/candidates`) | Application filters (`category`, `min_score`, `max_score`, `pipeline_stage`) in hiring's query; profile filters (`search` on name/email, `skill`, `min_experience`) on the snapshot in ingestion, with the legacy semantics (B2: `ILIKE`, wildcards escaped, per array element). Order: `score DESC NULLS LAST`, then `id` (legacy ties came back in arbitrary order; the id makes pages stable). At most 4 queries per request, whatever the page size (2 without profile filters). |
+| CSV export | Same rows and columns from the same sources; B8 kept (no `skill` / `min_experience`). |
+| `GET /resumes/{id}/candidate` | The application whose current resume it is; for an older resume of a merged application, the application of its Person in its campaign; 404 `Candidate not yet processed` while it has none. |
+| `PUT …/category`, `PATCH …/notes`, `PATCH …/pipeline` | Write the application (legacy ids resolved); the response is its `CandidateDetail`. |
+| Bulk pipeline | Updates the campaign's applications the ids name (own or merged legacy ids), each once; returns how many applications. |
+| `DELETE /candidates/{id}`, bulk delete | Delete the application, its current resume and every other resume of its Person in its campaign (each was one legacy candidate of the row the recruiter sees); their legacy candidates go with them (`candidates.resume_id ON DELETE CASCADE`), its map rows with it. Bulk returns how many applications were deleted. PDFs stay in storage (B6, recorded). |
+| Campaign stats | Category counts and average scores over applications; top skills over the snapshots' skills (oldest application first). Resume counts from ingestion, unchanged. |
+| Global stats | `total_candidates` counts applications. |
+
+**Legacy-id decision.** A merged legacy id (`legacy_candidate_map`) answers `GET`, `PUT`, `PATCH`, bulk pipeline and `DELETE` with the surviving application, and the response carries the **application's id**, not the requested one: the client then holds the id the list shows. Tested in `tests/hiring/test_read_path.py` and `tests/ingestion/test_read_switch.py`.
+
+**Visible differences on real data (expected).** A person's merged legacy candidates show as one row (the application, with the newest resume's data), so lists, exports and stats of their campaigns have fewer rows and `total_candidates` drops by the number of merged-away ids. `compare_api` reports these separately (runbook §8).
+
+**Behaviour change: no placeholder rows (decided 2026-10-19, option A).** Before the switch the extract step created a placeholder candidate (ids and text only) before AI scoring, so a resume being analysed appeared in the list as an empty, unscored row ("Unknown" in the frontend's table), in the CSV export as an empty line, `GET /resumes/{id}/candidate` answered 200 with it, `total_candidates` counted it, and one that then failed (e.g. "not a resume") kept its placeholder for good. After the switch an application exists only once a resume is scored: such resumes have no row and no line, are not counted, and `GET /resumes/{id}/candidate` answers 404 `Candidate not yet processed` until then. The alternative, keeping placeholders as applications with a nullable `person_id`, was rejected: E1's Uploads tab shows in-progress resumes (upload progress already comes from SSE, `UploadZone`), and a nullable `person_id` would weaken the model (an application *is* a person's application) for a display quirk. The characterization tests record the new behaviour with a resume still being analysed instead of a fabricated unscored candidate; the 8 changed snapshots are listed in the E0-19 PR (`test_resume_being_analysed_has_no_candidate_yet` replaces `test_get_candidate_placeholder`).
 
 ## 8. Testing
 

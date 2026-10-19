@@ -518,14 +518,10 @@ def test_resumes_already_processed_by_the_dual_write_are_reused(
     else:  # resolved, but not linked: resolution reused, application linked now
         assert summary.processed == len(candidates)
         assert summary.resolutions_reused == len(processed)
+    # (The E0-17 pipeline did not carry the seeded recruiter fields of the candidates it linked;
+    # before the switch the E0-18 re-sync repaired that and its verify check proved it. Both
+    # belong to the E0-18 code: runbook §8.)
     report = verify(sessions, manifest)
-    if pipeline == "e0_17_linking":
-        # The E0-17 pipeline did not carry the (seeded) recruiter fields of the candidates it
-        # linked, and the backfill skips them as already_backfilled: exactly what the E0-18
-        # re-sync is for.
-        assert {c.name for c in report.checks if not c.ok} == {"recruiter_fields_consistent"}
-        assert backfill.run_resync_recruiter_fields(sessions, progress=lambda _: None).changed
-        report = verify(sessions, manifest)
     results = manifest_results(report)
     assert all(check.ok for check in report.checks), report.render()
     for key in ("people", "applications", "identity_conflicts"):
@@ -931,6 +927,19 @@ def test_verify_fails_on_an_application_without_its_person(
     assert {"applications_have_people", "applications_have_resumes"} <= failed
 
 
+def test_verify_fails_on_an_application_whose_resume_has_no_extraction(
+    sessions: sessionmaker[Session], backfilled: dict[str, Any]
+) -> None:
+    # The read path shows the extraction of an application's resume (E0-19).
+    with sessions() as db:
+        rid = db.scalars(select(Application.resume_id).limit(1)).one()
+        db.execute(update(Resume).where(Resume.id == rid).values(extracted=None))
+        db.commit()
+    report = verify(sessions)
+    assert "applications_have_extractions" in failed_checks(report)
+    assert f"resume {rid} has no extraction" in report.render()
+
+
 def test_verify_fails_on_a_person_whose_usable_identifiers_are_missing(
     sessions: sessionmaker[Session], backfilled: dict[str, Any]
 ) -> None:
@@ -1023,3 +1032,15 @@ def test_backfill_cli_runs_resumes_and_reports(
 
     with pytest.raises(SystemExit):
         backfill.main(["--batch-size", "0"], session_factory=sessions)
+
+
+def test_the_recruiter_field_resync_is_retired_after_the_switch(
+    sessions: sessionmaker[Session], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # E0-18's re-sync would overwrite every recruiter edit made since the switch (E0-19).
+    with sessions() as db:
+        before = db.scalar(select(func.count()).select_from(Application))
+    assert backfill.main(["--resync-recruiter-fields"], session_factory=sessions) == 2
+    assert "retired" in capsys.readouterr().err
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(Application)) == before

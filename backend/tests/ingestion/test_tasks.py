@@ -2,7 +2,7 @@
 
 Database, SSE and eager-retry fixtures: ``tests/ingestion/conftest.py``. Object storage, Redis
 and Celery dispatch are the usual in-memory fakes (``tests/conftest.py``). The Person /
-Application dual write is covered in ``test_dual_write.py``.
+Application writes are covered in ``test_pipeline.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult
 from app.modules.ai.service import AIQuotaExceeded
-from app.modules.hiring.models import Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign, Candidate
 from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from tests.fakes import CeleryRecorder, InMemoryStorage
@@ -63,12 +63,16 @@ def _arrange(db: Session, storage: InMemoryStorage, pdf_bytes: bytes) -> Resume:
     return resume
 
 
-def _candidate(db: Session, resume_id: uuid.UUID) -> Candidate | None:
+def _application(db: Session, resume_id: uuid.UUID) -> Application | None:
     db.expire_all()
-    return db.query(Candidate).filter(Candidate.resume_id == resume_id).first()
+    return db.query(Application).filter(Application.resume_id == resume_id).first()
 
 
-def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
+def _candidates(db: Session) -> int:
+    return db.query(Candidate).count()
+
+
+def test_pipeline_with_the_fake_ai_creates_a_scored_application(
     sync_db: Session,
     fake_storage: InMemoryStorage,
     celery_calls: CeleryRecorder,
@@ -80,11 +84,9 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
 
     tasks.extract_resume.apply(args=(rid,))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None and candidate.raw_text is not None
-    assert "Jane Doe" in candidate.raw_text
-    assert candidate.score is None  # not analysed yet
     sync_db.refresh(resume)
+    assert resume.raw_text is not None and "Jane Doe" in resume.raw_text
+    assert _application(sync_db, resume.id) is None  # not analysed yet
     assert resume.status == "processing"
     assert resume.celery_task_id is not None
     assert [(c.task, c.args, c.options) for c in celery_calls.calls] == [
@@ -93,14 +95,15 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
 
     tasks.process_candidate_ai.apply(args=(rid,))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None
-    expected = fake_ai.extract_profile(candidate.raw_text or "")
-    assert (candidate.name, candidate.email) == ("Jane Doe", "jane.doe@example.com")
-    assert candidate.skills == expected.skills
-    assert candidate.missing_skills == ["Go"]
-    assert candidate.score is not None and candidate.category is not None
+    application = _application(sync_db, resume.id)
+    assert application is not None
     sync_db.refresh(resume)
+    expected = fake_ai.extract_profile(resume.raw_text or "")
+    assert resume.extracted == expected.model_dump(mode="json")
+    assert (expected.name, expected.email) == ("Jane Doe", "jane.doe@example.com")
+    assert application.missing_skills == ["Go"]
+    assert application.score is not None and application.category is not None
+    assert _candidates(sync_db) == 0  # no legacy candidate since the read switch (E0-19)
     assert resume.status == "done"
     assert resume.processing_step is None
     assert resume.person_id is not None
@@ -110,8 +113,8 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_candidate(
             "resume_id": rid,
             "status": "done",
             "candidate_name": "Jane Doe",
-            "score": candidate.score,
-            "category": candidate.category,
+            "score": application.score,
+            "category": application.category,
             "filename": "jane.pdf",
             "person_id": str(resume.person_id),
             "matched_existing": False,
@@ -126,9 +129,9 @@ def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(
 
     tasks.extract_resume.apply(args=(str(resume.id),))
 
-    candidate = _candidate(sync_db, resume.id)
-    assert candidate is not None
-    assert candidate.raw_text is not None and "Scanned resume (1 page(s)" in candidate.raw_text
+    sync_db.refresh(resume)
+    assert resume.raw_text is not None and "Scanned resume (1 page(s)" in resume.raw_text
+    assert _candidates(sync_db) == 0
 
 
 class _QuotaExhaustedAI(FakeAIService):

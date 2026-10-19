@@ -2,8 +2,9 @@
 
 Uploading resumes (validate, de-duplicate, store in object storage, queue extraction), listing
 them, retrying failed ones, and the resume data other parts of the app need: status counts for
-the stats endpoints, deleting the resumes of deleted candidates and the resumes' upload times. The router in ``router.py``
-only translates HTTP to these calls; ``app.api`` composes these functions with
+the stats endpoints, the extraction snapshots the candidate endpoints show (E0-19), deleting
+the resumes of deleted applications, and the resumes' upload times. The router in
+``router.py`` only translates HTTP to these calls; ``app.api`` composes these functions with
 ``app.modules.hiring.service`` for the endpoints that span both modules.
 
 Ingestion may call the ``hiring``, ``talent`` and ``ai`` services (never their internals); no
@@ -13,9 +14,8 @@ carrying the user-facing ``detail``; the router maps them to status codes.
 
 import hashlib
 import uuid
-from collections.abc import Sequence
-from datetime import datetime
-from typing import Protocol
+from collections.abc import Collection, Mapping, Sequence
+from typing import Any, Protocol
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -218,18 +218,67 @@ async def resume_status_counts(
     return await repository.status_counts(db, campaign_id)
 
 
-async def resume_upload_times(
-    db: AsyncSession, resume_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, datetime]:
-    """When each of these resumes was uploaded (unknown ids are left out). Hiring orders a
-    merged application's candidates by it (E0-18, composed in ``app.api``)."""
-    return await repository.uploaded_at(db, resume_ids)
-
-
 async def delete_resumes(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> None:
     """Delete the resumes with these ids (unknown ids are ignored). Does not commit: the caller
-    commits, together with whatever made the resumes obsolete (e.g. deleting candidates).
+    commits, together with whatever made the resumes obsolete.
 
     The stored PDFs are left in object storage (as they always were).
     """
     await repository.delete_by_ids(db, resume_ids)
+
+
+async def delete_application_resumes(
+    db: AsyncSession, deleted: Sequence[hiring_service.DeletedApplication]
+) -> None:
+    """Delete the resumes of deleted applications (E0-19): each application's current resume
+    and every other resume of its Person in its campaign (the older resumes of a merged
+    application). Their legacy candidates go with them (``candidates.resume_id ON DELETE
+    CASCADE``). Does not commit: the caller commits together with the application delete.
+
+    The stored PDFs are left in object storage (as they always were).
+    """
+    await repository.delete_of_people(
+        db,
+        [d.resume_id for d in deleted],
+        [(d.campaign_id, d.person_id) for d in deleted],
+    )
+
+
+class _ResumeProfiles:
+    """:class:`hiring.service.ResumeProfiles` over this module's ``resumes`` table."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+
+    async def extractions(
+        self, resume_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, Mapping[str, Any] | None]:
+        return await repository.extractions(self._db, resume_ids)
+
+    async def matching(
+        self, resume_ids: Sequence[uuid.UUID], filters: hiring_service.ProfileFilters
+    ) -> Collection[uuid.UUID]:
+        return await repository.matching_extractions(
+            self._db,
+            resume_ids,
+            search=filters.search,
+            skill=filters.skill,
+            min_experience=filters.min_experience,
+        )
+
+    async def skill_lists(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, Any]:
+        return await repository.skill_lists(self._db, resume_ids)
+
+    async def owner(self, resume_id: uuid.UUID) -> hiring_service.ResumeOwner | None:
+        found = await repository.owner(self._db, resume_id)
+        if found is None:
+            return None
+        campaign_id, person_id = found
+        return hiring_service.ResumeOwner(campaign_id=campaign_id, person_id=person_id)
+
+
+def resume_profiles(db: AsyncSession) -> hiring_service.ResumeProfiles:
+    """The resumes' extraction snapshots, as the legacy candidate endpoints read them (E0-19):
+    the per-resume name, contacts and profile, the list's profile filters, and a resume's
+    campaign and Person. ``app.api`` passes it to ``hiring.service``."""
+    return _ResumeProfiles(db)

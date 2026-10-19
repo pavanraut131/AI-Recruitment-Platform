@@ -1,14 +1,14 @@
 """Endpoints composed from the ``hiring`` and ``ingestion`` services (see the package docstring).
 
 - Campaign detail, campaign stats and the global stats: hiring aggregates its own numbers plus
-  the resume counts by status that ingestion reports.
-- Candidate delete and bulk delete: hiring deletes the candidates (and applies its delete rule
-  to their applications, E0-18) and returns their resume ids, ingestion deletes those resumes,
-  and both are committed in one transaction (the request's ``AsyncSession``).
-- Recruiter updates (category, notes, pipeline stage, bulk pipeline; E0-18): hiring writes the
-  candidate and mirrors it onto its application in one transaction. Both this and the deletes
-  order a merged application's candidates by resume upload time, which ingestion owns: the
-  endpoint hands hiring ingestion's lookup (``_upload_times``), nothing more.
+  the resume counts by status (and, for the top skills, the resumes' extractions) that
+  ingestion reports.
+- Every legacy candidate endpoint (E0-19, spec §7): hiring serves them from ``applications``
+  and builds the legacy response from each application and the extraction snapshot of its
+  current resume, which ingestion owns. The endpoint hands hiring ingestion's lookup
+  (``ingestion.resume_profiles``), nothing more.
+- Candidate delete and bulk delete: hiring deletes the applications, ingestion deletes their
+  resumes, and both are committed in one transaction (the request's ``AsyncSession``).
 
 Deleting a campaign stays in hiring: its resumes go with it through the database's
 ``resumes.campaign_id ON DELETE CASCADE``. When that cross-module foreign key is dropped
@@ -16,11 +16,11 @@ Deleting a campaign stays in hiring: its resumes go with it through the database
 """
 
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring import service as hiring
@@ -31,6 +31,7 @@ from app.modules.hiring.schemas import (
     CampaignStats,
     CandidateCategoryUpdate,
     CandidateDetail,
+    CandidateListItem,
     CandidateNotesUpdate,
     CandidatePipelineUpdate,
     GlobalStats,
@@ -62,18 +63,11 @@ def _hiring_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
 
-def _upload_times(db: AsyncSession) -> hiring.AsyncUploadTimes:
-    """Ingestion's resume upload times, in the form hiring asks for them."""
-
-    async def lookup(resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, datetime]:
-        return await ingestion.resume_upload_times(db, resume_ids)
-
-    return lookup
-
-
 async def _campaign_stats(db: AsyncSession, campaign_id: uuid.UUID) -> CampaignStats:
     resume_counts = await ingestion.resume_status_counts(db, campaign_id)
-    return await hiring.campaign_stats(db, campaign_id, resume_counts)
+    return await hiring.campaign_stats(
+        db, campaign_id, resume_counts, ingestion.resume_profiles(db)
+    )
 
 
 # ── Campaigns ─────────────────────────────────────────────────
@@ -105,6 +99,89 @@ async def get_global_stats(db: AsyncSession = Depends(get_db)) -> GlobalStats:
     return await hiring.global_stats(db, resume_counts)
 
 
+# ── Candidates: list ──────────────────────────────────────────
+@candidates_router.get(
+    "/campaigns/{campaign_id}/candidates", response_model=list[CandidateListItem]
+)
+async def list_candidates(
+    campaign_id: uuid.UUID,
+    skill: str | None = Query(None),
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    min_experience: float | None = Query(None, ge=0),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> list[CandidateListItem]:
+    filters = hiring.CandidateFilters(
+        campaign_id=campaign_id,
+        skill=skill,
+        category=category,
+        min_score=min_score,
+        max_score=max_score,
+        min_experience=min_experience,
+        search=search,
+        pipeline_stage=pipeline_stage,
+    )
+    return await hiring.list_candidates(db, filters, page, page_size, ingestion.resume_profiles(db))
+
+
+# ── Candidates: CSV export ────────────────────────────────────
+# NOTE: must be declared before /{candidate_id} to avoid routing conflict
+
+
+@candidates_router.get("/campaigns/{campaign_id}/candidates/export")
+async def export_candidates_csv(
+    campaign_id: uuid.UUID,
+    category: str | None = Query(None),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    search: str | None = Query(None),
+    pipeline_stage: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """
+    Download a filtered candidate list as CSV.
+    Applies the same filters as the list endpoint.
+    """
+    # BUG (recorded, B8): the export accepts no `skill` / `min_experience`, so it can return
+    # more rows than the list shows for the same filters. Fixing it is a separate ticket.
+    filters = hiring.CandidateFilters(
+        campaign_id=campaign_id,
+        category=category,
+        min_score=min_score,
+        max_score=max_score,
+        search=search,
+        pipeline_stage=pipeline_stage,
+    )
+    csv_text = await hiring.export_candidates_csv(db, filters, ingestion.resume_profiles(db))
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=candidates_{campaign_id}.csv"},
+    )
+
+
+# ── Candidates: get one ──────────────────────────────
+@candidates_router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
+async def get_candidate(
+    candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> CandidateDetail:
+    with _not_found_as_404():
+        return await hiring.get_candidate(db, candidate_id, ingestion.resume_profiles(db))
+
+
+@candidates_router.get("/resumes/{resume_id}/candidate", response_model=CandidateDetail)
+async def get_candidate_by_resume(
+    resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> CandidateDetail:
+    with _not_found_as_404():
+        return await hiring.get_candidate_by_resume(db, resume_id, ingestion.resume_profiles(db))
+
+
 # ── Candidates: delete ────────────────────────────────────────
 # response_model=None: no response schema was ever published for the bulk endpoint, and
 # FastAPI would otherwise derive one from the dict[str, int] return annotation.
@@ -117,20 +194,18 @@ async def bulk_delete_candidates(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     """Delete multiple candidates (and their resumes) in one request."""
-    resume_ids = await hiring.bulk_delete_candidates(
-        db, campaign_id, payload.candidate_ids, _upload_times(db)
-    )
-    if resume_ids:
-        await ingestion.delete_resumes(db, resume_ids)
+    deleted = await hiring.bulk_delete_candidates(db, campaign_id, payload.candidate_ids)
+    if deleted:
+        await ingestion.delete_application_resumes(db, deleted)
     await db.commit()
-    return {"deleted": len(resume_ids)}
+    return {"deleted": len(deleted)}
 
 
 @candidates_router.delete("/candidates/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_candidate(candidate_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
     with _not_found_as_404():
-        resume_id = await hiring.delete_candidate(db, candidate_id, _upload_times(db))
-    await ingestion.delete_resumes(db, [resume_id])
+        deleted = await hiring.delete_candidate(db, candidate_id)
+    await ingestion.delete_application_resumes(db, [deleted])
     await db.commit()
 
 
@@ -142,10 +217,9 @@ async def update_candidate_category(
     db: AsyncSession = Depends(get_db),
 ) -> CandidateDetail:
     with _hiring_errors():
-        candidate = await hiring.update_candidate_category(
-            db, candidate_id, payload.category, _upload_times(db)
+        return await hiring.update_candidate_category(
+            db, candidate_id, payload.category, ingestion.resume_profiles(db)
         )
-    return CandidateDetail.model_validate(candidate)
 
 
 @candidates_router.patch("/candidates/{candidate_id}/notes", response_model=CandidateDetail)
@@ -155,10 +229,9 @@ async def update_candidate_notes(
     db: AsyncSession = Depends(get_db),
 ) -> CandidateDetail:
     with _hiring_errors():
-        candidate = await hiring.update_candidate_notes(
-            db, candidate_id, payload.notes, _upload_times(db)
+        return await hiring.update_candidate_notes(
+            db, candidate_id, payload.notes, ingestion.resume_profiles(db)
         )
-    return CandidateDetail.model_validate(candidate)
 
 
 @candidates_router.patch("/candidates/{candidate_id}/pipeline", response_model=CandidateDetail)
@@ -168,10 +241,9 @@ async def update_candidate_pipeline(
     db: AsyncSession = Depends(get_db),
 ) -> CandidateDetail:
     with _hiring_errors():
-        candidate = await hiring.update_candidate_pipeline(
-            db, candidate_id, payload.stage, _upload_times(db)
+        return await hiring.update_candidate_pipeline(
+            db, candidate_id, payload.stage, ingestion.resume_profiles(db)
         )
-    return CandidateDetail.model_validate(candidate)
 
 
 # response_model=None: no response schema was ever published for the bulk endpoints, and
@@ -185,6 +257,6 @@ async def bulk_update_pipeline(
     """Move multiple candidates to the same pipeline stage in one request."""
     with _hiring_errors():
         updated = await hiring.bulk_update_pipeline(
-            db, campaign_id, payload.candidate_ids, payload.stage, _upload_times(db)
+            db, campaign_id, payload.candidate_ids, payload.stage
         )
     return {"updated": updated}
