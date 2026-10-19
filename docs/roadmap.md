@@ -13,7 +13,7 @@ Status values: ⬜ not started · 🟦 designing · 🟨 in progress · ✅ done
 | # | Epic | Status | Core concepts | Spec |
 |---|---|---|---|---|
 | E0 | **Platform core**: modular restructure, Person/Application split, Postgres test infra, working CI | 🟨 | DDD, testcontainers, data migrations | [spec](specs/EPIC-00-platform-core.md) |
-| E1 | **Product design & frontend foundation**: agency-model screen structure, design system (shadcn/ui, tokens, light/dark), TanStack Query, API client generated from OpenAPI, rebuild existing screens, Playwright | ⬜ | Product/UX design, design systems, frontend architecture | — |
+| E1 | **Product design & frontend foundation (HireFlow AI)**: agency-model screen structure, design system (shadcn/ui, tokens, light/dark), TanStack Query, API client generated from OpenAPI, rebuild existing screens, Playwright | 🟦 | Product/UX design, design systems, frontend architecture | [spec](specs/EPIC-01-frontend.md) |
 | E2 | **Identity & tenancy**: Agency → Clients → users, roles, Postgres row-level security | ⬜ | OAuth/OIDC, RBAC, multi-tenant isolation | — |
 | E3 | **AI gateway**: Gemini/Claude/OpenAI behind one interface, structured outputs, fallback, per-tenant cost logging | ⬜ | Provider abstraction, resilience, metering | — |
 | E4 | **AI quality & observability**: golden-set evals, prompt regression in CI, tracing | ⬜ | LLM evals, Langfuse, OpenTelemetry | — |
