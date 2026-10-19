@@ -21,14 +21,15 @@ UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
 
 
 async def _seed_pool(db: AsyncSession) -> Campaign:
-    """Five candidates covering every filter dimension, plus one in another campaign.
+    """Four candidates covering every filter dimension, a resume still being analysed (no
+    candidate yet), plus one candidate in another campaign.
 
     | name           | email              | score | category       | exp | stage           |
     | Alice Anderson | alice@example.com  | 91    | strong_match   | 7   | technical       |
     | Bob Brown      | bob@sample.org     | 74    | moderate_match | 3   | screened        |
     | Chen, Carol    | carol@example.com  | 55    | weak_match     | 1.5 | -               |
     | Dan Diaz       | dan@sample.org     | 12    | rejected       | 0   | rejected_manual |
-    | (placeholder)  | -                  | -     | -              | -   | -               |
+    | (in progress: no row)                                                            |
     """
     campaign = await make_campaign(db)
     rows: list[dict[str, Any]] = [
@@ -80,29 +81,22 @@ async def _seed_pool(db: AsyncSession) -> Campaign:
             "linkedin_url": None,
             "phone": None,
         },
-        {
-            # Extraction done, AI scoring not yet: everything but raw_text is empty.
-            "name": None,
-            "email": None,
-            "phone": None,
-            "github_url": None,
-            "linkedin_url": None,
-            "score": None,
-            "category": None,
-            "years_of_experience": None,
-            "pipeline_stage": None,
-            "skills": [],
-            "missing_skills": [],
-            "strengths": [],
-            "summary": None,
-            "recommendation": None,
-        },
     ]
     for i, fields in enumerate(rows):
         resume = await make_resume(
             db, campaign, original_filename=f"candidate_{i}.pdf", uploaded_at=at(i)
         )
         await make_candidate(db, resume=resume, created_at=at(i), **fields)
+    # Text extracted, AI scoring not done yet: no application, so no row (E0-19; before the
+    # read switch the extract step created an empty placeholder candidate for it).
+    await make_resume(
+        db,
+        campaign,
+        original_filename="candidate_4.pdf",
+        uploaded_at=at(4),
+        status="processing",
+        raw_text="text",
+    )
 
     other = await make_campaign(db, title="Other campaign")
     await make_candidate(db, other, name="Alice Elsewhere", email="alice@elsewhere.com")
@@ -262,40 +256,16 @@ async def test_get_candidate(
     assert response_data(resp) == snapshot
 
 
-async def test_get_candidate_placeholder(
+async def test_resume_being_analysed_has_no_candidate_yet(
     client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
 ) -> None:
-    # Before the read switch: the row the extract worker created before AI scoring, only ids,
-    # raw_text and defaults. E0-19: the pipeline no longer creates such a row (an application
-    # exists only once the resume is scored, see tests/hiring/test_read_switch.py); the
-    # response shape for an unscored row is kept, built from an unscored application.
-    resume = await make_resume(db_session, status="processing")
-    candidate = await make_candidate(
-        db_session,
-        resume=resume,
-        **dict.fromkeys(
-            ("name", "email", "phone", "github_url", "linkedin_url", "years_of_experience"),
-        ),
-        **dict.fromkeys(("summary", "recommendation", "score", "score_breakdown", "category")),
-        **dict.fromkeys(
-            (
-                "skills",
-                "education",
-                "work_experience",
-                "certifications",
-                "projects",
-                "strengths",
-                "weaknesses",
-                "missing_skills",
-            ),
-            [],
-        ),
-        raw_text="text",
-        created_at=at(0),
-        updated_at=at(0),
-    )
-    resp = await client.get(f"{API}/candidates/{candidate.id}")
-    assert response_data(resp) == snapshot
+    # E0-19 (decided 2026-10-19, spec §7.1): a candidate (application) exists only once its
+    # resume is scored. Before the read switch the extract step created an empty placeholder
+    # candidate here, listed as an unscored row and returned by /resumes/{id}/candidate.
+    resume = await make_resume(db_session, status="processing", raw_text="text")
+    by_resume = await client.get(f"{API}/resumes/{resume.id}/candidate")
+    listed = await client.get(f"{API}/campaigns/{resume.campaign_id}/candidates")
+    assert {"by_resume": response_data(by_resume), "list": response_data(listed)} == snapshot
 
 
 async def test_get_candidate_not_found(client: AsyncClient, snapshot: SnapshotAssertion) -> None:

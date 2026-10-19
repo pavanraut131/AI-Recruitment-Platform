@@ -24,8 +24,9 @@ UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
 async def _seed_campaign_with_results(db: AsyncSession) -> Campaign:
     """A campaign with resumes in every status and candidates in every category.
 
-    Scores per category: strong_match 90 and 80 (avg 85), weak_match 20, rejected 0, plus one
-    unscored placeholder candidate (category and score NULL).
+    Scores per category: strong_match 90 and 80 (avg 85), weak_match 20, rejected 0, plus a
+    resume still being analysed, which has no candidate yet (E0-19; before the read switch it
+    had an unscored placeholder candidate).
     """
     campaign = await make_campaign(db)
     for i, status in enumerate(
@@ -43,8 +44,10 @@ async def _seed_campaign_with_results(db: AsyncSession) -> Campaign:
     for i, (category, score, skills) in enumerate(scored):
         resume = await make_resume(db, campaign, original_filename=f"scored_{i}.pdf")
         await make_candidate(db, resume=resume, category=category, score=score, skills=skills)
-    placeholder = await make_resume(db, campaign, original_filename="placeholder.pdf")
-    await make_candidate(db, resume=placeholder, category=None, score=None, skills=[])
+    # Text extracted, AI scoring not done yet: no candidate (application) until it is scored.
+    await make_resume(
+        db, campaign, original_filename="in_progress.pdf", status="processing", raw_text="text"
+    )
     return campaign
 
 
