@@ -1,6 +1,6 @@
 # Sprint 4 · Switch, contract, close E0
 
-**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-20 → 2026-10-26  ·  **Status:** in review
+**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-20 → 2026-10-26  ·  **Status:** done (closed 2026-10-19)
 
 ## Sprint goal
 
@@ -12,10 +12,10 @@ This sprint covers phases 4–5 of the migration (spec §6.1): **switch → cont
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | in review |
-| E0-19 | Switch reads to People + Applications (phase 4) | L | in review |
-| E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | in review |
-| E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | in review |
+| E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | done (#29) |
+| E0-19 | Switch reads to People + Applications (phase 4) | L | done (#30) |
+| E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | done (#31) |
+| E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | done (#32) |
 
 **Order:** E0-18 → E0-19 → E0-20 → E0-21. The chain is strictly sequential, each PR stacked on the previous one. **Merge stacked PRs with "Create a merge commit"** (Sprint 3 retro).
 
@@ -31,7 +31,7 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-18 · Close the switch gate
-**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-18-switch-gate`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-18-switch-gate`
 
 **Goal:** People + Applications stay complete while the legacy endpoints are still live, so the switch loses no recruiter work.
 
@@ -48,7 +48,7 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-19 · Switch reads to People + Applications
-**Status:** in review  ·  **Size:** L  ·  **Branch:** `e0-19-read-switch`
+**Status:** done  ·  **Size:** L  ·  **Branch:** `e0-19-read-switch`
 
 **Goal:** Phase 4. Every legacy endpoint is served from the new model, and nothing a client can observe changes (spec §7).
 
@@ -66,7 +66,7 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-20 · Contract
-**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-20-contract`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-20-contract`
 
 **Goal:** Phase 5. Remove the legacy model and the last schema coupling between modules (ADR 0003).
 
@@ -83,7 +83,7 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-21 · Close E0
-**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-21-close-e0`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-21-close-e0`
 
 **Goal:** E0's definition of done (spec §10) is met and visible.
 
@@ -109,9 +109,7 @@ Design work for E1 can start **during** this sprint. It is research and mockups,
 
 ## Sprint review & retro
 
-*(Draft written with E0-21, **to be confirmed at sprint close**.)*
-
-**Goal met:** pending the merges of [#29](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/29) → [#30](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/30) → [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31) → E0-21. With them, E0's definition of done (spec §10) is met and E0 is closed.
+**Goal met:** yes. #29 → #30 → #31 → #32 were merged in order with merge commits. CI is green on `master` (`092c420`), with the coverage gate at 97 % for `app/modules/`. A **fresh clone** ran `cp .env.example .env` (with host ports overridden for this machine) and the `make setup` steps, then `verify_people_applications --manifest` passed at **808 / 1,101 / 4**. E0's definition of done (spec §10) is met and **E0 is closed**.
 
 ### Demo
 
