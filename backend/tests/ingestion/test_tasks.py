@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult
 from app.modules.ai.service import AIQuotaExceeded
-from app.modules.hiring.models import Application, Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from tests.fakes import CeleryRecorder, InMemoryStorage
@@ -68,10 +68,6 @@ def _application(db: Session, resume_id: uuid.UUID) -> Application | None:
     return db.query(Application).filter(Application.resume_id == resume_id).first()
 
 
-def _candidates(db: Session) -> int:
-    return db.query(Candidate).count()
-
-
 def test_pipeline_with_the_fake_ai_creates_a_scored_application(
     sync_db: Session,
     fake_storage: InMemoryStorage,
@@ -103,7 +99,6 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_application(
     assert (expected.name, expected.email) == ("Jane Doe", "jane.doe@example.com")
     assert application.missing_skills == ["Go"]
     assert application.score is not None and application.category is not None
-    assert _candidates(sync_db) == 0  # no legacy candidate since the read switch (E0-19)
     assert resume.status == "done"
     assert resume.processing_step is None
     assert resume.person_id is not None
@@ -131,7 +126,6 @@ def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(
 
     sync_db.refresh(resume)
     assert resume.raw_text is not None and "Scanned resume (1 page(s)" in resume.raw_text
-    assert _candidates(sync_db) == 0
 
 
 class _QuotaExhaustedAI(FakeAIService):

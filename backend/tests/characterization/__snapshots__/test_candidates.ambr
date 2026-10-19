@@ -20,7 +20,7 @@
       }),
       'status_code': 200,
     }),
-    'stored_objects': 4,
+    'stored_objects': 2,
   })
 # ---
 # name: test_bulk_delete_candidates_empty_list
@@ -238,7 +238,7 @@
       'content': '',
       'status_code': 204,
     }),
-    'stored_objects': 2,
+    'stored_objects': 1,
   })
 # ---
 # name: test_delete_candidate_invalid_id

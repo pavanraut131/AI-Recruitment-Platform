@@ -1,5 +1,4 @@
-"""Small async factories for test data: ``make_campaign``, ``make_resume``, ``make_candidate``
-(and ``make_legacy_candidate``).
+"""Small async factories for test data: ``make_campaign``, ``make_resume``, ``make_candidate``.
 
 Each one adds ORM rows to the given session, flushes them (so they are visible to the app, which
 shares the test's session, see ``tests/conftest.py``) and returns the main one. Defaults are
@@ -13,8 +12,8 @@ processed resume: a ``Person``, an ``Application`` and the resume's extraction s
 value where the read path takes it from (spec §7): name, contacts and profile into the
 snapshot, scoring and recruiter fields onto the application. Each call creates its own Person
 (no identifiers, no matching), so tests can add several "candidates" with the same email to one
-campaign, as they could with legacy rows. :func:`make_legacy_candidate` still writes a
-``candidates`` row, for the tests about legacy data (the seed, the backfill).
+campaign, as they could with legacy rows. (The legacy ``candidates`` table itself was dropped by
+the contract migration, E0-20.)
 
 Timestamps: inside one test everything runs in one database transaction, where Postgres ``now()``
 is frozen, so rows created with server defaults all get the *same* timestamp and ``ORDER BY
@@ -31,7 +30,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.hiring.models import Application, Campaign, Candidate
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
 
@@ -191,17 +190,3 @@ async def make_candidate(
             **fields,
         ),
     )
-
-
-async def make_legacy_candidate(
-    db: AsyncSession,
-    campaign: Campaign | None = None,
-    resume: Resume | None = None,
-    **overrides: Any,
-) -> Candidate:
-    """A pre-switch legacy ``candidates`` row (nothing writes these since E0-19). Creates its
-    resume (and campaign) if not given."""
-    if resume is None:
-        resume = await make_resume(db, campaign)
-    fields = candidate_fields(resume_id=resume.id, campaign_id=resume.campaign_id, **overrides)
-    return await _save(db, Candidate(**fields))
