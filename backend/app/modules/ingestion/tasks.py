@@ -7,10 +7,10 @@
 2. :func:`process_candidate_ai` (``ai_queue``): extract a profile and score it against the
    campaign with the AI service, resolve the Person, and write the Application in one
    transaction (EPIC-00 spec §5.1); mark the resume ``done``. Since the read switch (E0-19,
-   spec §6.1 phase 4) no legacy candidate is written: the dual write of phases 1–3 is over.
+   spec §6.1 phase 4) no legacy candidate is written, and the contract (E0-20) dropped the table.
 
-Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`. Applications
-(and the legacy candidates still read) go only through ``app.modules.hiring.service``, People only
+Progress goes to the SSE stream through :mod:`app.modules.ingestion.events`. Applications go
+only through ``app.modules.hiring.service``, People only
 through ``app.modules.talent.service``, and the language model only through
 ``app.modules.ai.service``.
 
@@ -332,17 +332,14 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
        when ``resumes.person_id`` is set (the stored result is read instead). ``resolve_person``
        is itself idempotent per resume.
     4. ``save``: ``hiring.upsert_application`` (a new application gets a fresh id) and the
-       resume's ``done`` status. A resume extracted before the read switch still has a legacy
-       candidate: its id is reused by a new application, or redirected by a
-       ``legacy_candidate_map`` row to an existing one (E0-17), so it keeps leading to exactly
-       one application. No legacy candidate is written (E0-19).
+       resume's ``done`` status.
 
     Steps 3 and 4 are **one transaction**: the Person, its identifiers or conflict, the
     ``person_resumes`` row, ``resumes.person_id`` and the Application are committed together or
     not at all, so a failure at either step leaves nothing behind for the retry to duplicate.
 
-    The text comes from ``resumes.raw_text``; a resume extracted before the switch has it on its
-    legacy candidate instead (``hiring.legacy_resume_text``, read-only).
+    The text comes from ``resumes.raw_text`` (for a resume extracted before the read switch, the
+    contract migration copied it there from the legacy candidate).
 
     **Why score before resolving** (spec §5.1 lists resolve first). ``resolve_person`` takes
     transaction-level advisory locks on the resume's email and phone, held until the commit.
@@ -369,8 +366,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 log.error("resume_not_found")
                 return
 
-            # A resume extracted before the read switch has its text on its legacy candidate.
-            raw_text = resume.raw_text or hiring_service.legacy_resume_text(db, rid)
+            raw_text = resume.raw_text
             if not raw_text:
                 raise ValueError("No raw text found for candidate")
 
@@ -436,26 +432,14 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
             resolution = _resolve_person(db, resume, extraction)
 
             step = STEP_SAVE
-            # No legacy candidate is written any more (E0-19): a new application gets a fresh
-            # id. Only a resume extracted before the switch has a legacy candidate (a
-            # placeholder with its text); it must still lead to exactly one application (spec
-            # §6.3), so a new application reuses its id, and when the Person already had one
-            # for this campaign its id is redirected there (E0-17, the backfill's rule). The
-            # application's recruiter fields are its own now and are left alone.
-            candidate_id = hiring_service.legacy_candidate_id_for_resume(db, rid)
-            application = hiring_service.upsert_application(
+            hiring_service.upsert_application(
                 db,
                 campaign_id=resume.campaign_id,
                 person_id=resolution.person_id,
                 resume_id=rid,
                 resume_uploaded_at=resume.uploaded_at,
                 scoring=scoring,
-                application_id=candidate_id,
             )
-            if candidate_id is not None:
-                hiring_service.link_legacy_candidate(
-                    db, candidate_id=candidate_id, application_id=application.id
-                )
             resume.status = "done"
             resume.processing_step = None
             db.commit()  # also releases resolve_person's advisory locks

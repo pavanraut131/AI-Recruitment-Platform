@@ -1,26 +1,19 @@
-"""hiring ORM models: ``Campaign``, ``Candidate``, ``Application`` and ``LegacyCandidateMap``.
+"""hiring ORM models: ``Campaign``, ``Application`` and ``LegacyCandidateMap``.
 
-Tables ``campaigns``, ``candidates`` (legacy, dropped in phase 5 of spec §6.1), ``applications``
-and ``legacy_candidate_map`` (both created by the E0-14 expand migration). Since E0-16 the upload
-pipeline writes ``applications`` through ``service.upsert_application``; since the read switch
-(E0-19, spec §6.1 phase 4) the API reads and writes them, and nothing writes ``candidates`` any
-more (it is read by the backfill and its verification until E0-20 drops it).
+Tables ``campaigns``, ``applications`` and ``legacy_candidate_map`` (the last two created by the
+E0-14 expand migration). The upload pipeline writes ``applications`` through
+``service.upsert_application``; the API reads and writes them since the read switch (E0-19).
+The legacy ``candidates`` table was dropped by the contract migration (E0-20, spec §6.1 phase 5).
 
 Private to the hiring module: other modules use ``app.modules.hiring.service`` instead.
 
-Cross-module references: ``candidates.resume_id`` points at the ingestion-owned ``resumes``
-table. It is a plain column here, with no ORM relationship to ``Resume`` and no import of it
-(``ingestion`` sits above ``hiring`` in the layer contract; ADR 0003 wants cross-module links to
-be plain ids). The database still has the legacy foreign keys ``candidates.resume_id ->
-resumes.id`` and ``resumes.campaign_id -> campaigns.id``, both ``ON DELETE CASCADE``; deleting a
-campaign removes its resumes through the latter (E0-10 dropped the ORM cascade that did the same).
-The Person/Application split removes those foreign keys (ADR 0003); from then on a campaign
-delete must also call ingestion explicitly (see ``app.api``).
-
-``applications.person_id`` (talent) and ``applications.resume_id`` (ingestion) are plain UUIDs
-from the start: no foreign key, no ORM relationship (ADR 0003). ``applications.campaign_id`` is a
-same-module foreign key (``ON DELETE CASCADE``), which the database applies on a campaign delete
-without an ORM relationship.
+Cross-module references are plain UUIDs, with no foreign key and no ORM relationship (ADR 0003):
+``applications.person_id`` (talent) and ``applications.resume_id`` (ingestion). No foreign key
+crosses a module boundary any more (E0-20 dropped the last one, ``resumes.campaign_id ->
+campaigns.id``; ``tests/test_no_cross_module_foreign_keys.py`` checks the whole schema).
+``applications.campaign_id`` is a same-module foreign key (``ON DELETE CASCADE``), which the
+database applies on a campaign delete; the campaign's resumes are deleted by ingestion in the
+same transaction (``app.api``, ``DELETE /campaigns/{id}``).
 """
 
 import enum
@@ -30,7 +23,7 @@ from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.database import Base
 
@@ -57,80 +50,15 @@ class Campaign(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
-    candidates: Mapped[list["Candidate"]] = relationship(
-        "Candidate", back_populates="campaign", cascade="all, delete-orphan"
-    )
-
-
-class Candidate(Base):
-    __tablename__ = "candidates"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Cross-module foreign key to the ingestion-owned resumes table (no ORM relationship). Kept
-    # as is until the Person/Application split replaces this table (ADR 0003).
-    resume_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("resumes.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-    )
-    campaign_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
-    )
-
-    # Personal info
-    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    github_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-
-    # Structured extracted data
-    skills: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    education: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    work_experience: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    certifications: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    projects: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    years_of_experience: Mapped[float | None] = mapped_column(Float, nullable=True)
-
-    # AI insights
-    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    strengths: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    weaknesses: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    missing_skills: Mapped[list[Any]] = mapped_column(JSONB, default=list)
-    recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    score_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    category: Mapped[str | None] = mapped_column(String(30), nullable=True)
-
-    # Recruiter workflow fields
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pipeline_stage: Mapped[str | None] = mapped_column(
-        String(30),
-        nullable=True,
-        # values: screened | phone_call | technical | offer | hired | rejected_manual
-    )
-
-    # Raw text
-    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="candidates")
-
 
 class Application(Base):
     """A Person's application to one campaign (ADR 0002, spec §4).
 
     ``UNIQUE(campaign_id, person_id)``: a re-application to the same campaign updates the row.
-    During the backfill ``id`` reuses the legacy ``candidates.id``. The scoring, insight and
-    recruiter columns mirror ``candidates`` exactly (types and nullability), so the compatibility
-    layer (spec §7) can rebuild the legacy responses unchanged.
+    Applications backfilled from legacy candidates (E0-17) reuse the candidate's id. The
+    scoring, insight and recruiter columns have the types and nullability the legacy
+    ``candidates`` columns had, so the compatibility layer (spec §7) builds the legacy responses
+    unchanged.
     """
 
     __tablename__ = "applications"
@@ -156,7 +84,7 @@ class Application(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # AI insights (as in candidates)
+    # AI insights
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     strengths: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     weaknesses: Mapped[list[Any]] = mapped_column(JSONB, default=list)
@@ -166,7 +94,7 @@ class Application(Base):
     score_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     category: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
-    # Recruiter workflow fields (as in candidates)
+    # Recruiter workflow fields
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     pipeline_stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
@@ -177,12 +105,15 @@ class Application(Base):
 
 
 class LegacyCandidateMap(Base):
-    """Redirects the id of a legacy candidate that the backfill merged into another application.
+    """A historical id map: the id of a legacy candidate that the backfill (E0-17) merged into
+    another application, and that application.
 
-    ``candidate_id`` deliberately has no foreign key to ``candidates``: the map must outlive that
-    table (dropped in phase 5). ``application_id`` is a same-module foreign key with ``ON DELETE
-    CASCADE``, so deleting an application drops its redirects; it is indexed because Postgres does
-    not index FK columns and the cascade looks rows up by it.
+    Old candidate ids (bookmarks, links) keep resolving through it to the surviving application
+    (spec §7). ``candidate_id`` never had a foreign key, so the map outlived ``candidates``
+    (dropped in E0-20); it refers to nothing any more and no new rows are written.
+    ``application_id`` is a same-module foreign key with ``ON DELETE CASCADE``, so deleting an
+    application drops its redirects; it is indexed because Postgres does not index FK columns and
+    the cascade looks rows up by it.
     """
 
     __tablename__ = "legacy_candidate_map"

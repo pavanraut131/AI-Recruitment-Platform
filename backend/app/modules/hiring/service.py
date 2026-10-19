@@ -34,8 +34,8 @@ carries the **application's** id. Applications created after the switch get fres
 no legacy candidate.
 
 Deletes remove the application and every resume of its person in its campaign (each was one
-legacy candidate of the row the recruiter sees); the legacy candidates of those resumes go with
-them through ``candidates.resume_id ON DELETE CASCADE``. Nothing writes ``candidates`` any more.
+legacy candidate of the row the recruiter sees), and the resumes' stored PDFs. The legacy
+``candidates`` table itself was dropped by the contract migration (E0-20).
 
 Cross-module boundaries (E0-10)
 -------------------------------
@@ -54,26 +54,27 @@ the data crosses this interface instead:
    /campaigns/{id}/candidates/bulk``) also deletes resumes. :func:`delete_candidate` and
    :func:`bulk_delete_candidates` delete the applications (flush, don't commit) and return
    what ingestion needs to delete their resumes; ``app.api`` has ingestion delete them and
-   commits both in one transaction.
-4. **Deleting a campaign** removes its resumes through the database's
-   ``resumes.campaign_id ON DELETE CASCADE`` (see ``models.py``), so it stays a hiring endpoint.
+   commits both in one transaction, then has ingestion delete the stored PDFs.
+4. **Deleting a campaign** (E0-20): :func:`delete_campaign` deletes the campaign and, by the
+   same-module foreign key, its applications (flush, don't commit); ``app.api`` has ingestion
+   delete the campaign's resumes in the same transaction and their PDFs after the commit. No
+   foreign key links ``resumes`` to ``campaigns`` any more (ADR 0003).
 5. **The upload pipeline** (``app.modules.ingestion``) checks campaigns through
    :func:`get_campaign_requirements` and writes applications through :func:`upsert_application`.
-   The backfill and its verification (``app.modules.ingestion.backfill`` /
-   ``verify_backfill``) read candidates and applications through the functions under "Legacy
-   candidates -> applications"; resume upload times cross the boundary as arguments. Its
-   scoring input is the ``ai`` module's ``ScoringResult`` (``app.modules.ai.schemas``,
+   Its scoring input is the ``ai`` module's ``ScoringResult`` (``app.modules.ai.schemas``,
    public): the pipeline passes on what the model returned, and hiring keeps no second copy of
-   that shape to keep in sync.
+   that shape to keep in sync. The verification command
+   (``app.modules.ingestion.verify_people_applications``) reads applications through
+   :func:`application_refs` and :func:`legacy_candidate_map`.
 """
 
 import csv
 import io
 import uuid
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 import structlog
 from sqlalchemy import ColumnElement, any_
@@ -81,7 +82,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.ai import service as ai_service
-from app.modules.ai.schemas import ExtractionResult, ScoringResult
+from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import repository
 from app.modules.hiring.models import Application, Campaign
 from app.modules.hiring.schemas import (
@@ -164,8 +165,16 @@ async def update_campaign(
 
 
 async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
+    """Delete the campaign and its applications (``applications.campaign_id ON DELETE
+    CASCADE``; their ``legacy_candidate_map`` rows go with them).
+
+    Flushes but does not commit: the caller (``app.api``) has ingestion delete the campaign's
+    resumes in the same transaction and commits. Raises :class:`NotFoundError` for an unknown
+    campaign.
+    """
     campaign = await _require_campaign(db, campaign_id)
     await repository.delete_campaign(db, campaign)
+    logger.info("campaign_deleted", id=str(campaign_id))
 
 
 # ── Stats ─────────────────────────────────────────────────────
@@ -731,15 +740,7 @@ def get_campaign_requirements(db: Session, campaign_id: uuid.UUID) -> CampaignRe
     return CampaignRequirements(role=campaign.role, required_skills=campaign.required_skills or [])
 
 
-def legacy_resume_text(db: Session, resume_id: uuid.UUID) -> str | None:
-    """The text a pre-switch extraction stored on the resume's legacy candidate (``None``: no
-    candidate or no text). Read-only: since E0-19 the pipeline keeps the text on the resume
-    (``resumes.raw_text``) and reads this only for a resume extracted before the switch and
-    analysed after it. Removed with ``candidates`` in E0-20."""
-    return repository.legacy_raw_text_sync(db, resume_id)
-
-
-# ── Applications (written by the upload pipeline and the backfill) ──
+# ── Applications (written by the upload pipeline) ─────────────
 def upsert_application(
     db: Session,
     *,
@@ -769,8 +770,9 @@ def upsert_application(
     The recruiter's fields (``pipeline_stage``, ``notes``) are never written here, and an
     existing application keeps its ``id``.
 
-    ``application_id`` is the id for a **new** row (the backfill passes the legacy candidate's
-    id, spec §6.2); it is ignored when the application already exists. Default: a new UUID.
+    ``application_id`` is the id for a **new** row (the seed generator passes ids drawn from its
+    own random source, so its data is reproducible); it is ignored when the application already
+    exists. Default: a new UUID.
 
     Returns the application as stored after the call.
     """
@@ -803,97 +805,7 @@ def upsert_application(
     return application
 
 
-# ── Legacy candidates -> applications (E0-17) ─────────────────
-# Every legacy candidate must lead to exactly one application (spec §6.2–6.3): the application
-# reuses the candidate's id, or ``legacy_candidate_map`` redirects the candidate's id to the
-# application it was merged into. The backfill (``app.modules.ingestion.backfill``) keeps that
-# link with the functions below, and so does the upload pipeline for a resume whose legacy
-# candidate was created before the switch (extracted before it, analysed after it). No legacy
-# candidate is created after the switch (E0-19).
-RECRUITER_FIELDS = ("pipeline_stage", "notes")
-
-
-@dataclass(frozen=True)
-class LegacyCandidate:
-    """One ``candidates`` row as the backfill reads it (spec §6.2)."""
-
-    id: uuid.UUID
-    campaign_id: uuid.UUID
-    resume_id: uuid.UUID
-    created_at: datetime
-    name: str | None
-    email: str | None
-    phone: str | None
-    github_url: str | None
-    linkedin_url: str | None
-    skills: list[Any] | None
-    education: list[Any] | None
-    work_experience: list[Any] | None
-    certifications: list[Any] | None
-    projects: list[Any] | None
-    years_of_experience: float | None
-    score: float | None
-    score_breakdown: dict[str, Any] | None
-    category: str | None
-    summary: str | None
-    strengths: list[Any] | None
-    weaknesses: list[Any] | None
-    missing_skills: list[Any] | None
-    recommendation: str | None
-    pipeline_stage: str | None
-    notes: str | None
-
-    @property
-    def position(self) -> tuple[datetime, uuid.UUID]:
-        """The keyset position of this candidate: ``(created_at, id)``."""
-        return (self.created_at, self.id)
-
-    def extraction(self) -> ExtractionResult:
-        """The AI extraction this candidate was written from (the pre-switch pipeline copied
-        each ``ExtractionResult`` field onto the candidate), the shape the pipeline stores in
-        ``resumes.extracted``."""
-        return ExtractionResult(
-            name=self.name,
-            email=self.email,
-            phone=self.phone,
-            github_url=self.github_url,
-            linkedin_url=self.linkedin_url,
-            skills=self.skills or [],
-            education=self.education or [],
-            work_experience=self.work_experience or [],
-            certifications=self.certifications or [],
-            projects=self.projects or [],
-            years_of_experience=self.years_of_experience,
-        )
-
-    def scoring(self) -> ScoringResult:
-        """The scoring stored on this candidate (the pre-switch pipeline copied each
-        ``ScoringResult`` field onto it), including a category the recruiter changed by hand.
-
-        Copied **as stored**, without validation: a legacy row may hold ``NULL`` where
-        ``ScoringResult`` wants a value (e.g. ``summary``), and the application must mirror the
-        candidate exactly so the compatibility layer (spec §7) can rebuild the same response.
-        """
-        stored: dict[str, Any] = {
-            "score": self.score,
-            "score_breakdown": self.score_breakdown,
-            "category": self.category,
-            "summary": self.summary,
-            "strengths": self.strengths if self.strengths is not None else [],
-            "weaknesses": self.weaknesses if self.weaknesses is not None else [],
-            "missing_skills": self.missing_skills if self.missing_skills is not None else [],
-            "recommendation": self.recommendation,
-        }
-        return ScoringResult.model_construct(**stored)
-
-
-@dataclass(frozen=True)
-class LegacyCandidateRef:
-    id: uuid.UUID
-    campaign_id: uuid.UUID
-    resume_id: uuid.UUID
-
-
+# ── Verification (``app.modules.ingestion.verify_people_applications``, spec §6.3) ──
 @dataclass(frozen=True)
 class ApplicationRef:
     id: uuid.UUID
@@ -902,184 +814,12 @@ class ApplicationRef:
     resume_id: uuid.UUID
 
 
-def iter_legacy_candidates_after(
-    db: Session, after: tuple[datetime, uuid.UUID] | None, limit: int
-) -> list[LegacyCandidate]:
-    """The next page of legacy candidates in ``(created_at, id)`` order, strictly after the
-    keyset position ``after`` (``None``: from the start). Never ``OFFSET`` (spec §6.2)."""
-    rows = repository.legacy_candidates_after_sync(db, after, limit)
-    return [LegacyCandidate(**row._asdict()) for row in rows]
-
-
-def legacy_candidate_id_for_resume(db: Session, resume_id: uuid.UUID) -> uuid.UUID | None:
-    return repository.get_candidate_id_by_resume_sync(db, resume_id)
-
-
-def legacy_links(db: Session, candidate_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
-    """The application each of these candidates already leads to (its own id, or the
-    ``legacy_candidate_map`` redirect); candidates with neither are left out."""
-    links = repository.legacy_map_rows_sync(db, candidate_ids)
-    for application_id in repository.existing_application_ids_sync(db, candidate_ids):
-        links.setdefault(application_id, application_id)
-    return links
-
-
-def link_legacy_candidate(
-    db: Session, *, candidate_id: uuid.UUID, application_id: uuid.UUID
-) -> bool:
-    """Make ``candidate_id`` lead to ``application_id``: nothing to do when the application
-    reuses the candidate's id, else a ``legacy_candidate_map`` row (``ON CONFLICT DO NOTHING``,
-    so it is idempotent). Returns whether a map row was inserted. Never commits."""
-    if candidate_id == application_id:
-        return False
-    inserted = repository.insert_legacy_map_row_sync(db, candidate_id, application_id)
-    if inserted:
-        logger.info(
-            "legacy_candidate_mapped",
-            candidate_id=str(candidate_id),
-            application_id=str(application_id),
-        )
-    return inserted
-
-
-# ── Recruiter fields of a backfilled application (E0-17/E0-18) ──
-# Until the switch every write path kept an application's ``pipeline_stage``, ``notes`` and
-# ``category`` equal to this rule over its legacy candidates (spec §6.5). Since E0-19 the
-# application is the source of truth and the API writes it directly; only the backfill still
-# applies the rule, when it links a legacy candidate (on a switched database it links none:
-# see ``app.modules.ingestion.backfill``). Hiring does not read ``resumes``: the callers pass
-# the resumes' upload times in.
-UploadTimes = Callable[[Sequence[uuid.UUID]], Mapping[uuid.UUID, datetime]]
-
-
-@dataclass(frozen=True)
-class RecruiterCandidate:
-    """What the recruiter-field rule reads of one legacy candidate."""
-
-    id: uuid.UUID
-    resume_id: uuid.UUID
-    pipeline_stage: str | None
-    notes: str | None
-    category: str | None
-
-
-class _HasResume(Protocol):
-    @property
-    def resume_id(self) -> uuid.UUID: ...
-
-
-_R = TypeVar("_R", bound=_HasResume)
-
-
-def newest_first(candidates: Iterable[_R], uploaded_at: Mapping[uuid.UUID, datetime]) -> list[_R]:
-    """``candidates`` by their resume's upload time, newest first (ties: the larger resume id
-    first, the order ``upsert_application`` uses). Candidates whose resume time is unknown are
-    left out."""
-    return sorted(
-        (c for c in candidates if c.resume_id in uploaded_at),
-        key=lambda c: (uploaded_at[c.resume_id], c.resume_id),
-        reverse=True,
-    )
-
-
-def expected_recruiter_fields(
-    application_resume_id: uuid.UUID,
-    candidates: Iterable[RecruiterCandidate],
-    uploaded_at: Mapping[uuid.UUID, datetime],
-) -> dict[str, str | None]:
-    """The mirrored fields an application must hold, given every candidate that leads to it.
-
-    - ``pipeline_stage``, ``notes``: per field, the value of the newest candidate (by resume
-      upload time) whose value is not ``NULL``; ``NULL`` if none has one. A candidate without a
-      value never clears another's; an empty note is a value (the recruiter cleared it).
-    - ``category``: the category of the candidate whose resume is the application's current
-      one (``application_resume_id``); left out when no such candidate exists.
-
-    Depends only on the set of candidates, never on the order they were written in. Returns
-    ``{}`` (nothing to say) when no candidate with a known upload time leads to it.
-    """
-    ordered = newest_first(candidates, uploaded_at)
-    if not ordered:
-        return {}
-    expected: dict[str, str | None] = {
-        name: next(
-            (value for c in ordered if (value := getattr(c, name)) is not None),
-            None,
-        )
-        for name in RECRUITER_FIELDS
-    }
-    current = next((c for c in ordered if c.resume_id == application_resume_id), None)
-    if current is not None:
-        expected["category"] = current.category
-    return expected
-
-
-def _apply(application: Application, expected: Mapping[str, str | None]) -> list[str]:
-    """Set the fields of ``application`` that differ from ``expected``; returns their names."""
-    changed = [name for name, value in expected.items() if getattr(application, name) != value]
-    for name in changed:
-        setattr(application, name, expected[name])
-    return changed
-
-
-def _linked_recruiter_candidates(
-    db: Session, application_ids: Sequence[uuid.UUID] | None
-) -> dict[uuid.UUID, list[RecruiterCandidate]]:
-    grouped: dict[uuid.UUID, list[RecruiterCandidate]] = {}
-    for row in repository.linked_candidates_sync(db, application_ids):
-        grouped.setdefault(row.application_id, []).append(
-            RecruiterCandidate(
-                id=row.id,
-                resume_id=row.resume_id,
-                pipeline_stage=row.pipeline_stage,
-                notes=row.notes,
-                category=row.category,
-            )
-        )
-    return grouped
-
-
-def carry_recruiter_fields(
-    db: Session, application_ids: Sequence[uuid.UUID], uploaded_at: UploadTimes
-) -> dict[uuid.UUID, list[str]]:
-    """Recompute the mirrored fields (``pipeline_stage``, ``notes``, ``category``) of these
-    applications from the legacy candidates that lead to them (:func:`expected_recruiter_fields`).
-    Never commits.
-
-    Used by the backfill after it links a candidate. Locks the applications (``FOR UPDATE``,
-    id order) before it reads their candidates. Idempotent. ``uploaded_at`` returns the upload
-    time of each resume it is given.
-
-    Returns the changed fields per application (only the changed applications).
-    """
-    applications = repository.lock_applications_sync(db, sorted(set(application_ids)))
-    if not applications:
-        return {}
-    linked = _linked_recruiter_candidates(db, [a.id for a in applications])
-    times = uploaded_at([c.resume_id for cs in linked.values() for c in cs])
-    changed: dict[uuid.UUID, list[str]] = {}
-    for application in applications:
-        fields = _apply(
-            application,
-            expected_recruiter_fields(application.resume_id, linked.get(application.id, []), times),
-        )
-        if fields:
-            changed[application.id] = fields
-    if changed:
-        db.flush()
-    return changed
-
-
-def legacy_candidate_refs(db: Session) -> list[LegacyCandidateRef]:
-    """Every legacy candidate (verification, spec §6.3)."""
-    return [LegacyCandidateRef(**row._asdict()) for row in repository.candidate_refs_sync(db)]
-
-
 def application_refs(db: Session) -> list[ApplicationRef]:
-    """Every application (verification, spec §6.3)."""
+    """Every application."""
     return [ApplicationRef(**row._asdict()) for row in repository.application_refs_sync(db)]
 
 
 def legacy_candidate_map(db: Session) -> dict[uuid.UUID, uuid.UUID]:
-    """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id``."""
+    """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id`` (the historical id
+    map of merged legacy candidates, spec §7)."""
     return repository.legacy_map_rows_sync(db)

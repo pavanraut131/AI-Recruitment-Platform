@@ -1,4 +1,5 @@
-"""Seed a local database with legacy candidates, and write the results the backfill must produce.
+"""Seed a local database with processed resumes, People and Applications, and write the expected
+results.
 
 Usage (from ``backend/``, or inside the backend container)::
 
@@ -6,38 +7,54 @@ Usage (from ``backend/``, or inside the backend container)::
 
 What it does
     Builds a ground truth **in memory** first: ``--people`` humans, each with canonical contact
-    details and a profile, and the applications each one makes. Then it emits that truth in the
-    **current** (legacy) schema: ``--campaigns`` campaigns, and for every application one
-    ``resumes`` row (status ``done``, plausible filename/size/hash/storage path; no files are
-    uploaded) and one ``candidates`` row (contact details as *written* on that resume, skills,
-    experience, scoring, category, ...). Finally it writes a JSON manifest (default
-    ``backend/seed-manifest.json``, gitignored) with the counts it created and the counts the
-    Sprint 3 backfill is **expected** to produce (spec ``docs/specs/EPIC-00-platform-core.md``
-    §6.4, verification in §6.3).
+    details and a profile, and the applications each one makes. Then it stores that truth the
+    way the upload pipeline would have: ``--campaigns`` campaigns, and for every application one
+    ``resumes`` row (status ``done``, plausible filename/size/hash/storage path, the PDF's text
+    and the AI extraction snapshot with the contact details as *written* on that resume; no files
+    are uploaded), resolved to a Person by ``talent.service.resolve_person`` and scored into an
+    Application by ``hiring.service.upsert_application``: the **same services, in the same
+    order of calls,** as the pipeline's ``resolve_person`` and ``save`` steps (spec §5.1), with
+    a deterministic scoring instead of the AI. Finally it writes a JSON manifest (default
+    ``backend/seed-manifest.json``, gitignored) with the counts it created and the People,
+    Applications and identity conflicts the matching rules **must** have produced (spec
+    ``docs/specs/EPIC-00-platform-core.md`` §6.4); ``verify_people_applications --manifest``
+    compares them (§6.3).
+
+    Why through the services, not direct inserts (E0-20): until the contract phase the seed
+    wrote legacy ``candidates`` and the backfill turned them into People and Applications. With
+    ``candidates`` gone it could insert People and Applications directly, but it would then
+    write the expected numbers itself and the manifest comparison would check nothing. Running
+    the real matching code keeps the expectations independent of it: they are derived from the
+    ground truth below without running any normalisation or matching code.
 
 Safety
     * Refuses to run when ``APP_ENV=production`` (``SeedRefused``).
-    * Refuses when any ``candidates`` row exists, unless ``--reset`` is given. ``--reset``
-      deletes the rows of ``candidates``, ``resumes`` and ``campaigns`` and of the tables derived
-      from them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
-      ``applications``, ``legacy_candidate_map``, ``backfill_checkpoints``; nothing else), prints
-      how many it deleted, and runs in the same transaction as the seeding (all or nothing).
-      ``--if-empty`` instead exits successfully without changes (used by ``make setup``).
+    * Refuses when any application exists, unless ``--reset`` is given. ``--reset`` deletes the
+      rows of ``applications``, ``resumes`` and ``campaigns`` and of the tables derived from
+      them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
+      ``legacy_candidate_map``; nothing else) and prints how many it deleted. ``--if-empty``
+      instead exits successfully without changes (used by ``make setup``).
+    * Commits every :data:`BATCH_SIZE` resumes (the CLI; ``--reset`` with the first batch):
+      ``resolve_person`` holds transaction-level advisory locks until the commit, and one
+      transaction for the whole seed would hold thousands of them. A failure part-way leaves a
+      partial seed: run it again with ``--reset``.
     * Uses ``settings.SYNC_DATABASE_URL``; the core ``generate(session, ...)`` takes any sync
-      ``Session``, and only flushes, so the caller owns the transaction (tests use
-      ``AsyncSession.run_sync`` inside their rolled-back transaction).
+      ``Session``, and only flushes unless given ``on_batch``, so the caller owns the
+      transaction (tests use ``AsyncSession.run_sync`` inside their rolled-back transaction).
 
 Determinism
     All randomness comes from one ``random.Random(seed)`` and one ``Faker("en_IN")`` seeded with
     ``seed_instance(seed)``; global random state is neither used nor changed. UUIDs are drawn
     from that ``Random`` and every timestamp is ``BASE_TIME`` plus an offset, so the same
-    arguments produce the same rows and a byte-identical manifest. Nothing depends on ``now()``.
+    arguments produce the same campaigns, resumes and applications (ids, scoring, timestamps)
+    and a byte-identical manifest. Only the People and their identifiers get ids and timestamps
+    from the database (the matching code creates them).
 
 Deliberate cases (spec §6.4) and their sizes
     Each case gets ``max(1, round(people * share))`` humans (conflicts: pairs of humans with
     ``max(1, round(people * 0.005))`` pairs); every remaining human is ``plain``. For the
     defaults (800 people) that is 24 humans per 3 % case, 8 for ``outlook_plus_tag``, 80 for
-    ``multi_campaign``, 4 conflict pairs and 560 plain humans (1,125 legacy candidates).
+    ``multi_campaign``, 4 conflict pairs and 560 plain humans (1,125 resumes).
 
     ==================== ======= ===========================================================
     case                 share   what each human submits
@@ -84,8 +101,8 @@ How each expected number is derived (no normalisation or matching code is run)
       phones become E.164) to that human's canonical value, so all of them match one Person.
     * Conflict resume (A's email, B's phone): A's key (attach to the **email** match) and one
       expected ``identity_conflicts`` row. Conflict resumes are emitted **last** (latest
-      ``created_at``), after A's and B's own resumes, so both People already exist when the
-      backfill (ordered by ``created_at, id``, §6.2) reaches them.
+      upload time, and resolved last), after A's and B's own resumes, so both People already
+      exist when the matching code reaches them.
     * No email and no phone: a key of its own per resume (``P0123/R2``), because every
       identifier-less resume creates a new Person; such duplicates stay separate until E6.
 
@@ -97,18 +114,20 @@ How each expected number is derived (no normalisation or matching code is run)
       (``UNIQUE(campaign_id, person_id)``). Only ``same_campaign_twice`` collapses two resumes
       into one application.
     * ``expected.identity_conflicts`` = number of conflict resumes (one per pair).
-    * ``expected.legacy_candidate_map_rows`` = legacy candidates - expected applications (the
-      older candidate IDs the backfill redirects, §6.2).
-    * ``counts.*`` = rows inserted: one ``resumes`` and one ``candidates`` row per submission,
-      and ``--campaigns`` campaigns. ``counts.true_people`` is ``--people``; it differs from
-      ``expected.people`` only by the extra no-contact resumes.
+    * ``counts.*`` = rows inserted: one ``resumes`` row per submission and ``--campaigns``
+      campaigns. ``counts.true_people`` is ``--people``; it differs from ``expected.people``
+      only by the extra no-contact resumes.
 
-    ``campaign_ids`` lists the seeded campaigns, so ``verify_backfill --manifest`` can count only
-    their rows while other uploads happen during a rehearsal.
+    An application's recruiter field ``pipeline_stage`` is the newest non-empty value among its
+    submissions (the backfill's rule, spec §6.2), and its ``created_at`` / ``updated_at`` are
+    those of its first and last submission, so the data looks like a history of uploads.
+
+    ``campaign_ids`` lists the seeded campaigns, so ``verify_people_applications --manifest``
+    can count only their rows while other uploads happen during a rehearsal.
 
     ``cases.<name>`` repeats these numbers per case. Cases share no Person, so per-case values
-    sum to the totals. ``cases.<name>.examples`` lists the candidates of the first human of the
-    case (IDs and contact details as written) so a reviewer or test can find them.
+    sum to the totals. ``cases.<name>.examples`` lists the resumes of the first human of the
+    case (ids and contact details as written) so a reviewer or test can find them.
 """
 
 from __future__ import annotations
@@ -128,17 +147,22 @@ from pathlib import Path
 from typing import Any
 
 from faker import Faker
-from sqlalchemy import create_engine, delete, func, insert, select
+from sqlalchemy import create_engine, delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
-from app.modules.hiring.models import Application, Campaign, Candidate, LegacyCandidateMap
-from app.modules.ingestion.models import BackfillCheckpoint, Resume
+from app.modules.ai.schemas import ExtractionResult, ScoringResult
+from app.modules.hiring import service as hiring_service
+from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.ingestion.models import Resume
+from app.modules.ingestion.tasks import person_profile
+from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform.config import settings
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "seed-manifest.json"
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2  # 2 (E0-20): no legacy candidates; examples name resumes
+BATCH_SIZE = 200  # resumes per commit in the CLI (see "Safety")
 MIN_CAMPAIGNS = 3  # phone_formats needs three distinct campaigns
 
 # ── Cases ────────────────────────────────────────────────────
@@ -217,17 +241,17 @@ RECOMMENDATIONS = {
 }
 
 
-# Tables the dual write and the backfill derive from the legacy rows; ``--reset`` empties them
-# too (children first). Their rows are meaningless without the candidates they came from.
+# The tables ``--reset`` empties besides ``applications``, ``resumes`` and ``campaigns``
+# (children first): what the pipeline derives from resumes. Their rows are meaningless without
+# the resumes they came from.
 DERIVED_MODELS: tuple[type[Any], ...] = (
     LegacyCandidateMap,
-    Application,
     PersonResume,
     IdentityConflict,
     PersonIdentifier,
     Person,
-    BackfillCheckpoint,
 )
+SEEDED_MODELS: tuple[type[Any], ...] = (Application, Resume, Campaign)
 
 
 class SeedRefused(RuntimeError):
@@ -251,7 +275,8 @@ class Human:
 
 @dataclass
 class Submission:
-    """One resume a human submitted to one campaign; becomes one resume + one candidate row."""
+    """One resume a human submitted to one campaign: one resume row, resolved to a Person and
+    scored into (or into the newest scoring of) the Person's application to the campaign."""
 
     human: Human
     campaign: int
@@ -262,7 +287,10 @@ class Submission:
     late: bool = False
     version: int = 1
     resume_row: dict[str, Any] = field(default_factory=dict)
-    candidate_row: dict[str, Any] = field(default_factory=dict)
+    # The id the application gets if this submission creates it (drawn from the seed's Random).
+    application_id: uuid.UUID | None = None
+    scoring: ScoringResult | None = None
+    pipeline_stage: str | None = None
 
 
 @dataclass
@@ -504,7 +532,7 @@ class _Builder:
         rng = self.rng
         h, p = sub.human, sub.human.profile
         created = BASE_TIME + timedelta(days=1, minutes=7 * position)
-        resume_id, candidate_id = _uuid(rng), _uuid(rng)
+        resume_id, application_id = _uuid(rng), _uuid(rng)
         suffix = "" if sub.version == 1 else f"_v{sub.version}"
         filename = f"{h.first}_{h.last}_resume{suffix}.pdf"
         sub.resume_row = {
@@ -543,35 +571,33 @@ class _Builder:
             if score >= 25
             else "rejected"
         )
-        sub.candidate_row = {
-            "id": candidate_id,
-            "resume_id": resume_id,
-            "campaign_id": campaign["id"],
-            "name": h.full_name,
-            "email": sub.email,
-            "phone": sub.phone,
-            "github_url": p["github_url"],
-            "linkedin_url": p["linkedin_url"],
-            "skills": skills,
-            "education": p["education"],
-            "work_experience": p["work_experience"],
-            "certifications": p["certifications"],
-            "projects": p["projects"],
-            "years_of_experience": years,
-            "summary": f"{p['role']} with {years} years of experience in {', '.join(skills[:3])}.",
-            "strengths": [f"Hands-on {s}" for s in skills[:2]],
-            "weaknesses": [f"No {s} experience" for s in missing[:2]] or ["Limited leadership"],
-            "missing_skills": missing,
-            "recommendation": RECOMMENDATIONS[category],
-            "score": score,
-            "score_breakdown": breakdown,
-            "category": category,
-            "notes": None,
-            "pipeline_stage": rng.choice(PIPELINE_STAGES),
-            "raw_text": f"{h.full_name}\n{p['role']}\nSkills: {', '.join(skills)}",
-            "created_at": created,
-            "updated_at": created,
-        }
+        sub.application_id = application_id
+        sub.scoring = ScoringResult(
+            score=score,
+            score_breakdown=breakdown,
+            category=category,
+            summary=f"{p['role']} with {years} years of experience in {', '.join(skills[:3])}.",
+            strengths=[f"Hands-on {s}" for s in skills[:2]],
+            weaknesses=[f"No {s} experience" for s in missing[:2]] or ["Limited leadership"],
+            missing_skills=missing,
+            recommendation=RECOMMENDATIONS[category],
+        )
+        sub.pipeline_stage = rng.choice(PIPELINE_STAGES)
+        extraction = ExtractionResult(
+            name=h.full_name,
+            email=sub.email,
+            phone=sub.phone,
+            github_url=p["github_url"],
+            linkedin_url=p["linkedin_url"],
+            skills=skills,
+            education=p["education"],
+            work_experience=p["work_experience"],
+            certifications=p["certifications"],
+            projects=p["projects"],
+            years_of_experience=years,
+        )
+        sub.resume_row["extracted"] = extraction.model_dump(mode="json")
+        sub.resume_row["raw_text"] = f"{h.full_name}\n{p['role']}\nSkills: {', '.join(skills)}"
 
 
 def build_plan(people: int, campaigns: int, seed: int) -> Plan:
@@ -592,7 +618,6 @@ def build_manifest(plan: Plan) -> dict[str, Any]:
     """Counts and expected backfill results, derived from the plan (see module docstring)."""
     subs = plan.submissions
     expected = _expected(subs)
-    expected["legacy_candidate_map_rows"] = len(subs) - expected["applications"]
     cases: dict[str, Any] = {}
     for case in ALL_CASES:
         case_subs = [s for s in subs if s.human.case == case]
@@ -600,8 +625,8 @@ def build_manifest(plan: Plan) -> dict[str, Any]:
         first = humans[0]
         examples = [
             {
-                "candidate_id": str(s.candidate_row["id"]),
-                "campaign_id": str(s.candidate_row["campaign_id"]),
+                "resume_id": str(s.resume_row["id"]),
+                "campaign_id": str(s.resume_row["campaign_id"]),
                 "email": s.email,
                 "phone": s.phone,
                 "expected_person": s.expected_person,
@@ -612,7 +637,7 @@ def build_manifest(plan: Plan) -> dict[str, Any]:
         ]
         cases[case] = {
             "true_people": len(humans),
-            "candidates": len(case_subs),
+            "resumes": len(case_subs),
             **{f"expected_{k}": v for k, v in _expected(case_subs).items()},
             "examples": examples,
         }
@@ -621,12 +646,12 @@ def build_manifest(plan: Plan) -> dict[str, Any]:
         "generator": "app.devtools.seed",
         "rules": "docs/specs/EPIC-00-platform-core.md §5.2-5.3, docs/adr/0004",
         "params": {"people": plan.people, "campaigns": plan.campaigns, "seed": plan.seed},
-        # Lets verify_backfill count only the seeded campaigns while other uploads happen.
+        # Lets verify_people_applications count only the seeded campaigns while other uploads
+        # happen.
         "campaign_ids": [str(row["id"]) for row in plan.campaign_rows],
         "counts": {
             "campaigns": len(plan.campaign_rows),
             "resumes": len(subs),
-            "legacy_candidates": len(subs),
             "true_people": len(plan.humans),
         },
         "expected": expected,
@@ -643,39 +668,105 @@ def ensure_not_production() -> None:
 def existing_counts(session: Session) -> dict[str, int]:
     return {
         model.__tablename__: session.scalar(select(func.count()).select_from(model)) or 0
-        for model in (Campaign, Resume, Candidate)
+        for model in SEEDED_MODELS
     }
 
 
 def reset(session: Session) -> dict[str, Any]:
-    """Delete every candidate, resume and campaign row, and everything derived from them by the
-    dual write or the backfill (People, identifiers, conflicts, Applications, the legacy map and
-    the backfill checkpoints), so a rehearsal starts from the legacy data alone. Returns the
-    counts of the three legacy tables and, under ``derived``, the rows deleted from the others."""
+    """Delete every application, resume and campaign row, and everything the pipeline derives
+    from resumes (People, identifiers, conflicts, resolutions, the legacy id map), so a
+    rehearsal starts from nothing. Returns the counts of the three seeded tables and, under
+    ``derived``, the rows deleted from the others. Stored PDFs are not touched (the seed
+    stores none)."""
     ensure_not_production()
     counts: dict[str, Any] = existing_counts(session)
     derived: dict[str, int] = {}
     for model in DERIVED_MODELS:
         result = session.execute(delete(model))
         derived[model.__tablename__] = result.rowcount
-    for model in (Candidate, Resume, Campaign):
+    for model in SEEDED_MODELS:
         session.execute(delete(model))
     session.flush()
     counts["derived"] = derived
     return counts
 
 
-def generate(session: Session, *, people: int, campaigns: int, seed: int) -> dict[str, Any]:
-    """Insert the seed rows through ``session`` (flush only, no commit); return the manifest."""
+def generate(
+    session: Session,
+    *,
+    people: int,
+    campaigns: int,
+    seed: int,
+    on_batch: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """Insert the seed through ``session`` and return the manifest.
+
+    Campaigns and resumes are inserted directly; then every resume, in upload order, goes
+    through the pipeline's services: ``talent.resolve_person`` (stored as
+    ``resumes.person_id``) and ``hiring.upsert_application``. Only flushes, unless ``on_batch``
+    is given: it is called after every :data:`BATCH_SIZE` resumes (the CLI commits there).
+    """
     ensure_not_production()
-    if existing_counts(session)["candidates"]:
-        raise SeedRefused("refusing to seed: candidates already exist (use --reset)")
+    if existing_counts(session)["applications"]:
+        raise SeedRefused("refusing to seed: applications already exist (use --reset)")
     plan = build_plan(people, campaigns, seed)
     session.execute(insert(Campaign), plan.campaign_rows)
     session.execute(insert(Resume), [s.resume_row for s in plan.submissions])
-    session.execute(insert(Candidate), [s.candidate_row for s in plan.submissions])
+
+    application_of: dict[uuid.UUID, uuid.UUID] = {}  # resume id -> application id
+    for done, sub in enumerate(plan.submissions, start=1):
+        row = sub.resume_row
+        assert sub.scoring is not None
+        extraction = ExtractionResult.model_validate(row["extracted"])
+        resolution = talent_service.resolve_person(
+            session,
+            email=sub.email,
+            phone=sub.phone,
+            profile=person_profile(extraction),
+            resume_id=row["id"],
+            uploaded_at=row["uploaded_at"],
+            default_region=settings.PHONE_DEFAULT_REGION,
+        )
+        session.execute(
+            update(Resume).where(Resume.id == row["id"]).values(person_id=resolution.person_id)
+        )
+        application = hiring_service.upsert_application(
+            session,
+            campaign_id=row["campaign_id"],
+            person_id=resolution.person_id,
+            resume_id=row["id"],
+            resume_uploaded_at=row["uploaded_at"],
+            scoring=sub.scoring,
+            application_id=sub.application_id,
+        )
+        application_of[row["id"]] = application.id
+        if on_batch is not None and done % BATCH_SIZE == 0:
+            on_batch()
+
+    _set_recruiter_fields_and_times(session, plan.submissions, application_of)
     session.flush()
+    if on_batch is not None:
+        on_batch()
     return build_manifest(plan)
+
+
+def _set_recruiter_fields_and_times(
+    session: Session, subs: Sequence[Submission], application_of: dict[uuid.UUID, uuid.UUID]
+) -> None:
+    """Per application: ``pipeline_stage`` = the newest non-empty stage of its submissions,
+    ``created_at`` / ``updated_at`` = its first / last submission's (resume ``updated_at``)."""
+    values: dict[uuid.UUID, dict[str, Any]] = {}
+    for sub in sorted(subs, key=lambda s: (s.resume_row["uploaded_at"], s.resume_row["id"])):
+        app_id = application_of[sub.resume_row["id"]]
+        at = sub.resume_row["updated_at"]
+        entry = values.setdefault(
+            app_id, {"pipeline_stage": None, "created_at": at, "updated_at": at}
+        )
+        entry["updated_at"] = at
+        if sub.pipeline_stage is not None:
+            entry["pipeline_stage"] = sub.pipeline_stage
+    for app_id, fields in values.items():
+        session.execute(update(Application).where(Application.id == app_id).values(**fields))
 
 
 def write_manifest(manifest: dict[str, Any], path: Path) -> None:
@@ -686,7 +777,8 @@ def write_manifest(manifest: dict[str, Any], path: Path) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m app.devtools.seed",
-        description="Seed legacy campaigns/resumes/candidates and write the expected-results manifest.",
+        description="Seed campaigns, processed resumes, People and Applications, and write the "
+        "expected-results manifest.",
     )
     parser.add_argument("--people", type=int, default=800)
     parser.add_argument("--campaigns", type=int, default=15)
@@ -696,12 +788,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     group.add_argument(
         "--reset",
         action="store_true",
-        help="delete ALL campaigns, resumes and candidates first",
+        help="delete ALL campaigns, resumes, applications and people first",
     )
     group.add_argument(
         "--if-empty",
         action="store_true",
-        help="do nothing (exit 0) if candidates already exist",
+        help="do nothing (exit 0) if applications already exist",
     )
     args = parser.parse_args(argv)
 
@@ -712,21 +804,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         engine = create_engine(settings.SYNC_DATABASE_URL)
         with Session(engine) as session:
             before = existing_counts(session)
-            if before["candidates"] and args.if_empty:
-                print(f"seed: skipped, {before['candidates']} candidates already exist")
+            if before["applications"] and args.if_empty:
+                print(f"seed: skipped, {before['applications']} applications already exist")
                 return 0
             if args.reset:
                 deleted = reset(session)
                 derived = ", ".join(f"{n} {name}" for name, n in deleted["derived"].items())
                 print(
                     "seed: --reset deleted "
-                    f"{deleted['candidates']} candidates, {deleted['resumes']} resumes, "
+                    f"{deleted['applications']} applications, {deleted['resumes']} resumes, "
                     f"{deleted['campaigns']} campaigns; derived rows: {derived}"
                 )
             manifest = generate(
-                session, people=args.people, campaigns=args.campaigns, seed=args.seed
+                session,
+                people=args.people,
+                campaigns=args.campaigns,
+                seed=args.seed,
+                on_batch=session.commit,
             )
-            session.commit()
         engine.dispose()
     except (SeedRefused, ValueError) as exc:
         print(f"seed: {exc}", file=sys.stderr)
@@ -735,11 +830,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_manifest(manifest, args.manifest)
     counts, expected = manifest["counts"], manifest["expected"]
     print(
-        f"seed: inserted {counts['campaigns']} campaigns, {counts['resumes']} resumes, "
-        f"{counts['legacy_candidates']} candidates in {time.perf_counter() - started:.1f}s"
+        f"seed: inserted {counts['campaigns']} campaigns and {counts['resumes']} processed "
+        f"resumes in {time.perf_counter() - started:.1f}s"
     )
     print(
-        f"seed: expected after backfill: {expected['people']} people, "
+        f"seed: expected: {expected['people']} people, "
         f"{expected['applications']} applications, "
         f"{expected['identity_conflicts']} identity conflicts"
     )

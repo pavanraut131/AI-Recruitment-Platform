@@ -1,13 +1,13 @@
-"""ingestion data access: every query against the ``resumes`` and ``backfill_checkpoints`` tables.
+"""ingestion data access: every query against the ``resumes`` table.
 
 Private to the ingestion module. The async functions serve the HTTP endpoints (the request's
-``AsyncSession``); the ``*_sync`` ones serve the Celery tasks and the backfill / verification
-commands, which use a synchronous ``Session``. Only functions named ``commit`` commit; the caller decides where a unit of work ends.
+``AsyncSession``); the ``*_sync`` ones serve the Celery tasks, the verification command and the
+storage check, which use a synchronous ``Session``. Only functions named ``commit`` commit; the
+caller decides where a unit of work ends.
 """
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -16,7 +16,6 @@ from sqlalchemy import (
     and_,
     any_,
     column,
-    delete,
     exists,
     func,
     or_,
@@ -24,11 +23,10 @@ from sqlalchemy import (
     tuple_,
     update,
 )
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.ingestion.models import BackfillCheckpoint, Resume
+from app.modules.ingestion.models import Resume
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 FAILED_STATUSES = ("failed", "quota_exceeded")
@@ -81,13 +79,6 @@ async def status_counts(db: AsyncSession, campaign_id: uuid.UUID | None = None) 
         query = query.where(Resume.campaign_id == campaign_id)
     result = await db.execute(query.group_by(Resume.status))
     return {status: count for status, count in result.tuples()}
-
-
-async def delete_by_ids(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> None:
-    """Mark the resumes with these ids (those that exist) for deletion; the caller commits."""
-    result = await db.execute(select(Resume).where(Resume.id.in_(resume_ids)))
-    for resume in result.scalars().all():
-        await db.delete(resume)
 
 
 async def extractions(
@@ -176,19 +167,33 @@ async def delete_of_people(
     db: AsyncSession,
     resume_ids: Sequence[uuid.UUID],
     people: Sequence[tuple[uuid.UUID, uuid.UUID]],
-) -> None:
-    """Mark for deletion the resumes with these ids and every resume of these ``(campaign_id,
-    person_id)`` pairs; the caller commits."""
+) -> list[str]:
+    """Delete the resumes with these ids and every resume of these ``(campaign_id, person_id)``
+    pairs (flushed, not committed: the caller commits); returns their storage paths."""
     clauses: list[ColumnElement[bool]] = []
     if resume_ids:
         clauses.append(Resume.id == any_(uuid_array(resume_ids)))
     if people:
         clauses.append(tuple_(Resume.campaign_id, Resume.person_id).in_(people))
     if not clauses:
-        return
-    result = await db.execute(select(Resume).where(or_(*clauses)))
-    for resume in result.scalars().all():
+        return []
+    return await _delete_where(db, or_(*clauses))
+
+
+async def delete_for_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> list[str]:
+    """Delete every resume of the campaign (flushed, not committed: the caller commits); returns
+    their storage paths."""
+    return await _delete_where(db, Resume.campaign_id == campaign_id)
+
+
+async def _delete_where(db: AsyncSession, clause: ColumnElement[bool]) -> list[str]:
+    result = await db.execute(select(Resume).where(clause).order_by(Resume.id))
+    resumes = result.scalars().all()
+    paths = [resume.storage_path for resume in resumes]
+    for resume in resumes:
         await db.delete(resume)
+    await db.flush()
+    return paths
 
 
 async def commit(db: AsyncSession) -> None:
@@ -212,17 +217,7 @@ def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, str]]:
     return [(resume_id, filename) for resume_id, filename in result.tuples()]
 
 
-# ── Backfill and verification (sync, E0-17) ───────────────────
-def uploaded_at_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, datetime]:
-    """``id -> uploaded_at`` of the resumes among ``resume_ids`` that exist."""
-    if not resume_ids:
-        return {}
-    rows = db.execute(
-        select(Resume.id, Resume.uploaded_at).where(Resume.id.in_(resume_ids))
-    ).tuples()
-    return {resume_id: uploaded_at for resume_id, uploaded_at in rows}
-
-
+# ── Verification and devtools (sync) ──────────────────────────
 def resume_refs_sync(
     db: Session,
 ) -> Sequence[Row[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID | None]]]:
@@ -238,33 +233,6 @@ def extracted_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UU
     return {resume_id: extracted for resume_id, extracted in rows}
 
 
-def get_checkpoint_sync(db: Session, name: str) -> BackfillCheckpoint | None:
-    return db.get(BackfillCheckpoint, name, populate_existing=True)
-
-
-def save_checkpoint_sync(
-    db: Session, name: str, last_created_at: datetime, last_id: uuid.UUID
-) -> None:
-    """Upsert the job's keyset position (``INSERT … ON CONFLICT (name) DO UPDATE``)."""
-    stmt = pg_insert(BackfillCheckpoint).values(
-        name=name, last_created_at=last_created_at, last_id=last_id
-    )
-    db.execute(
-        stmt.on_conflict_do_update(
-            index_elements=["name"],
-            set_={
-                "last_created_at": stmt.excluded.last_created_at,
-                "last_id": stmt.excluded.last_id,
-                "updated_at": func.now(),
-            },
-        )
-    )
-
-
-def delete_checkpoint_sync(db: Session, name: str) -> bool:
-    result = db.execute(
-        delete(BackfillCheckpoint)
-        .where(BackfillCheckpoint.name == name)
-        .returning(BackfillCheckpoint.name)
-    )
-    return result.scalar_one_or_none() is not None
+def storage_paths_sync(db: Session) -> set[str]:
+    """The ``storage_path`` of every resume."""
+    return set(db.execute(select(Resume.storage_path)).scalars())

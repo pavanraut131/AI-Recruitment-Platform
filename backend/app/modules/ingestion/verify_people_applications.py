@@ -1,17 +1,19 @@
-"""Verify the Person/Application backfill (EPIC-00 spec §6.1 phase 3, §6.3): the release gate.
+"""Verify the consistency of People, Applications and resumes across modules (EPIC-00 spec §6.3).
 
 Usage (inside the backend container, or from ``backend/``)::
 
-    python -m app.modules.ingestion.verify_backfill [--manifest path/to/seed-manifest.json]
+    python -m app.modules.ingestion.verify_people_applications [--manifest seed-manifest.json]
 
 Exits ``0`` when every check passes, ``1`` when any fails (``2`` for a bad command line or an
 unreadable manifest), and prints a readable report either way. Read-only: it never writes.
 
-Checks (spec §6.3, plus the invariants the Sprint 4 read switch relies on)
-    * ``candidates_lead_to_one_application``: every legacy candidate whose resume is ``done``
-      is an application's id **or** has a ``legacy_candidate_map`` row, never both and never
-      neither; the application is in the candidate's campaign and belongs to the Person of the
-      candidate's resume. Candidates whose resume is not ``done`` are counted, not failed.
+Why it exists after the migration: the modules' tables refer to each other by plain ids, with
+no foreign keys (ADR 0003), so nothing in the database keeps them consistent; the services do,
+and this command checks that they did. It replaced ``verify_backfill`` in the contract phase
+(E0-20): the checks that compared the legacy ``candidates`` with the new model went with that
+table, the rest are unchanged.
+
+Checks
     * ``applications_have_people``: every ``applications.person_id`` exists in ``people``.
     * ``applications_have_resumes``: every ``applications.resume_id`` exists in ``resumes``,
       in the same campaign, resolved to the same Person.
@@ -22,29 +24,17 @@ Checks (spec §6.3, plus the invariants the Sprint 4 read switch relies on)
       none of its (remaining) resumes had a match-eligible one (ADR 0004 amendment, option A: an
       inferred phone does not count as usable).
     * ``people_have_resumes``: every Person was resolved from at least one resume.
-    * ``applications_have_extractions`` (E0-19): every application's current resume has an
-      extraction snapshot (``resumes.extracted``), which the legacy candidate endpoints show as
-      the candidate's name, contacts and profile.
-    * With ``--manifest``: ``expected.{people, applications, identity_conflicts,
-      legacy_candidate_map_rows}`` of the seed manifest (``app.devtools.seed``), exactly, and
-      the number of legacy candidates (``counts.legacy_candidates``). When the manifest lists its
-      ``campaign_ids``, the comparison counts only rows in those campaigns, so uploads to other
-      campaigns during a rehearsal don't change it; the integrity checks always cover everything.
+    * ``applications_have_extractions``: every application's current resume has an extraction
+      snapshot (``resumes.extracted``), which the candidate endpoints show as the candidate's
+      name, contacts and profile (spec §7.1).
+    * With ``--manifest``: ``expected.{people, applications, identity_conflicts}`` of the seed
+      manifest (``app.devtools.seed``), exactly. When the manifest lists its ``campaign_ids``,
+      the comparison counts only rows in those campaigns, so uploads to other campaigns during
+      a rehearsal don't change it; the integrity checks always cover everything.
 
-After the read switch (E0-19)
-    The API serves ``applications``; ``candidates`` is frozen (nothing writes it, E0-20 drops
-    it). The checks stay meaningful on a switched database:
-
-    * candidates created before the switch still each lead to one application (a legacy delete
-      now removes the application with its resumes, and the candidates go with the resumes
-      through the foreign key, so none is left dangling);
-    * applications created after the switch have no candidate and are not expected to: they
-      are counted (``without a legacy candidate (new)``) and covered by every application
-      check;
-    * ``recruiter_fields_consistent`` (E0-18) is gone: after the switch the recruiter edits the
-      application itself, so it no longer equals the rule over its frozen candidates. It was a
-      pre-switch gate, run by the E0-18 code (runbook §8);
-    * ``people_without_identifiers_justified`` skips resumes that were deleted.
+``legacy_candidate_map`` rows are counted, not checked: the foreign key to ``applications``
+keeps them pointing at an existing application, and their ``candidate_id`` refers to nothing
+since ``candidates`` was dropped (a historical id map).
 
 Cross-module reads go through each module's service (``hiring.service``, ``talent.service``);
 ingestion reads its own ``resumes``.
@@ -69,7 +59,8 @@ from app.modules.ingestion import repository, tasks
 from app.modules.talent import service as talent_service
 from app.platform.config import settings
 
-MANIFEST_KEYS = ("people", "applications", "identity_conflicts", "legacy_candidate_map_rows")
+PROG = "verify_people_applications"
+MANIFEST_KEYS = ("people", "applications", "identity_conflicts")
 MAX_EXAMPLES = 10
 
 
@@ -101,9 +92,9 @@ class Report:
         )
 
     def render(self) -> str:
-        lines = ["verify_backfill: counts"]
+        lines = [f"{PROG}: counts"]
         lines += [f"  {name:<34} {value}" for name, value in self.counts.items()]
-        lines.append("verify_backfill: checks")
+        lines.append(f"{PROG}: checks")
         for check in self.checks:
             if check.ok:
                 lines.append(f"  PASS {check.name}")
@@ -113,11 +104,11 @@ class Report:
             if len(check.problems) > MAX_EXAMPLES:
                 lines.append(f"       ... and {len(check.problems) - MAX_EXAMPLES} more")
         if self.manifest:
-            lines.append(f"verify_backfill: manifest ({self.manifest_scope})")
+            lines.append(f"{PROG}: manifest ({self.manifest_scope})")
             for key, expected, actual in self.manifest:
                 verdict = "PASS" if expected == actual else "FAIL"
                 lines.append(f"  {verdict} {key:<28} expected {expected:>7}  actual {actual:>7}")
-        lines.append(f"verify_backfill: {'PASSED' if self.ok else 'FAILED'}")
+        lines.append(f"{PROG}: {'PASSED' if self.ok else 'FAILED'}")
         return "\n".join(lines)
 
 
@@ -127,7 +118,6 @@ def verify(
     region = default_region or settings.PHONE_DEFAULT_REGION
     report = Report()
 
-    candidates = hiring_service.legacy_candidate_refs(db)
     applications = {a.id: a for a in hiring_service.application_refs(db)}
     legacy_map = hiring_service.legacy_candidate_map(db)
     resumes = {row.id: row for row in repository.resume_refs_sync(db)}
@@ -137,12 +127,7 @@ def verify(
     conflict_resumes = talent_service.identity_conflict_resume_ids(db)
 
     done = {rid for rid, row in resumes.items() if row.status == "done"}
-    backfillable = [c for c in candidates if c.resume_id in done]
-    with_legacy = {c.id for c in candidates} | set(legacy_map.values())
     report.counts = {
-        "legacy candidates": len(candidates),
-        "  with a done resume": len(backfillable),
-        "  with a resume not done (skipped)": len(candidates) - len(backfillable),
         "resumes": len(resumes),
         "  done": len(done),
         "people": talent_counts.people,
@@ -150,31 +135,8 @@ def verify(
         "identity conflicts": talent_counts.identity_conflicts,
         "resolved resumes (person_resumes)": talent_counts.resolved_resumes,
         "applications": len(applications),
-        "  without a legacy candidate (new)": sum(1 for a in applications if a not in with_legacy),
         "legacy_candidate_map rows": len(legacy_map),
     }
-
-    # Every done candidate leads to exactly one application, consistent with its resume.
-    check = Check("candidates_lead_to_one_application")
-    for c in backfillable:
-        direct, redirected = c.id in applications, c.id in legacy_map
-        if direct and redirected:
-            check.fail(f"candidate {c.id} is an application id and also in legacy_candidate_map")
-            continue
-        if not direct and not redirected:
-            check.fail(f"candidate {c.id} leads to no application")
-            continue
-        app = applications.get(c.id if direct else legacy_map[c.id])
-        if app is None:
-            check.fail(f"candidate {c.id} is redirected to a missing application")
-        elif app.campaign_id != c.campaign_id:
-            check.fail(f"candidate {c.id} leads to application {app.id} of another campaign")
-        elif app.person_id != resumes[c.resume_id].person_id:
-            check.fail(
-                f"candidate {c.id} leads to application {app.id} of person {app.person_id}, "
-                f"but its resume belongs to {resumes[c.resume_id].person_id}"
-            )
-    report.checks.append(check)
 
     check = Check("applications_have_people")
     for app in applications.values():
@@ -218,7 +180,7 @@ def verify(
     for person_id, resume_ids in bare.items():
         for rid in resume_ids:
             if rid not in resumes:
-                continue  # deleted with its candidate or application: nothing left to check
+                continue  # deleted with its application: nothing left to check
             snapshot = extracted.get(rid)
             if snapshot is None:
                 check.fail(f"person {person_id}: resume {rid} has no extraction to check")
@@ -236,7 +198,7 @@ def verify(
         check.fail(f"person {person_id} was resolved from no resume")
     report.checks.append(check)
 
-    # The read path shows the extraction of an application's current resume (E0-19, spec §7).
+    # The read path shows the extraction of an application's current resume (spec §7.1).
     check = Check("applications_have_extractions")
     snapshots = repository.extracted_sync(db, [a.resume_id for a in applications.values()])
     for app in applications.values():
@@ -245,18 +207,14 @@ def verify(
     report.checks.append(check)
 
     if manifest is not None:
-        _compare_manifest(
-            report, manifest, candidates, applications, legacy_map, resumes, conflict_resumes
-        )
+        _compare_manifest(report, manifest, applications, resumes, conflict_resumes)
     return report
 
 
 def _compare_manifest(
     report: Report,
     manifest: dict[str, Any],
-    candidates: Sequence[hiring_service.LegacyCandidateRef],
     applications: dict[uuid.UUID, hiring_service.ApplicationRef],
-    legacy_map: dict[uuid.UUID, uuid.UUID],
     resumes: dict[uuid.UUID, Any],
     conflict_resumes: Iterable[uuid.UUID],
 ) -> None:
@@ -274,15 +232,14 @@ def _compare_manifest(
         def in_scope(campaign_id: uuid.UUID) -> bool:
             return True
 
-    apps = {a.id: a for a in applications.values() if in_scope(a.campaign_id)}
+    apps = [a for a in applications.values() if in_scope(a.campaign_id)]
     conflicts = Counter(
         rid for rid in conflict_resumes if rid in resumes and in_scope(resumes[rid].campaign_id)
     )
     actual = {
-        "people": len({a.person_id for a in apps.values()}),
+        "people": len({a.person_id for a in apps}),
         "applications": len(apps),
         "identity_conflicts": sum(conflicts.values()),
-        "legacy_candidate_map_rows": sum(1 for app_id in legacy_map.values() if app_id in apps),
     }
     expected = manifest.get("expected", {})
     report.manifest = [
@@ -290,14 +247,6 @@ def _compare_manifest(
         for key in MANIFEST_KEYS
         if key in expected
     ]
-    if "legacy_candidates" in manifest.get("counts", {}):
-        report.manifest.append(
-            (
-                "counts.legacy_candidates",
-                int(manifest["counts"]["legacy_candidates"]),
-                sum(1 for c in candidates if in_scope(c.campaign_id)),
-            )
-        )
 
 
 # ── CLI ───────────────────────────────────────────────────────
@@ -305,8 +254,9 @@ def main(
     argv: Sequence[str] | None = None, session_factory: Callable[[], Session] | None = None
 ) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m app.modules.ingestion.verify_backfill",
-        description="Verify the Person/Application backfill (spec §6.3). Read-only.",
+        prog=f"python -m app.modules.ingestion.{PROG}",
+        description="Verify People, Applications and resumes across modules (spec §6.3). "
+        "Read-only.",
     )
     parser.add_argument(
         "--manifest", type=Path, default=None, help="seed manifest to compare against exactly"
@@ -318,7 +268,7 @@ def main(
         try:
             manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            print(f"verify_backfill: cannot read manifest {args.manifest}: {exc}", file=sys.stderr)
+            print(f"{PROG}: cannot read manifest {args.manifest}: {exc}", file=sys.stderr)
             return 2
 
     with (session_factory or tasks.SyncSession)() as db:
