@@ -19,8 +19,9 @@ from app.modules.ai.schemas import ExtractionResult
 from app.modules.ai.service import AIQuotaExceeded
 from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
+from app.modules.ingestion.events import campaign_channel
 from app.modules.ingestion.models import Resume
-from tests.fakes import CeleryRecorder, InMemoryStorage
+from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.conftest import Events
 
 RESUME_TEXT = """Jane Doe
@@ -115,6 +116,42 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_application(
             "matched_existing": False,
         },
     ]
+
+
+def test_events_go_to_the_resumes_campaign_channel_only(
+    sync_db: Session,
+    fake_storage: InMemoryStorage,
+    fake_redis: FakeRedis,
+    fake_ai: FakeAIService,
+) -> None:
+    # B3 (fixed in E0-21): each campaign has its own channel, so a stream subscribed to another
+    # campaign's channel never sees this resume's events.
+    resume = _arrange(sync_db, fake_storage, make_pdf(RESUME_TEXT))
+    pubsub = fake_redis.sync_client().pubsub()
+    pubsub.psubscribe(campaign_channel("*"))
+
+    tasks.extract_resume.apply(args=(str(resume.id),))
+    tasks.process_candidate_ai.apply(args=(str(resume.id),))
+
+    channels = []
+    while (message := pubsub.get_message()) is not None:
+        if message["type"] == "pmessage":
+            channels.append(message["channel"].decode())
+    pubsub.close()
+    assert channels == [f"campaign:{resume.campaign_id}:events"] * 2  # extracting, done
+
+
+def test_a_resume_deleted_while_processing_publishes_nothing(
+    sync_db: Session, events: Events
+) -> None:
+    # Its campaign is unknown (the row is gone), so there is no channel, and no page, to tell.
+    gone = str(uuid.uuid4())
+
+    einfo: Any = None  # unused by on_failure
+    tasks.process_candidate_ai.on_failure(RuntimeError("boom"), "task-id", (gone,), {}, einfo)
+    tasks._mark_quota_exceeded(gone, tasks.STEP_SCORE, tasks.logger)
+
+    assert events() == []
 
 
 def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(

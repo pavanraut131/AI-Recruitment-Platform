@@ -1,6 +1,6 @@
 # Sprint 4 · Switch, contract, close E0
 
-**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-20 → 2026-10-26  ·  **Status:** planned
+**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-20 → 2026-10-26  ·  **Status:** in review
 
 ## Sprint goal
 
@@ -15,7 +15,7 @@ This sprint covers phases 4–5 of the migration (spec §6.1): **switch → cont
 | E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | in review |
 | E0-19 | Switch reads to People + Applications (phase 4) | L | in review |
 | E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | in review |
-| E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | todo |
+| E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | in review |
 
 **Order:** E0-18 → E0-19 → E0-20 → E0-21. The chain is strictly sequential, each PR stacked on the previous one. **Merge stacked PRs with "Create a merge commit"** (Sprint 3 retro).
 
@@ -83,16 +83,19 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-21 · Close E0
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-21-close-e0`
+**Status:** in review  ·  **Size:** M  ·  **Branch:** `e0-21-close-e0`
 
 **Goal:** E0's definition of done (spec §10) is met and visible.
 
 **Acceptance criteria**
-- [ ] A CI coverage gate of **≥ 80 % on `app/modules/`** (`--cov-fail-under` scoped to modules).
-- [ ] **B3 fixed:** the SSE stream only delivers events for the requested campaign. This is a data leak once E2 adds tenants. The snapshot change is explained.
-- [ ] Every spec §10 item is ticked with a link to its evidence. The roadmap marks E0 ✅.
-- [ ] README "Architecture" section: a module diagram, the request and upload flows, and links to ADRs 0001–0005.
-- [ ] The E0 retro and lessons are captured in this file.
+- [x] A CI coverage gate of **≥ 80 % on `app/modules/`** (`--cov-fail-under` scoped to modules). *(A `Coverage gate` step in the `backend-test` job: `coverage report --include='app/modules/*' --fail-under=80` on the data file pytest writes; the whole-app report is still printed. `make coverage` runs the same. Modules at 97 %, whole app 94 %. Proven to fail with `--fail-under=99`.)*
+- [x] **B3 fixed:** the SSE stream only delivers events for the requested campaign. This is a data leak once E2 adds tenants. The snapshot change is explained. *(One Redis channel per campaign, `campaign:{id}:events`: the tasks publish on the resume's campaign channel and the stream subscribes to its campaign's only, so another campaign's event never reaches the API process. Spec §5.1. The snapshot that recorded the leak is replaced by `test_stream_delivers_only_its_campaigns_events`; `test_stream_receives_nothing_for_another_campaign` is new. The unused per-resume channel is gone.)*
+- [x] Every spec §10 item is ticked with a link to its evidence. The roadmap marks E0 ✅. *("CI green on `master`" and the fresh-clone setup are re-confirmed on `master` after the merge.)*
+- [x] README "Architecture" section: a module diagram, the request and upload flows, and links to ADRs 0001–0005.
+- [x] The E0 retro and lessons are captured in this file. *(Draft below, to be confirmed at sprint close.)*
+- [x] Open follow-ups consolidated in [backlog.md](../backlog.md): B4, B5, B7, B8 (export part), B9, B10, Node 22/24, the `resumes.campaign_id` index, the fake OCR placeholder, removing `/api/v1` after E2.
+
+**Concept to learn:** Quality gates that measure what matters (module coverage, not whole-app); tenant isolation by construction (data that is never delivered cannot leak).
 
 ---
 
@@ -106,9 +109,38 @@ Design work for E1 can start **during** this sprint. It is research and mockups,
 
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+*(Draft written with E0-21, **to be confirmed at sprint close**.)*
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+**Goal met:** pending the merges of [#29](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/29) → [#30](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/30) → [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31) → E0-21. With them, E0's definition of done (spec §10) is met and E0 is closed.
+
+### Demo
+
+- **The API serves People + Applications.** The live switch rehearsal compared 2,467 responses captured before and after: 0 unexpected differences ([#30](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/30)). After the contract, 2,468 of 2,468 identical ([#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31)).
+- **`candidates` is gone** and so is the last cross-module foreign key; a test reads `information_schema` so none can come back.
+- **Three recorded bugs fixed:** B6 (PDFs left in storage after deletes), B3 (SSE leaked other campaigns' events), and, before this sprint, B1/B2.
+- **Coverage gate:** `app/modules/` at 97 %, gated at 80 % in CI.
+- **README architecture section**, and one [backlog](../backlog.md) for everything still open.
+
+### Keep
+
+- **Expand → backfill → switch → contract, each step rehearsed live** with recorded responses (`capture_api` / `compare_api`). The switch changed the source of every candidate endpoint and the comparison, not opinion, showed nothing visible changed.
+- **Deciding trade-offs explicitly and writing them down** (option A for the contract timing, no placeholder rows, deletes "rows first, PDFs after the commit").
+- **Snapshot diffs as the acceptance proof**, with every change explained in the PR.
+
+### Drop
+
+- **Four-deep PR stacks** (#29 → #30 → #31 → E0-21) open at the same time: each review waits for the one below it, and a late fix low in the stack ripples up.
+- **Follow-ups living only in PR "Notes"** (the fake OCR and the missing index were found that way). They now go to `docs/backlog.md` in the same PR.
+
+### Try
+
+- In E1, keep stacks at most two deep and merge before starting the third ticket.
+- Re-run the fresh-clone check (`cp .env.example .env && make setup`) at every epic close, not only when the setup changes.
+
+### E0 lessons
+
+- **Characterization tests first** paid for the whole epic: 179 snapshots let the restructure, the switch and the contract each prove "no visible change" in seconds, and they surfaced 15 bugs before any refactor.
+- **Boundaries need a tool.** import-linter's 8 contracts caught violations that reviews would have missed; ADR 0005 (composition layer) was needed as soon as endpoints spanned two modules.
+- **No cross-module foreign keys** made the contract a pure schema change, but it moved consistency into services, so the verification script (`verify_people_applications`) is part of the design, not an afterthought.
+- **Concurrency is designed, not tested in**: advisory locks in a global order and a short transaction (score before resolve) gave a 20-thread test that passes every time.
+- **Windows dev env:** keep worktree and venv paths short, and make the test Postgres readiness check go through the published port.

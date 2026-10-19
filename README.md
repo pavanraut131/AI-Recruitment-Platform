@@ -6,13 +6,123 @@
 
 ## Architecture
 
+One FastAPI backend and two Celery workers, organised as a **modular monolith**
+([ADR 0001](docs/adr/0001-modular-monolith.md)): one deployable, one Postgres database, and the
+code split into domain modules with boundaries enforced by import-linter in CI.
+
 ```
-Next.js (Frontend) → FastAPI (Backend) → Celery Workers → Gemini AI
-                           ↕                    ↕
-                       PostgreSQL           MinIO (PDFs)
-                           ↕
-                         Redis (Queue + SSE pub/sub)
+Next.js (frontend) ──HTTP / SSE──▶ FastAPI ──Celery (Redis)──▶ extract worker ──▶ AI worker ──▶ Gemini
+                                     │                              │                │
+                                     └──── PostgreSQL 16 (pgvector) · MinIO (PDFs) · Redis (queues, SSE pub/sub)
 ```
+
+### Modules and allowed dependencies
+
+```mermaid
+flowchart TD
+    main["app.main<br/>(mounts the routers)"]
+    api["app.api<br/>composition layer (ADR 0005)"]
+    subgraph modules["app.modules"]
+        ingestion["ingestion<br/>upload, resumes, Celery tasks, SSE"]
+        hiring["hiring<br/>campaigns, applications, stats, JD parsing"]
+        talent["talent<br/>people, identifiers, matching"]
+        ai["ai<br/>the only LLM access (Gemini / fake)"]
+    end
+    platform["app.platform<br/>settings, DB session, storage, logging, Celery app"]
+    devtools["app.devtools<br/>seed, API capture/compare, storage orphans"]
+
+    main --> api
+    main --> ingestion
+    main --> hiring
+    api -->|service + schemas only| ingestion
+    api -->|service + schemas only| hiring
+    ingestion --> hiring
+    ingestion --> talent
+    ingestion --> ai
+    hiring --> talent
+    hiring --> ai
+    modules --> platform
+    api --> platform
+    devtools -.->|"may import anything;<br/>nothing imports devtools"| api
+    devtools -.-> modules
+```
+
+An arrow means "may import". The 8 import-linter contracts in
+[`backend/pyproject.toml`](backend/pyproject.toml) enforce it:
+
+- Layers `ingestion → hiring → talent`; `talent` and `ai` import no other module.
+- A module may import another module only through its **public interface**, `service.py` and
+  `schemas.py`, never its `models`, `repository`, `router` or `tasks`. `app.api` follows the same
+  rule.
+- `platform` imports no module, nothing below `app.api` imports it, nothing imports `devtools`,
+  and only `ai` may import an LLM SDK (`google.*`).
+- Each module owns its tables, and no foreign key crosses a module boundary
+  ([ADR 0003](docs/adr/0003-no-cross-module-foreign-keys.md), checked on the live schema by
+  `backend/tests/test_no_cross_module_foreign_keys.py`). Cross-module references are plain UUIDs,
+  kept consistent by the services and checked by `verify_people_applications`.
+
+### Request flow
+
+```
+HTTP ─▶ router (module's router.py, or app/api/routes.py when an endpoint needs several modules)
+     ─▶ service.py (business rules; the module's public interface)
+     ─▶ repository.py (SQLAlchemy 2.0 queries on the module's own tables)
+```
+
+Routers stay thin. An endpoint that spans modules (campaign detail and stats, every candidate
+endpoint, campaign and candidate deletes) lives in `app/api` and calls each module's service in
+one request transaction ([ADR 0005](docs/adr/0005-composition-layer.md)). The `/api/v1/candidates*`
+endpoints are a compatibility layer: they serve Applications in the pre-E0 response shapes,
+pinned by 179 snapshot tests in
+[`backend/tests/characterization`](backend/tests/characterization/README.md).
+
+### Upload flow
+
+```
+POST /campaigns/{id}/upload            ingestion: validate, hash, store the PDF in MinIO, insert resumes rows
+  └─▶ extract_queue: extract_resume    PDF → text (pdfplumber, PyMuPDF, else OCR through ai) → resumes.raw_text
+        └─▶ ai_queue: process_candidate_ai
+              1. ai.extract_profile    → resumes.extracted (snapshot; skipped on a retry)
+              2. ai.score              against the campaign's role and skills
+              3. talent.resolve_person ┐ one transaction: find or create the Person
+              4. hiring.upsert_application ┘ (advisory locks) and write the Application
+  each step ─▶ Redis channel campaign:{id}:events ─▶ GET /campaigns/{id}/stream (SSE)
+```
+
+Every step is safe to re-run, `resumes.processing_step` records where a failure stopped, and a
+Gemini quota error shows as `quota_exceeded` at once (spec §5). Each campaign has its own event
+channel, so a stream only ever receives its own campaign's events.
+
+### Data model
+
+| Module | Table | What it holds |
+|---|---|---|
+| talent | `people` | One row per human, across campaigns; profile from their newest resume |
+| talent | `person_identifiers` | Normalised emails and phones, unique per `(kind, value)`; the matching key ([ADR 0004](docs/adr/0004-identity-matching-policy.md)) |
+| talent | `identity_conflicts` | Email and phone pointing at different people: recorded, never auto-merged |
+| talent | `person_resumes` | Which Person each resume resolved to (makes resolution idempotent) |
+| hiring | `campaigns` | A job: role, required skills, status |
+| hiring | `applications` | A Person applying to one campaign (`UNIQUE(campaign_id, person_id)`): scoring, category, pipeline stage, notes |
+| hiring | `legacy_candidate_map` | Old candidate ids merged into an application, so old links still resolve |
+| ingestion | `resumes` | An uploaded PDF: status, processing step, text, extraction snapshot, its Person |
+
+The legacy `candidates` table was split into People and Applications
+([ADR 0002](docs/adr/0002-person-application-split.md)) by an expand → backfill → switch →
+contract migration, and dropped in E0-20.
+
+### Further reading
+
+- Design spec: [E0 · Platform core](docs/specs/EPIC-00-platform-core.md); roadmap:
+  [docs/roadmap.md](docs/roadmap.md); working process: [docs/process.md](docs/process.md)
+- ADRs: [0001 modular monolith](docs/adr/0001-modular-monolith.md) ·
+  [0002 Person/Application split](docs/adr/0002-person-application-split.md) ·
+  [0003 no cross-module foreign keys](docs/adr/0003-no-cross-module-foreign-keys.md) ·
+  [0004 identity matching](docs/adr/0004-identity-matching-policy.md) ·
+  [0005 composition layer](docs/adr/0005-composition-layer.md)
+- Runbook: [backfill, read switch and contract](docs/runbooks/person-application-backfill.md)
+- Sprints: [1](docs/sprints/sprint-01.md) · [2](docs/sprints/sprint-02.md) ·
+  [3](docs/sprints/sprint-03.md) · [4](docs/sprints/sprint-04.md); open follow-ups:
+  [docs/backlog.md](docs/backlog.md)
 
 ## Features
 
@@ -25,7 +135,7 @@ Next.js (Frontend) → FastAPI (Backend) → Celery Workers → Gemini AI
 - **Candidate Dashboard**: Filter by skill, score range, category, search by name
 - **Analytics Panel**: Pie chart (category distribution) + Bar chart (top skills)
 - **Celery Monitoring**: Flower dashboard at `localhost:5555`
-- **Retry Logic**: 3 automatic retries with exponential backoff per failed task
+- **Retry Logic**: 3 automatic retries per failed task; every step is safe to re-run, and a quota error retries after the provider's retry delay
 
 ---
 
@@ -165,11 +275,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   │   │   ├── logging.py    # structlog setup
 │   │   │   └── celery_app.py # Celery app + routing (`celery -A app.platform.celery_app`)
 │   │   ├── modules/          # Domain modules (EPIC-00 §3); each exposes service.py + schemas.py
-│   │   │   ├── hiring/       # Campaigns, candidates, stats, JD parsing
-│   │   │   │   ├── router.py     # Thin HTTP layer (campaigns, candidates, parse-jd)
+│   │   │   ├── hiring/       # Campaigns, applications, stats, JD parsing
+│   │   │   │   ├── router.py     # Thin HTTP layer (campaign CRUD, parse-jd)
 │   │   │   │   ├── service.py    # Public interface + business rules
 │   │   │   │   ├── repository.py # Queries
-│   │   │   │   ├── models.py     # Campaign, Candidate ORM models
+│   │   │   │   ├── models.py     # Campaign, Application, LegacyCandidateMap ORM models
 │   │   │   │   └── schemas.py    # Request/response schemas
 │   │   │   ├── ingestion/    # Upload pipeline
 │   │   │   │   ├── router.py     # Upload, resume list/detail, retry-failed, SSE stream
@@ -177,19 +287,20 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   │   │   │   ├── repository.py # Queries on resumes
 │   │   │   │   ├── models.py     # Resume ORM model
 │   │   │   │   ├── schemas.py    # Request/response schemas
-│   │   │   │   ├── tasks.py      # Celery: PDF → text → AI → candidate
-│   │   │   │   ├── events.py     # Redis pub/sub progress events (SSE source)
+│   │   │   │   ├── tasks.py      # Celery: PDF → text → AI → Person + Application
+│   │   │   │   ├── events.py     # Redis pub/sub progress events, one channel per campaign (SSE source)
 │   │   │   │   ├── pdf.py        # pdfplumber + PyMuPDF
-│   │   │   │   └── reset_stuck.py # Ops: re-queue stuck resumes
+│   │   │   │   ├── reset_stuck.py # Ops: re-queue stuck resumes
+│   │   │   │   └── verify_people_applications.py # Ops: cross-module consistency check
 │   │   │   ├── ai/           # All LLM access, behind the AIService protocol
 │   │   │   │   ├── service.py    # AIService, errors, get_ai_service() (AI_PROVIDER)
 │   │   │   │   ├── schemas.py    # ExtractionResult, ScoringResult, JDParseResult
 │   │   │   │   ├── gemini.py     # Google Gemini implementation
 │   │   │   │   ├── fake.py       # Deterministic offline implementation (AI_PROVIDER=fake)
 │   │   │   │   └── prompts.py    # Prompt templates
-│   │   │   └── talent/       # People and identity matching (identity.py so far)
+│   │   │   └── talent/       # People, identifiers, conflicts; resolve_person (service.py), normalisation (identity.py)
 │   │   ├── api/              # Composition layer: endpoints spanning several modules
-│   │   │   └── routes.py     # Campaign/global stats, candidate deletes
+│   │   │   └── routes.py     # Campaign detail/stats, global stats, candidate endpoints, deletes
 │   │   ├── devtools/         # Dev-only scripts; never imported by app code
 │   │   └── main.py           # FastAPI app + lifespan
 │   └── alembic/              # Database migrations
@@ -222,11 +333,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 | GET | `/api/v1/campaigns` | List all campaigns |
 | GET | `/api/v1/campaigns/{id}` | Get campaign + stats |
 | POST | `/api/v1/campaigns/{id}/upload` | Bulk upload PDFs |
-| GET | `/api/v1/campaigns/{id}/stream` | SSE real-time updates |
+| GET | `/api/v1/campaigns/{id}/stream` | SSE real-time updates (this campaign's resumes only) |
 | GET | `/api/v1/campaigns/{id}/candidates` | List candidates (with filters) |
 | GET | `/api/v1/candidates/{id}` | Full candidate profile |
 | PUT | `/api/v1/candidates/{id}/category` | Override category |
-| GET | `/api/v1/health` | Health check |
+| GET | `/health`, `/health/ready` | Liveness and readiness (`/api/v1/health` is not mounted: B10) |
 
 ---
 

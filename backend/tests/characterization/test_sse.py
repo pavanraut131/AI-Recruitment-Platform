@@ -1,10 +1,15 @@
 """Characterization: GET /campaigns/{id}/stream (Server-Sent Events).
 
-How the endpoint works today: it subscribes to the Redis pub/sub channel ``resume:all_updates``,
-sends a ``connected`` event, then forwards every message on that channel as a ``resume_update``
-event (data = the published JSON, unchanged). The Celery tasks publish those messages with
-``publish_resume_event`` (``app/modules/ingestion/events.py``, called from
-``app/modules/ingestion/tasks.py``; before E0-10 ``_publish_sse_event`` in ``workers/``).
+How the endpoint works today: it subscribes to the Redis pub/sub channel of the requested
+campaign, ``campaign:<campaign id>:events``, sends a ``connected`` event, then forwards every
+message on that channel as a ``resume_update`` event (data = the published JSON, unchanged). The
+Celery tasks publish those messages with ``publish_resume_event`` (``app/modules/ingestion/
+events.py``, called from ``app/modules/ingestion/tasks.py``; before E0-10 ``_publish_sse_event``
+in ``workers/``), on the channel of the resume's campaign.
+
+Until E0-21 every event went to one global channel, ``resume:all_updates``, and every stream
+forwarded all of them, whatever campaign it was opened for (B3, recorded as a bug by
+``test_stream_forwards_events_of_other_campaigns``). The payloads did not change.
 
 The tests publish through that real function (Redis is fakeredis, see ``fake_redis``),
 using the same arguments as each call site, so the recorded payload shapes are the ones a client
@@ -74,12 +79,15 @@ async def test_stream_event_for_each_resume_status(
     resume = await make_resume(db_session, campaign, original_filename="jane_doe_resume.pdf")
     rid = str(resume.id)
     person_id = str(uuid.uuid4())
+    cid = campaign.id
     publishers: list[Callable[[], None]] = [
         # tasks.extract_resume: task started
-        lambda: publish_resume_event(rid, "extracting", {"filename": "jane_doe_resume.pdf"}),
+        lambda: publish_resume_event(
+            rid, "extracting", {"filename": "jane_doe_resume.pdf"}, campaign_id=cid
+        ),
         # tasks.extract_resume: retries exhausted
         lambda: publish_resume_event(
-            rid, "failed", {"error": "Could not extract meaningful text from PDF"}
+            rid, "failed", {"error": "Could not extract meaningful text from PDF"}, campaign_id=cid
         ),
         # tasks.process_candidate_ai: success. person_id and matched_existing were added in E0-16
         # (additive: the Person the resume was attached to, and whether it existed before).
@@ -94,15 +102,23 @@ async def test_stream_event_for_each_resume_status(
                 "person_id": person_id,
                 "matched_existing": True,
             },
+            campaign_id=cid,
         ),
         # tasks.process_candidate_ai: extraction found no candidate data
         lambda: publish_resume_event(
-            rid, "failed", {"error": "Not a resume — no candidate information could be extracted"}
+            rid,
+            "failed",
+            {"error": "Not a resume — no candidate information could be extracted"},
+            campaign_id=cid,
         ),
         # tasks.AITask.on_failure (retries exhausted) / tasks.ExtractTask.on_failure
-        lambda: publish_resume_event(rid, "failed", {"error": "Gemini returned invalid JSON"}),
+        lambda: publish_resume_event(
+            rid, "failed", {"error": "Gemini returned invalid JSON"}, campaign_id=cid
+        ),
         # tasks._mark_quota_exceeded
-        lambda: publish_resume_event(rid, "quota_exceeded", {"error": QUOTA_MESSAGE}),
+        lambda: publish_resume_event(
+            rid, "quota_exceeded", {"error": QUOTA_MESSAGE}, campaign_id=cid
+        ),
     ]
     result = await read_sse(
         app,
@@ -116,32 +132,67 @@ async def test_stream_event_for_each_resume_status(
         "events": result.events,
     } == snapshot
 
-    redis = fake_redis.sync_client()
-    # The task also publishes to a per-resume channel nobody subscribes to.
-    assert redis.pubsub_numsub(f"resume:status:{rid}") == [(f"resume:status:{rid}".encode(), 0)]
-    # After the client disconnects the stream unsubscribes.
-    assert redis.pubsub_numsub("resume:all_updates") == [(b"resume:all_updates", 0)]
+    # After the client disconnects the stream unsubscribes from its campaign's channel. (Until
+    # E0-21 the tasks also published to a per-resume channel, resume:status:<id>, that nothing
+    # subscribed to; it was removed.)
+    channel = f"campaign:{campaign.id}:events"
+    assert fake_redis.sync_client().pubsub_numsub(channel) == [(channel.encode(), 0)]
 
 
-async def test_stream_forwards_events_of_other_campaigns(
+async def test_stream_delivers_only_its_campaigns_events(
     app: FastAPI, db_session: AsyncSession, snapshot: SnapshotAssertion
 ) -> None:
-    # BUG (recorded): the stream does not filter by campaign; a client watching campaign A also
-    # receives every update for campaign B (and for unknown resume ids).
+    # B3, fixed in E0-21 (until then test_stream_forwards_events_of_other_campaigns recorded the
+    # bug: a client watching campaign A received every update of campaign B). Pub/sub keeps the
+    # publish order, so the watched campaign's event, published last, arriving right after
+    # `connected` proves the other campaign's two events were not delivered.
     watched = await make_campaign(db_session, title="Watched")
     other = await make_campaign(db_session, title="Other")
+    watched_resume = await make_resume(db_session, watched, original_filename="watched.pdf")
     other_resume = await make_resume(db_session, other, original_filename="other.pdf")
     publishers: list[Callable[[], None]] = [
-        lambda: publish_resume_event(str(other_resume.id), "extracting", {"filename": "other.pdf"}),
-        lambda: publish_resume_event("not-a-resume-id", "failed", {"error": "x"}),
+        lambda: publish_resume_event(
+            str(other_resume.id), "extracting", {"filename": "other.pdf"}, campaign_id=other.id
+        ),
+        lambda: publish_resume_event(
+            str(other_resume.id), "failed", {"error": "x"}, campaign_id=other.id
+        ),
+        lambda: publish_resume_event(
+            str(watched_resume.id),
+            "extracting",
+            {"filename": "watched.pdf"},
+            campaign_id=watched.id,
+        ),
     ]
     result = await read_sse(
         app,
         f"{API}/campaigns/{watched.id}/stream",
-        count=3,
+        count=2,
         on_event=publish_once_connected(publishers),
     )
     assert {"watched_campaign": watched.id, "events": result.events} == snapshot
+
+
+async def test_stream_receives_nothing_for_another_campaign(
+    app: FastAPI, db_session: AsyncSession
+) -> None:
+    # B3: only the other campaign publishes, so the stream never gets past `connected`.
+    watched = await make_campaign(db_session, title="Watched")
+    other = await make_campaign(db_session, title="Other")
+    other_resume = await make_resume(db_session, other, original_filename="other.pdf")
+    publishers: list[Callable[[], None]] = [
+        lambda: publish_resume_event(
+            str(other_resume.id), "extracting", {"filename": "other.pdf"}, campaign_id=other.id
+        ),
+    ]
+    with pytest.raises(TimeoutError):
+        await read_sse(
+            app,
+            f"{API}/campaigns/{watched.id}/stream",
+            count=2,
+            on_event=publish_once_connected(publishers),
+            max_seconds=0.5,
+        )
 
 
 async def test_stream_unknown_campaign_still_connects(

@@ -79,6 +79,11 @@ jobs:
       - name: pytest
         run: uv run pytest --cov-report=xml
 
+      # Coverage gate (spec EPIC-00 §8): the modules, not the whole app, must stay >= 80 %.
+      # Reads the .coverage data file pytest just wrote; keep in sync with `make coverage`.
+      - name: Coverage gate (app/modules >= 80 %)
+        run: uv run coverage report --include='app/modules/*' --skip-covered --fail-under=80
+
       - name: Upload coverage report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
