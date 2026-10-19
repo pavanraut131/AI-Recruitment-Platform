@@ -1,6 +1,6 @@
 # Sprint 3 · People and applications, side by side
 
-**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-16 → 2026-10-22  ·  **Status:** planned
+**Epic:** [E0 · Platform core](../specs/EPIC-00-platform-core.md)  ·  **Dates:** 2026-10-16 → 2026-10-22  ·  **Status:** done (closed 2026-10-19)
 
 ## Sprint goal
 
@@ -12,18 +12,18 @@ This sprint covers phases 1–3 of the migration plan (spec §6.1): **expand →
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| E0-13 | Harden the test suite (flaky start-up, Hypothesis flake, optional Gemini key) | S | todo |
-| E0-14 | Expand migration: people, identifiers, applications and the new resume columns | M | todo |
-| E0-15 | `talent.resolve_person` with advisory locks and the concurrency test | L | todo |
-| E0-16 | Dual write in the upload pipeline (`hiring.upsert_application`) | L | todo |
-| E0-17 | Backfill and verification, rehearsed against the seed data | L | todo |
+| E0-13 | Harden the test suite (flaky start-up, Hypothesis flake, optional Gemini key) | S | done (#24) |
+| E0-14 | Expand migration: people, identifiers, applications and the new resume columns | M | done (#22) |
+| E0-15 | `talent.resolve_person` with advisory locks and the concurrency test | L | done (#23) |
+| E0-16 | Dual write in the upload pipeline (`hiring.upsert_application`) | L | done (#25) |
+| E0-17 | Backfill and verification, rehearsed against the seed data | L | done (#26) |
 
 **Order:**
 - **Wave 1:** E0-13 and E0-14 in parallel.
 - **Wave 2:** E0-15, which needs the E0-14 tables.
 - **Wave 3:** E0-16 and E0-17 in parallel. Both call `resolve_person` and `upsert_application`. E0-16 owns `upsert_application`, so E0-17 starts once that interface is merged, or the two agree it up front.
 
-## Decision needed before E0-15: phone numbers without a country code
+## Decision: phone numbers without a country code (decided 2026-10-16: Option A)
 
 E0-11 found that with `PHONE_DEFAULT_REGION=IN`, a US number written as `(415) 555-2671` normalises to the **valid Indian landline** `+914155552671`. Matching on it could merge two different people, which is the data-protection incident ADR 0004 is designed to prevent.
 
@@ -38,7 +38,7 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 ---
 
 ### E0-13 · Harden the test suite
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `e0-13-test-hardening`
+**Status:** done  ·  **Size:** S  ·  **Branch:** `e0-13-test-hardening`
 
 **Goal:** A reliable suite before the concurrency-heavy work starts.
 
@@ -53,7 +53,7 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 ---
 
 ### E0-14 · Expand migration
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e0-14-expand-migration`
+**Status:** done  ·  **Size:** M  ·  **Branch:** `e0-14-expand-migration`
 
 **Goal:** Phase 1 of spec §6.1. The new tables and columns exist, and nothing is removed.
 
@@ -74,7 +74,7 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 ---
 
 ### E0-15 · `talent.resolve_person` with advisory locks
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e0-15-resolve-person`
+**Status:** done  ·  **Size:** L  ·  **Branch:** `e0-15-resolve-person`
 
 **Goal:** One function decides which Person a resume belongs to, correctly under concurrency (spec §5.3–5.4).
 
@@ -96,7 +96,7 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 ---
 
 ### E0-16 · Dual write in the upload pipeline
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e0-16-dual-write`
+**Status:** done  ·  **Size:** L  ·  **Branch:** `e0-16-dual-write`
 
 **Goal:** Every newly processed resume produces a Person and an Application **in the same transaction** as the legacy Candidate (spec §5.1, §6.1 phase 1).
 
@@ -119,7 +119,7 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 ---
 
 ### E0-17 · Backfill and verification
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e0-17-backfill`
+**Status:** done  ·  **Size:** L  ·  **Branch:** `e0-17-backfill`
 
 **Goal:** Convert every legacy candidate into People and Applications while the app keeps running, and prove the result is correct (spec §6.2–6.3).
 
@@ -152,9 +152,29 @@ The decision is recorded as an amendment to [ADR 0004](../adr/0004-identity-matc
 
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+**Goal met:** yes. All 5 tickets merged and CI green on `master`. The live rehearsal matched the seed manifest exactly.
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+### Demo
+
+- **Live rehearsal on the Compose stack:** 1,125 legacy candidates backfilled in **40 s** while 40 new uploads ran through the dual-write pipeline. `verify_backfill` **PASSED**: people 808/808, applications 1,101/1,101, identity conflicts 4/4, legacy-map rows 24/24, plus all 7 integrity checks. A second full run changed nothing (identical checksum).
+- **`resolve_person`:** 20 parallel workers for one identity always produce exactly 1 Person (20 runs in a row), with no deadlocks on crossed email/phone combinations. Locks are taken in hash-id order.
+- **Phone policy Option A** is implemented and recorded in the [ADR 0004 amendment](../adr/0004-identity-matching-policy.md). A US number without a country code no longer matches an Indian number.
+- **Dual write:** a repeat applicant to two campaigns gives 1 Person and 2 Applications. A newer resume updates its Application's scoring. Quota errors surface immediately, and the retry uses Google's retry delay.
+- **Tests:** 380 → **542**. The flaky Postgres start and the Hypothesis phone test were fixed at the root cause. `AI_PROVIDER=fake` no longer needs a Gemini key.
+
+### Keep
+
+- **Proving each step on the real stack** (migrations on seeded data, the repeat-applicant smoke test, the live backfill rehearsal), not only in tests.
+- **Making agents decide and justify trade-offs:** score before resolve (locks held for milliseconds, not across Gemini calls), and one transaction per candidate in the backfill (bounded advisory locks).
+- **Stacking dependent tickets** so wave 3 could start before wave 2 merged.
+
+### Drop
+
+- **Resolving conflicts by picking one side.** It dropped E0-13's tests twice (#23, #25). CI only showed an unused-import warning.
+- **Squash-merging a PR that has another PR stacked on it.** #25's squash made #26 conflict on every line E0-17 had touched.
+
+### Try
+
+- **Merge-commit** any PR with children stacked on it. Squash is fine for leaf PRs.
+- For conflicts, hand the PR to Claude, who checks the result against **both** parents for dropped lines before pushing.
+- Keep worktree paths short on Windows: paths over 260 characters break installing `google-generativeai`.
