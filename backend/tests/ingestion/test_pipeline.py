@@ -360,8 +360,8 @@ class Failures:
             self._fail("save")
             return result
 
-        def publish(resume_id: str, status: str, extra: Any = None) -> None:
-            real_publish(resume_id, status, extra)
+        def publish(resume_id: str, status: str, extra: Any = None, **kwargs: Any) -> None:
+            real_publish(resume_id, status, extra, **kwargs)
             if status == "done":  # after the commit
                 self._fail("after_commit")
 
@@ -571,11 +571,11 @@ def test_quota_error_shows_at_once_then_retries_after_googles_delay(
     seen: list[tuple[str, str | None]] = []
     real_publish = tasks.publish_resume_event
 
-    def publish(resume_id: str, status: str, extra: Any = None) -> None:
+    def publish(resume_id: str, status: str, extra: Any = None, **kwargs: Any) -> None:
         if status == "quota_exceeded":
             current = reload(sync_db, resume)
             seen.append((current.status, current.processing_step))
-        real_publish(resume_id, status, extra)
+        real_publish(resume_id, status, extra, **kwargs)
 
     monkeypatch.setattr(tasks, "publish_resume_event", publish)
 

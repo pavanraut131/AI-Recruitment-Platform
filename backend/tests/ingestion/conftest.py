@@ -55,17 +55,18 @@ Events = Callable[[], list[dict[str, Any]]]
 
 @pytest.fixture
 def events(fake_redis: FakeRedis) -> Iterator[Events]:
-    """Call it to get every payload published on the SSE channel so far in the test."""
-    from app.modules.ingestion.events import ALL_UPDATES_CHANNEL
+    """Call it to get every payload published on any campaign's SSE channel so far in the test
+    (``test_tasks.py`` checks which channel each one goes to)."""
+    from app.modules.ingestion.events import campaign_channel
 
     pubsub = fake_redis.sync_client().pubsub()
-    pubsub.subscribe(ALL_UPDATES_CHANNEL)
+    pubsub.psubscribe(campaign_channel("*"))
     received: list[dict[str, Any]] = []
 
     def drain() -> list[dict[str, Any]]:
         # (Not ignore_subscribe_messages: that returns None for the subscribe confirmation.)
         while (message := pubsub.get_message()) is not None:
-            if message["type"] == "message":
+            if message["type"] == "pmessage":
                 received.append(json.loads(message["data"]))
         return received
 
