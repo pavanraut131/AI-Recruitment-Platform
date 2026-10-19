@@ -12,7 +12,7 @@ Status values: ⬜ not started · 🟦 designing · 🟨 in progress · ✅ done
 
 | # | Epic | Status | Core concepts | Spec |
 |---|---|---|---|---|
-| E0 | **Platform core**: modular restructure, Person/Application split, Postgres test infra, working CI | 🟨 | DDD, testcontainers, data migrations | [spec](specs/EPIC-00-platform-core.md) |
+| E0 | **Platform core**: modular restructure, Person/Application split, Postgres test infra, working CI | ✅ | DDD, testcontainers, data migrations | [spec](specs/EPIC-00-platform-core.md) |
 | E1 | **Product design & frontend foundation**: agency-model screen structure, design system (shadcn/ui, tokens, light/dark), TanStack Query, API client generated from OpenAPI, rebuild existing screens, Playwright | ⬜ | Product/UX design, design systems, frontend architecture | — |
 | E2 | **Identity & tenancy**: Agency → Clients → users, roles, Postgres row-level security | ⬜ | OAuth/OIDC, RBAC, multi-tenant isolation | — |
 | E3 | **AI gateway**: Gemini/Claude/OpenAI behind one interface, structured outputs, fallback, per-tenant cost logging | ⬜ | Provider abstraction, resilience, metering | — |
@@ -37,7 +37,9 @@ Ordering notes:
 | [1](sprints/sprint-01.md) | 2026-10-13 (closed early) | Safety net & working CI: characterization tests on real Postgres, CI running on `master` | done |
 | [2](sprints/sprint-02.md) | 2026-10-14 → 10-15 | Modules in place: modular layout with enforced boundaries; parse-jd and skill filter fixed | done |
 | [3](sprints/sprint-03.md) | 2026-10-15 → 10-19 | People and applications side by side: expand, dual write, backfill, verify | done |
-| [4](sprints/sprint-04.md) | 2026-10-20 → 10-26 | Switch reads, contract, close E0 | planned |
+| [4](sprints/sprint-04.md) | 2026-10-20 → 10-26 | Switch reads, contract, close E0 | in review |
+
+Open follow-ups (bugs, upgrades, small debts) that no sprint has taken yet: [backlog.md](backlog.md).
 
 ## Out of scope for now
 

@@ -332,7 +332,7 @@ Other endpoints:
 | AI | No network | `FakeAIService` with deterministic output, selected with `AI_PROVIDER=fake` |
 | End-to-end smoke | Upload a PDF → Application exists | Against the Compose stack with `AI_PROVIDER=fake` |
 
-Coverage gate: **≥ 80 % on `app/modules/`**.
+Coverage gate: **≥ 80 % on `app/modules/`**. Enforced since E0-21 by the `Coverage gate` step of the `backend-test` CI job (`coverage report --include='app/modules/*' --fail-under=80`, also `make coverage`); the whole-app figure is reported, not gated.
 
 ## 9. Tooling, CI and developer experience
 
@@ -342,7 +342,7 @@ Coverage gate: **≥ 80 % on `app/modules/`**.
   - Triggers: push to `master` and every pull request. Older runs are cancelled when a newer push arrives.
   - Jobs:
     - `backend-quality`: ruff, mypy, import-linter
-    - `backend-test`: pytest with coverage gate
+    - `backend-test`: pytest, then the coverage gate on `app/modules/` (§8)
     - `migrations`: upgrade to head on an empty database, plus `alembic check`
     - `frontend`: lint, type check, build
     - `compose`: validate the Compose config
@@ -357,14 +357,24 @@ Coverage gate: **≥ 80 % on `app/modules/`**.
 
 ## 10. Definition of done for the epic
 
-- [ ] All characterization tests pass against the restructured code.
-- [ ] import-linter contracts pass, and no module imports another module's internals.
-- [ ] A backfill rehearsal runs on a live Compose stack with seed data. The upload pipeline keeps working during the backfill, verification passes and the expected counts match the manifest.
-- [ ] The concurrency test passes reliably over 20 consecutive runs.
-- [ ] The contract migration has dropped `candidates`, and the app still works.
-- [ ] CI is green on `master` with all five jobs, and coverage is ≥ 80 % on `app/modules/`.
-- [ ] A fresh clone becomes a working stack with `cp .env.example .env && make setup`.
-- [ ] ADRs are written for: Person/Application split, no cross-module foreign keys, and the matching policy.
+**Status (E0-21, 2026-10-19): all met.** Two items are re-confirmed on `master` once the Sprint 4 chain ([#29](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/29), [#30](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/30), [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31), E0-21) is merged: CI green on `master` with the coverage gate, and the fresh-clone setup.
+
+- [x] All characterization tests pass against the restructured code.
+  *Evidence:* the restructure ([#18](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/18), [#19](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/19), [#20](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/20)) left all 179 snapshots byte-identical ([#20](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/20): `git diff master -- backend/tests/characterization/__snapshots__` empty); the read switch and contract kept every response body and the OpenAPI document identical, with each intended change listed in its PR (8 placeholder-row snapshots in [#30](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/30), 3 storage values for B6 in [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31), the B3 snapshot in E0-21). Suite: [`backend/tests/characterization`](../../backend/tests/characterization/README.md), run by `backend-test` on every PR.
+- [x] import-linter contracts pass, and no module imports another module's internals.
+  *Evidence:* 8 contracts in `backend/pyproject.toml` ([#18](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/18) added 5, [#20](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/20) added 3; each shown to break on a deliberate violation), including "Modules import only each other's service and schemas"; `lint-imports` → 8 kept, 0 broken in [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31) and E0-21; run by `backend-quality`.
+- [x] A backfill rehearsal runs on a live Compose stack with seed data. The upload pipeline keeps working during the backfill, verification passes and the expected counts match the manifest.
+  *Evidence:* [#26](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/26) "Live rehearsal on the Compose stack": 1,125 seeded candidates backfilled in 40 s while 40 live uploads ran; `verify_backfill --manifest` PASSED with people 808/808, applications 1,101/1,101, conflicts 4/4, map rows 24/24, all integrity checks; a second run changed nothing. [Sprint 3 review](../sprints/sprint-03.md#sprint-review--retro), runbook §7.
+- [x] The concurrency test passes reliably over 20 consecutive runs.
+  *Evidence:* `backend/tests/talent/test_resolve_person_concurrency.py` (20 threads, one identity → exactly 1 Person; crossed email/phone → no deadlock): "Passed 20 runs in a row" in [#23](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/23); re-run on the E0-21 branch: 20 consecutive runs of the file (5 tests each), all passed.
+- [x] The contract migration has dropped `candidates`, and the app still works.
+  *Evidence:* [#31](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/31) "Live contract check on the Compose stack": `alembic upgrade` to `e20c4a7d1b93`, `candidates` and `resumes_campaign_id_fkey` gone, `verify_people_applications` integrity checks PASS, `compare_api` 2,468/2,468 identical, campaign delete with PDFs and a new upload work. Tests: `tests/migrations/test_contract_e0_20.py`, `tests/test_no_cross_module_foreign_keys.py`.
+- [x] CI is green on `master` with all five jobs, and coverage is ≥ 80 % on `app/modules/`.
+  *Evidence:* all five jobs (`backend-quality`, `backend-test`, `migrations`, `frontend`, `compose`) green on `master` through [#27](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/27) (the last merge) and required by branch protection since Sprint 1; the gate itself is E0-21: a `Coverage gate` step in `backend-test` fails below 80 % on `app/modules/` (97 % at E0-21, whole app 94 %), shown to fail with the threshold at 99. *Confirmed on `master` after merge.*
+- [x] A fresh clone becomes a working stack with `cp .env.example .env && make setup`.
+  *Evidence:* [#2](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/2) (no workarounds: `--wait`, migrations, healthchecks) and [#17](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/17) (`make setup` seeds with `--if-empty`, safe to re-run); [Sprint 1 demo](../sprints/sprint-01.md#sprint-review--retro). Since then every migration runs from an empty database in the `migrations` job and the Compose config is validated by `compose`. *Re-run from a fresh clone on `master` after merge* (E0-20 changed how the seed creates People and Applications, covered by its tests, not the setup steps).
+- [x] ADRs are written for: Person/Application split, no cross-module foreign keys, and the matching policy.
+  *Evidence:* [0002](../adr/0002-person-application-split.md), [0003](../adr/0003-no-cross-module-foreign-keys.md), [0004](../adr/0004-identity-matching-policy.md) (with the phone amendment from [#23](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/23)), all accepted ([#4](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/4), [#10](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/10)); also [0001](../adr/0001-modular-monolith.md) and [0005](../adr/0005-composition-layer.md).
 
 ## 11. Risks
 
