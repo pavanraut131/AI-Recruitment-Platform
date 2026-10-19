@@ -1,6 +1,6 @@
-# Runbook · Person/Application backfill (EPIC-00 phase 2 and 3)
+# Runbook · Person/Application backfill and read switch (EPIC-00 phases 2 to 4)
 
-Converts every legacy `candidates` row into People (`talent`) and Applications (`hiring`), then proves the result before the Sprint 4 read switch. Spec: [EPIC-00 §6.1–6.3](../specs/EPIC-00-platform-core.md#6-migration-plan-expand--backfill--contract). Code: `app/modules/ingestion/backfill.py`, `app/modules/ingestion/verify_backfill.py` (their module docstrings hold the details).
+Converts every legacy `candidates` row into People (`talent`) and Applications (`hiring`), proves the result, then switches the API's reads to them (section 8, E0-19). Spec: [EPIC-00 §6.1–6.3](../specs/EPIC-00-platform-core.md#6-migration-plan-expand--backfill--contract). Code: `app/modules/ingestion/backfill.py`, `app/modules/ingestion/verify_backfill.py` (their module docstrings hold the details).
 
 The backfill is **online** (the app keeps running and uploading), **additive** (it never changes or deletes a legacy row), **idempotent** and **resumable**.
 
@@ -8,7 +8,7 @@ The backfill is **online** (the app keeps running and uploading), **additive** (
 
 | Check | How |
 |---|---|
-| Migrations at head (`b7d2e4f61a90`, E0-16; E0-17 adds none) | `docker compose exec backend alembic current` shows `(head)` |
+| Migrations at head (`b7d2e4f61a90`, E0-16; E0-17 and E0-18 add none; E0-19's two are applied by the switch, section 8.2) | `docker compose exec backend alembic current` shows `(head)` |
 | The dual write **with legacy linking** (E0-16 + E0-17) is deployed to **every worker**, and the workers were restarted after the deploy | `docker compose restart worker_extract worker_ai`; then upload one resume and check `SELECT id FROM applications WHERE id = '<its candidate id>'` returns a row |
 | `PHONE_DEFAULT_REGION` is the same for the workers and the process running the backfill | `.env` |
 | A database backup exists (production) | your backup tooling |
@@ -21,7 +21,7 @@ Why the worker restart matters: from E0-17 the pipeline links each new candidate
 1. Deploy, migrate, restart workers (section 1).
 2. Run the backfill (section 3). Uploads may continue.
 3. Run the verification (section 5). It must exit `0`.
-4. Go/no-go for the Sprint 4 read switch (section 8).
+4. Go/no-go for the Sprint 4 read switch, then the switch itself (section 8, E0-19).
 
 ## 3. Run
 
@@ -97,7 +97,8 @@ Read-only, one consistent snapshot (`REPEATABLE READ`). Exit `0` = every check p
 | `candidates_lead_to_one_application` | A candidate with a `done` resume is neither an application id nor in `legacy_candidate_map` (or is both, or leads to another campaign or person) | Run the backfill with `--reset-checkpoint`; if it persists, a worker is on pre-E0-17 code |
 | `applications_have_people` | An application points at a missing Person | Investigate; nothing deletes People today |
 | `applications_have_resumes` | An application's resume is missing, in another campaign or resolved to another person | Before E0-18 the legacy delete left applications behind. From E0-18 the delete applies the delete rule (below), so a failure means a delete ran on pre-E0-18 code: investigate, delete the orphaned application by hand |
-| `recruiter_fields_consistent` | An application's `pipeline_stage`, `notes` or `category` differs from the rule over its candidates | Recruiter edits made before E0-18 was deployed: run `--resync-recruiter-fields` (section 5a) |
+| `recruiter_fields_consistent` (E0-18 code only) | An application's `pipeline_stage`, `notes` or `category` differs from the rule over its candidates | Recruiter edits made before E0-18 was deployed: run `--resync-recruiter-fields` (section 5a). Removed from the E0-19 code: after the switch the recruiter edits applications |
+| `applications_have_extractions` (E0-19) | An application's current resume has no `extracted` snapshot, so its name, contacts and profile would read as empty | Investigate; backfilled and pipeline-processed resumes always have one |
 | `done_resumes_have_people` | A `done` resume has no `person_id`, or it disagrees with `person_resumes` | Backfill with `--reset-checkpoint` |
 | `identifiers_unique` | A `(kind, value_normalized)` stored twice | Cannot happen with the unique constraint; stop and investigate |
 | `people_without_identifiers_justified` | A Person without identifiers has a resume with a usable one (valid email, or a match-eligible phone, ADR 0004 option A) | Investigate the resolution of that resume |
@@ -107,6 +108,8 @@ Read-only, one consistent snapshot (`REPEATABLE READ`). Exit `0` = every check p
 With `--manifest`, the counts are taken **only in the manifest's `campaign_ids`** (seed manifests written from E0-17 on list them), so uploads to other campaigns during the rehearsal do not change them. The integrity checks always cover the whole database.
 
 ## 5a. Re-sync the recruiter fields (E0-18)
+
+*Pre-switch only. The E0-19 code refuses it (exit `2`): after the switch the application is the source of truth and a re-sync from the frozen candidates would undo every recruiter edit since.*
 
 ```bash
 docker compose exec backend python -m app.modules.ingestion.backfill --resync-recruiter-fields
@@ -125,6 +128,8 @@ resync: finished after 3 batch(es) in <seconds>s
 Each change is logged as `resync_recruiter_fields_changed` with the application id and fields. Exit code `0`, or `1` if a page failed (committed pages are kept; run again).
 
 ## 6. Roll back
+
+*Before the read switch only. After it the API reads the new tables: roll back the switch instead (section 8.3).*
 
 The backfill is additive: legacy tables are untouched and nothing reads the new tables before the Sprint 4 switch. In order of preference:
 
@@ -184,27 +189,129 @@ Expected: exit `0`; `expected.people 808`, `expected.applications 1101`, `expect
 
 Optional: run the backfill a second time (`--reset-checkpoint`) and confirm `processed: 0`, every candidate `already_backfilled`.
 
-## 8. Go/no-go for the Sprint 4 read switch
+## 8. The read switch (E0-19): go/no-go, procedure, rollback
 
-Go only if **all** hold. Items 1 to 5 are properties of the target environment: they are (re)confirmed by the pre-switch procedure below, run at the start of E0-19 (automated equivalents: `tests/ingestion/test_backfill.py`, `tests/ingestion/test_switch_gate.py`). Items 6 and 7 were code changes, closed by E0-18.
+From E0-19 the legacy candidate endpoints read Applications and the resumes' extraction snapshots, and nothing writes `candidates` (spec §6.1 phase 4, §7). The switch is a deploy of the E0-19 code with two migrations: `e19a0c5d2b71` (expand: `resumes.raw_text`) and `e19b7f3a9c42` (data: each application takes its legacy candidates' timestamps, so the switched responses carry the same `created_at` / `updated_at`).
 
-- [ ] `verify_backfill` exits `0` on the target environment, run after uploads have drained. *(Pre-switch procedure, step 4. It now includes `recruiter_fields_consistent`.)*
+### 8.1 Go/no-go
+
+Go only if **all** hold. Items 1 to 5 are properties of the target environment, (re)confirmed by the pre-switch steps of 8.2 (automated equivalents: `tests/ingestion/test_backfill.py`, `tests/ingestion/test_read_switch.py`). Items 6 and 7 were code changes, closed by E0-18.
+
+- [ ] `verify_backfill` (E0-18 code) exits `0` on the target environment, run after uploads have drained. *(8.2 step 4. It includes `recruiter_fields_consistent`.)*
 - [ ] The backfill summary has no unexplained skips (`resume_not_done` only for resumes genuinely in progress or failed). *(Step 2.)*
-- [ ] The Compose rehearsal (section 7) passed with uploads running, with the numbers above. *(Step 2; E0-19's live rehearsal.)*
+- [ ] The Compose rehearsal (section 7) passed with uploads running, with the numbers above. *(Step 2.)*
 - [ ] A second backfill run reports `processed: 0`. *(Step 2.)*
 - [ ] Workers have run the E0-17 pipeline since before the backfill started (section 1). *(Step 1: E0-18 workers include it.)*
-- [x] **Recruiter edits after the backfill are accounted for** (E0-18). The legacy recruiter endpoints (`PUT /candidates/{id}/category`, `PATCH /candidates/{id}/notes`, `PATCH /candidates/{id}/pipeline`, `PATCH …/candidates/bulk-pipeline`) now mirror every write onto the application in the same transaction (rule below), the pipeline recomputes when it links a candidate, and `--resync-recruiter-fields` (section 5a) repairs edits made before E0-18 was deployed. `verify_backfill`'s `recruiter_fields_consistent` proves it. Evidence: `tests/hiring/test_mirror_legacy_writes.py`, `tests/ingestion/test_switch_gate.py`.
-- [x] **Candidates deleted through the legacy API after the backfill** (E0-18). The delete endpoints apply the delete rule (below); `applications_have_resumes` stays green after legacy deletes. Evidence: same tests.
+- [x] **Recruiter edits after the backfill are accounted for** (E0-18): the legacy recruiter endpoints mirror every write onto the application, and `--resync-recruiter-fields` (section 5a) repairs edits made before E0-18. Evidence: the E0-18 PR.
+- [x] **Candidates deleted through the legacy API after the backfill** (E0-18): the delete rule keeps `applications_have_resumes` green. Evidence: the E0-18 PR.
 
-**Pre-switch procedure** (the first steps of E0-19, on the Compose stack, then on any later environment):
+### 8.2 Switch procedure
 
-1. **Deploy E0-18** (backend and both workers) and restart the workers: `docker compose restart backend worker_extract worker_ai`. From here on every legacy write is mirrored.
-2. If not already done on this database: run the backfill (section 3) and confirm a second run reports `processed: 0`; for the rehearsal, the section 7 numbers.
+Steps 1 to 4 run on the **E0-18** code (they are its pre-switch procedure); step 5 on, the switch itself. Commands are for the Compose stack, from the repository root; the backend and workers mount `./backend`, so checking out a branch deploys its code (the backend reloads, the workers need a restart). The capture files are scratch: delete them afterwards.
+
+1. **Deploy E0-18** (backend and both workers): `git checkout e0-18-switch-gate && docker compose restart backend worker_extract worker_ai`. From here on every legacy write is mirrored.
+2. If not already done on this database: run the backfill (section 3) and confirm a second run reports `processed: 0`; for the rehearsal, seed first and expect the section 7 numbers.
 3. **Re-sync** the recruiter fields once, to repair edits made before step 1: `docker compose exec backend python -m app.modules.ingestion.backfill --resync-recruiter-fields`. Running it again must report `applications changed: 0`.
-4. **Verify**, after uploads have drained: `docker compose exec backend python -m app.modules.ingestion.verify_backfill` (plus `--manifest /app/seed-manifest.json` on a seeded stack). Must exit `0`.
-5. Tick items 1 to 5 above with the outputs in the E0-19 PR, then switch reads.
+4. **Verify**, after uploads have drained: `docker compose exec backend python -m app.modules.ingestion.verify_backfill` (plus `--manifest /app/seed-manifest.json` on a seeded stack; recruiter edits or deletes made through the API since seeding change the expected counts, the integrity checks must still pass). Must exit `0`. Tick 8.1 items 1 to 5 with the outputs in the E0-19 PR.
+5. **Capture before** (still on E0-18; uploads drained, no edits from here to step 8). The capture script is standalone (it imports nothing from `app`), so take it from the E0-19 branch without switching code:
 
-No-go: fix, re-run the backfill (`--reset-checkpoint` if needed) and verify again.
+   ```bash
+   git show e0-19-read-switch:backend/app/devtools/capture_api.py > backend/e019_capture_api.py
+   docker compose exec backend python e019_capture_api.py --base-url http://localhost:8000 --out /app/e019-before.json
+   rm backend/e019_capture_api.py
+   ```
+
+   It requests every legacy `GET` endpoint: campaigns, every campaign's detail, stats and resumes, its candidate list with nine filter combinations (all pages), its CSV export with three, every candidate's detail, every resume's candidate, and `/stats`. About 2,500 requests on the Compose seed, 30 s.
+6. **Deploy E0-19**: stop what serves and writes, switch the code, migrate, start.
+
+   ```bash
+   docker compose stop backend worker_extract worker_ai
+   git checkout e0-19-read-switch
+   docker compose run --rm backend alembic upgrade head      # e19a0c5d2b71, e19b7f3a9c42
+   docker compose start backend worker_extract worker_ai
+   ```
+
+   Both migrations are safe for the E0-18 code too (an extra nullable column; timestamps it does not read), so in an environment that cannot stop, migrate first and deploy right after (an E0-18 write between the two only changes that row's `updated_at`).
+7. **Verify** with the E0-19 code: `docker compose exec backend python -m app.modules.ingestion.verify_backfill`. Must exit `0` (spec §6.3 has what it checks after the switch: `recruiter_fields_consistent` is gone, `applications_have_extractions` is new, `without a legacy candidate (new)` must be `0` before any post-switch upload).
+8. **Capture after** (`--ids-from` also asks for every id of the first capture, so the merged legacy ids that no list shows any more are checked too) and **compare**:
+
+   ```bash
+   docker compose exec backend python -m app.devtools.capture_api --base-url http://localhost:8000 --out /app/e019-after.json --ids-from /app/e019-before.json
+   docker compose exec backend python -m app.devtools.compare_api /app/e019-before.json /app/e019-after.json
+   rm backend/e019-before.json backend/e019-after.json
+   ```
+
+   Must exit `0`. Expected output on the Compose seed (with a few recruiter edits and deletes made in step 4's window, as in the local rehearsal):
+
+   ```
+   compare_api: 2467 responses compared
+     identical:                         2267
+     expected (merged legacy id):       200 (24 merged legacy ids)
+     expected (unprocessed resume):     0
+     differences:                       0
+   compare_api: PASSED
+   ```
+
+   *Expected (merged legacy id)*: the seed's 24 merged candidates now answer with their application (its id, its newest resume's data) and appear once in lists, exports and stats; every response containing one is set aside, the other rows of those responses are still compared exactly, and `/stats`' `total_candidates` must drop by exactly the number of merged-away ids. *Expected (unprocessed resume)*: placeholder rows of resumes not `done` (none once uploads have drained; spec §7). Any other line under `differences` is a no-go: roll back (8.3).
+9. Smoke test the UI: open a campaign, filter, open a candidate, change its stage, export.
+
+### 8.3 Rollback
+
+Up to E0-20 the `candidates` table is untouched by the switch, so rolling back is redeploying the E0-18 code (step 6 with `e0-18-switch-gate`; the migrations can stay, the E0-18 code ignores both). **The gap:** E0-18 reads `candidates`, and after the switch nothing wrote it:
+
+- resumes processed after the switch have an application but no candidate, so they are missing from the E0-18 lists;
+- recruiter edits made after the switch (stage, notes, category) are on applications only;
+- deletes after the switch are fine: the resumes went, and their candidates with them (foreign key).
+
+Close it before starting the E0-18 code, in one transaction (stop the workers first):
+
+```sql
+BEGIN;
+-- 1. A legacy candidate for every scored resume that has none (processed after the switch):
+--    the application's current resume, with the application's scoring and recruiter fields,
+--    under the application's id when no candidate holds it, else a new id plus a map row.
+CREATE TEMP TABLE rollback_new_candidates ON COMMIT DROP AS
+SELECT CASE WHEN EXISTS (SELECT 1 FROM candidates c WHERE c.id = a.id) THEN gen_random_uuid()
+            ELSE a.id END AS id,
+       a.id AS application_id, r.id AS resume_id
+FROM applications a JOIN resumes r ON r.id = a.resume_id
+WHERE r.status = 'done' AND NOT EXISTS (SELECT 1 FROM candidates c WHERE c.resume_id = r.id);
+
+INSERT INTO candidates (id, resume_id, campaign_id, name, email, phone, github_url, linkedin_url,
+    skills, education, work_experience, certifications, projects, years_of_experience, summary,
+    strengths, weaknesses, missing_skills, recommendation, score, score_breakdown, category,
+    notes, pipeline_stage, raw_text, created_at, updated_at)
+SELECT n.id, r.id, a.campaign_id,
+       r.extracted->>'name', r.extracted->>'email', r.extracted->>'phone',
+       r.extracted->>'github_url', r.extracted->>'linkedin_url',
+       coalesce(r.extracted->'skills', '[]'), coalesce(r.extracted->'education', '[]'),
+       coalesce(r.extracted->'work_experience', '[]'),
+       coalesce(r.extracted->'certifications', '[]'), coalesce(r.extracted->'projects', '[]'),
+       (r.extracted->>'years_of_experience')::float,
+       a.summary, a.strengths, a.weaknesses, a.missing_skills, a.recommendation, a.score,
+       a.score_breakdown, a.category, a.notes, a.pipeline_stage, r.raw_text,
+       a.created_at, a.updated_at
+FROM rollback_new_candidates n
+JOIN applications a ON a.id = n.application_id JOIN resumes r ON r.id = n.resume_id;
+
+INSERT INTO legacy_candidate_map (candidate_id, application_id)
+SELECT id, application_id FROM rollback_new_candidates WHERE id <> application_id;
+
+-- 2. Recruiter edits made after the switch: onto the candidate of each application's current
+--    (newest) resume, so the E0-18 rule gives the application's values back.
+UPDATE candidates c
+SET pipeline_stage = a.pipeline_stage, notes = a.notes, category = a.category,
+    updated_at = a.updated_at
+FROM applications a
+WHERE c.resume_id = a.resume_id
+  AND (c.pipeline_stage, c.notes, c.category)
+      IS DISTINCT FROM (a.pipeline_stage, a.notes, a.category);
+COMMIT;
+```
+
+Then deploy E0-18 and run its `verify_backfill`: it must exit `0`, `recruiter_fields_consistent` included (rehearsed locally: two post-switch uploads, a new person and a returning one, a post-switch edit and a delete; the SQL inserted 2 candidates and 1 map row, and the E0-18 verify passed). Known limits: an older resume of a merged application processed only after the switch (rare: a resume uploaded earlier but analysed later) gets no candidate, and the legacy rows show each candidate separately again, so a post-switch edit appears on the row of the newest resume. Roll back with uploads drained: a resume still being analysed has its text on the resume, where the E0-18 pipeline does not look, so it would fail; re-upload it, or set its `processing_step` to `NULL` and use retry-failed (which then starts again from the PDF).
+
+From E0-20 (contract) `candidates` is dropped and this rollback no longer exists.
 
 ## Reference: rules the backfill applies
 
@@ -212,5 +319,5 @@ No-go: fix, re-run the backfill (`--reset-checkpoint` if needed) and verify agai
 - **Application ids:** the first candidate of a `(campaign, person)` pair processed keeps its id; every other candidate of the pair gets a `legacy_candidate_map` row.
 - **Recruiter fields** (`pipeline_stage`, `notes`): per field, the value of the **newest candidate (by resume upload time) that has one** (not `NULL`; an empty note is a value) among all candidates of the application; `NULL` if none has one. A candidate without a value never clears one. Independent of processing order.
 - **Category** travels with the scoring (newest resume wins): it is the category of the candidate of the application's current resume, including a manual change on that candidate; a manual category on an older, merged candidate is not kept.
-- **One rule everywhere** (E0-18): the backfill, the upload pipeline, the mirrored legacy writes, `--resync-recruiter-fields` and `verify_backfill` all use `hiring.service.expected_recruiter_fields`. A legacy write updates the candidate and then *recomputes* the application from all its candidates; it never copies the new value.
+- **One rule everywhere** (E0-18): the backfill, the upload pipeline, the mirrored legacy writes, `--resync-recruiter-fields` and `verify_backfill` all use `hiring.service.expected_recruiter_fields`. A legacy write updates the candidate and then *recomputes* the application from all its candidates; it never copies the new value. *After the switch (E0-19) only the backfill still applies it (on a switched database it links nothing); the API writes the application directly.*
 - **Delete rule** (E0-18, `DELETE /candidates/{id}` and bulk delete, same transaction as the candidate and resume delete): the application is deleted with its **last** candidate. Otherwise it is kept, only the deleted candidates' `legacy_candidate_map` rows are removed, and its recruiter fields are recomputed from the remaining candidates. If the deleted candidate's id was the application's id, the application **keeps that id** (the remaining candidates' map rows point at it). If the deleted candidate held the current resume, the application takes the newest remaining candidate's resume and scoring.

@@ -13,7 +13,7 @@ This sprint covers phases 4–5 of the migration (spec §6.1): **switch → cont
 | Ticket | Title | Size | Status |
 |---|---|---|---|
 | E0-18 | Close the switch gate: mirror recruiter writes and deletes, re-sync | M | in review |
-| E0-19 | Switch reads to People + Applications (phase 4) | L | todo |
+| E0-19 | Switch reads to People + Applications (phase 4) | L | in review |
 | E0-20 | Contract: drop `candidates` and the last cross-module FK (phase 5) | M | todo |
 | E0-21 | Close E0: coverage gate, SSE campaign filter (B3), epic definition of done | M | todo |
 
@@ -48,18 +48,18 @@ Spec §6.1 says to drop `candidates` "after one full sprint without issues". Tha
 ---
 
 ### E0-19 · Switch reads to People + Applications
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e0-19-read-switch`
+**Status:** in review  ·  **Size:** L  ·  **Branch:** `e0-19-read-switch`
 
 **Goal:** Phase 4. Every legacy endpoint is served from the new model, and nothing a client can observe changes (spec §7).
 
 **Acceptance criteria**
-- [ ] These endpoints are served from `applications` + `people` (+ `resumes.extracted` for per-resume contact fields): `GET /campaigns/{id}/candidates` (all filters, sort, pagination), CSV export, `GET /candidates/{id}`, `GET /resumes/{id}/candidate`, the `PATCH`/`DELETE` endpoints, and campaign/global stats.
-  - Names, emails, phones and URLs come from the application's resume snapshot, so responses match the legacy candidate exactly.
-- [ ] Legacy ids that were merged resolve through `legacy_candidate_map` and return the surviving application (spec §7). Tested.
-- [ ] **Writes to `candidates` stop.** The pipeline no longer creates legacy candidates. Applications get fresh ids.
-- [ ] The test factories create People + Applications instead of candidates. **All 179 snapshots stay byte-identical.** Any unavoidable difference must be explained in the PR and approved before merge.
-- [ ] Performance: the candidate list query plan uses the new indexes (`EXPLAIN` in the PR). There are no N+1 queries for person data.
-- [ ] **Live rehearsal on the Compose stack:** seed → backfill → verify → deploy the switch → hit every endpoint and compare responses with a pre-switch capture (a script in `devtools/`).
+- [x] These endpoints are served from `applications` + `people` (+ `resumes.extracted` for per-resume contact fields): `GET /campaigns/{id}/candidates` (all filters, sort, pagination), CSV export, `GET /candidates/{id}`, `GET /resumes/{id}/candidate`, the `PATCH`/`DELETE` endpoints, and campaign/global stats.
+  - Names, emails, phones and URLs come from the application's resume snapshot, so responses match the legacy candidate exactly. *(Field mapping: spec §7.1. The Person's profile is deliberately not used: it is cross-campaign.)*
+- [x] Legacy ids that were merged resolve through `legacy_candidate_map` and return the surviving application (spec §7). Tested. *(The response carries the application's id.)*
+- [x] **Writes to `candidates` stop.** The pipeline no longer creates legacy candidates. Applications get fresh ids. *(The text moved to `resumes.raw_text`, expand migration `e19a0c5d2b71`.)*
+- [x] The test factories create People + Applications instead of candidates. **All 179 snapshots stay byte-identical.** Any unavoidable difference must be explained in the PR and approved before merge. *(Byte-identical. One behaviour the snapshots cannot show, placeholder rows of resumes still being analysed, is explained in spec §7.1 and awaits a decision.)*
+- [x] Performance: the candidate list query plan uses the new indexes (`EXPLAIN` in the PR). There are no N+1 queries for person data. *(`tests/ingestion/test_read_switch.py::test_the_list_queries_use_the_indexes`, `tests/hiring/test_read_path.py`.)*
+- [ ] **Live rehearsal on the Compose stack:** seed → backfill → verify → deploy the switch → hit every endpoint and compare responses with a pre-switch capture (a script in `devtools/`). *(Tooling: `app.devtools.capture_api` / `compare_api`, procedure in runbook §8.2. Rehearsed locally on a throwaway Postgres: 2,467 responses, 0 unexpected differences. The Compose run is the reviewer's.)*
 
 **Concept to learn:** Compatibility layers; proving behavioural equivalence with recorded responses.
 
