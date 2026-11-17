@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 
 from app.api import v2 as composed
 from app.modules.hiring import router_v2 as hiring
@@ -60,6 +60,15 @@ def _operation_id(route: APIRoute) -> str:
     return route.operation_id
 
 
+def _check_operation_ids(app: FastAPI) -> None:
+    """Run ``_operation_id`` for every route now, so a missing id fails at import (start-up),
+    not when the document is first generated. Since FastAPI 0.137 ``include_router`` keeps the
+    included routes instead of copying them, and their effective settings (the operation id
+    among them) are resolved when the routes are first iterated."""
+    for _ in iter_route_contexts(app.routes):
+        pass
+
+
 def create_v2_app() -> FastAPI:
     app = FastAPI(
         title=TITLE,
@@ -78,6 +87,7 @@ def create_v2_app() -> FastAPI:
     app.include_router(ingestion.router)
     for router in composed.routers:
         app.include_router(router)
+    _check_operation_ids(app)
 
     def openapi() -> dict[str, Any]:
         if app.openapi_schema is None:

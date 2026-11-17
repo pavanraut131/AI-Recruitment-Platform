@@ -118,7 +118,7 @@ def test_every_operation_follows_the_client_conventions() -> None:
 
 
 def test_a_v2_route_without_an_operation_id_is_refused() -> None:
-    from app.v2 import _operation_id
+    from app.v2 import _check_operation_ids, _operation_id
 
     router = APIRouter()
 
@@ -126,5 +126,7 @@ def test_a_v2_route_without_an_operation_id_is_refused() -> None:
     async def x() -> None: ...
 
     app = FastAPI(generate_unique_id_function=_operation_id)
+    app.include_router(router)
+    # FastAPI >= 0.137 resolves included routes lazily: create_v2_app checks them explicitly.
     with pytest.raises(RuntimeError, match="no explicit operation_id"):
-        app.include_router(router)
+        _check_operation_ids(app)
