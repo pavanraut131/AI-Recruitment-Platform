@@ -256,7 +256,9 @@ export interface paths {
          * Upload Resumes
          * @description Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a
          *     file that is not a PDF, too large, or a duplicate of one already processed or in progress
-         *     is listed in ``rejected`` with the reason. Too many files is a 422.
+         *     is listed in ``rejected`` with the reason. Too many files is a 422. A body that is not
+         *     parsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than
+         *     10 non-file fields, more files than the batch limit plus one).
          */
         post: operations["uploadResumes"];
         delete?: never;
@@ -2133,6 +2135,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Not Found */
