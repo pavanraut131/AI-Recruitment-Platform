@@ -1,6 +1,6 @@
 # Sprint 5 · HireFlow AI foundation
 
-**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-10-20 → 2026-10-26  ·  **Status:** planned
+**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-11-17 → 2026-11-23  ·  **Status:** in progress
 
 ## Sprint goal
 
@@ -12,7 +12,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| B4 | Upgrade python-multipart (upload parsing DoS) | S | todo |
+| B4 | Upgrade python-multipart (upload parsing DoS) | S | review |
 | E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | todo |
 | E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | review |
 | E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | todo |
@@ -29,14 +29,16 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### B4 · Upgrade python-multipart
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `b4-python-multipart`
+**Status:** review  ·  **Size:** S  ·  **Branch:** `b4-python-multipart`
 
 **Goal:** Close the upload-parsing DoS ([backlog](../backlog.md)). python-multipart 0.0.9 parses some 10 MB uploads byte by byte, taking about 30 s of CPU per file.
 
 **Acceptance criteria**
-- [ ] Upgrade python-multipart to the current release, and FastAPI and Starlette if needed for compatibility. The lockfile is updated.
-- [ ] A regression test uploads a 10 MB PDF made of characters that look like a multipart boundary. It parses in under 2 s and is skipped in CI if timing is unreliable (document why).
-- [ ] All upload characterization snapshots pass unchanged.
+- [x] Upgrade python-multipart to the current release, and FastAPI and Starlette if needed for compatibility. The lockfile is updated.
+- [x] A regression test uploads a 10 MB PDF made of characters that look like a multipart boundary. It parses in under 2 s and is skipped in CI if timing is unreliable (document why).
+- [x] All upload characterization snapshots pass unchanged.
+
+**Notes:** python-multipart 0.0.9 → 0.0.34; FastAPI 0.111.0 and Starlette 0.37.2 unchanged (they still import the old `multipart` name, which 0.0.34 keeps as a shim). Through the endpoint, a 10 MB upload of repeated `\r\n--` took ~580 s before and ~0.05 s of CPU after. The test bounds CPU time (`time.process_time`), not wall-clock time, so it is reliable enough to run in CI. Starlette's own multipart advisories need a FastAPI upgrade: [backlog](../backlog.md#platform-and-tooling).
 
 ---
 
