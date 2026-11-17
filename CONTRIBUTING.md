@@ -26,6 +26,8 @@ When a ticket depends on another ticket whose PR hasn't merged yet:
 make lint        # ruff check + ruff format --check + lint-imports (module boundaries)
 make typecheck   # mypy
 make test        # pytest
+make api-client  # after a /api/v2 change: regenerate frontend/src/lib/api/ (CI fails if stale)
+cd frontend && npm run lint && npx tsc --noEmit && npm test
 pre-commit install   # once per clone; runs the hooks on every commit
 ```
 

@@ -182,7 +182,7 @@ Every endpoint can also answer 500 (problem details). 422 covers invalid path id
 | Components | **shadcn/ui** (Radix + Tailwind v4), copied into `src/components/ui` | The code is owned in the repo, accessible primitives, themeable by tokens |
 | Server state | **TanStack Query v5** | Caching, retries, invalidation, optimistic stage changes. Replaces `useEffect` fetching. |
 | API client | **`openapi-typescript` + `openapi-fetch`** generated from the backend's OpenAPI | Types can't drift. A tiny runtime. |
-| Client drift check | CI job `frontend`: export OpenAPI from the backend → regenerate → `git diff --exit-code src/lib/api/schema.d.ts` | Contract-first: a backend change without a client update fails CI |
+| Client drift check | CI job `frontend`: export OpenAPI from the backend → regenerate → `git diff --exit-code src/lib/api/` (the document and `schema.d.ts`) | Contract-first: a backend change without a client update fails CI |
 | URL state | **nuqs** | Filters, sort, page and tabs are shareable and survive reloads |
 | Tables | **TanStack Table v8** | Headless: sorting, selection, column visibility |
 | Forms | **react-hook-form + zod** | Typed validation; server errors map from problem+json |
@@ -201,14 +201,15 @@ app/                 routes (thin: layout, params, compose features)
 features/
   campaigns/         list, new, workspace tabs, hooks (useCampaign, useCampaignStats)
   applications/      table, columns, filters, review-panel, bulk actions, hooks
-  uploads/           dropzone, processing list, useCampaignEvents
+  uploads/           dropzone, processing list
   people/            profile, talent list, hooks
   home/
 components/
   ui/                shadcn primitives (generated, lightly edited)
   app-shell/         sidebar, top bar, command palette, theme toggle
 lib/
-  api/               schema.d.ts (generated), client.ts (openapi-fetch + problem+json handling), query-keys.ts
+  api/               openapi.v2.json + schema.d.ts (generated), client.ts (openapi-fetch + problem+json handling), query-keys.ts
+  query/             Query provider and client defaults, useCampaignEvents (shared by the workspace and Uploads)
   utils/
 styles/tokens.css
 ```

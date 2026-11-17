@@ -7,9 +7,10 @@ import nextTs from "eslint-config-next/typescript"
  * Feature-folder boundaries (EPIC-01 §7, src/features/README.md).
  *
  * Code in src/features/<a>/** may not import src/features/<b>/** — shared
- * pieces live in src/components or src/lib. Features may also not use the
- * libraries the new frontend replaces (axios → generated client,
- * react-toastify → sonner).
+ * pieces live in src/components or src/lib. Features, and the new data layer
+ * in src/lib/api/** and src/lib/query/** (E1-03), may also not use the
+ * libraries the new frontend replaces (axios and the legacy v1 client in
+ * src/lib/api.ts → the generated client, react-toastify → sonner).
  *
  * One config block per feature folder, generated from the file system, so a
  * new feature is covered without editing this file. Each block repeats the
@@ -36,11 +37,17 @@ const bannedLibraries = [
     name: "react-toastify",
     message: "Use toast from 'sonner' (EPIC-01 §7).",
   },
+  {
+    // The legacy /api/v1 client (src/lib/api.ts), kept only for src/app/(legacy).
+    name: "@/lib/api",
+    message:
+      "src/lib/api.ts is the legacy /api/v1 client. Use the generated /api/v2 client from '@/lib/api/client' (ADR 0006).",
+  },
 ]
 const bannedLibraryPatterns = [
   {
     group: ["axios/*", "react-toastify/*"],
-    message: "axios and react-toastify are replaced in src/features (EPIC-01 §7).",
+    message: "axios and react-toastify are replaced in the new frontend (EPIC-01 §7).",
   },
 ]
 
@@ -63,8 +70,12 @@ function featureBoundary(feature) {
 
 const featureRules = [
   {
-    name: "hireflow/features-banned-libraries",
-    files: ["src/features/**/*.{ts,tsx,js,jsx,mjs}"],
+    name: "hireflow/new-code-banned-libraries",
+    files: [
+      "src/features/**/*.{ts,tsx,js,jsx,mjs}",
+      "src/lib/api/**/*.{ts,tsx,js,jsx,mjs}",
+      "src/lib/query/**/*.{ts,tsx,js,jsx,mjs}",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",

@@ -12,10 +12,10 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| B4 | Upgrade python-multipart (upload parsing DoS) | S | review |
-| E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | todo |
-| E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | review |
-| E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | todo |
+| B4 | Upgrade python-multipart (upload parsing DoS) | S | done ([#35](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/35)) |
+| E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | done ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34)) |
+| E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)) |
+| E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | review |
 | E1-04 | Campaign list and new campaign (JD extraction) | M | todo |
 | E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | todo |
 
@@ -29,7 +29,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### B4 · Upgrade python-multipart
-**Status:** review  ·  **Size:** S  ·  **Branch:** `b4-python-multipart`
+**Status:** done ([#35](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/35))  ·  **Size:** S  ·  **Branch:** `b4-python-multipart`
 
 **Goal:** Close the upload-parsing DoS ([backlog](../backlog.md)). python-multipart 0.0.9 parses some 10 MB uploads byte by byte, taking about 30 s of CPU per file.
 
@@ -43,28 +43,28 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-01 · Design system and app shell
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-01-design-system`
+**Status:** done ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34))  ·  **Size:** M  ·  **Branch:** `e1-01-design-system`
 
 **Goal:** The visual foundation from spec §3–§4: tokens, components, the shell and the rebrand.
 
 **Acceptance criteria**
-- [ ] `src/styles/tokens.css` follows the shadcn variable convention and adds `--category-*`, with light and dark themes. Zinc neutrals and a teal accent. Mapped into Tailwind v4 `@theme`. **No hex values in components.**
-- [ ] shadcn/ui is initialised. The primitives needed by E1 live in `src/components/ui`: button, input, textarea, select, badge, dialog, sheet, dropdown-menu, command, tabs, table, tooltip, skeleton, sonner, form, checkbox, popover, separator, scroll-area.
-- [ ] **App shell** (`src/components/app-shell`):
+- [x] `src/styles/tokens.css` follows the shadcn variable convention and adds `--category-*`, with light and dark themes. Zinc neutrals and a teal accent. Mapped into Tailwind v4 `@theme`. **No hex values in components.**
+- [x] shadcn/ui is initialised. The primitives needed by E1 live in `src/components/ui`: button, input, textarea, select, badge, dialog, sheet, dropdown-menu, command, tabs, table, tooltip, skeleton, sonner, form, checkbox, popover, separator, scroll-area.
+- [x] **App shell** (`src/components/app-shell`):
   - a collapsible sidebar with a workspace slot (E2 placeholder), Home, Campaigns and Talent, plus Settings and a theme toggle;
   - a top bar with breadcrumbs;
   - a **⌘K command palette** with navigation and "New campaign" (data search arrives with E1-03).
-- [ ] `next-themes`: system, light and dark, with no flash on load.
-- [ ] A `/dev/ui` gallery shows every primitive in every state, in light and dark. It's excluded from production builds.
-- [ ] **Rebrand to HireFlow AI:** app title, metadata, favicon, README heading, and the `make setup` message. The old screens stay reachable but are wrapped in the new shell, until E1-04 to E1-08 replace them.
-- [ ] `axios` and `react-toastify` are not used by any new code, and an ESLint rule bans them in `features/`. The old components are removed as their screens are replaced.
-- [ ] An ESLint `no-restricted-imports` rule for feature-folder boundaries (spec §7).
-- [ ] WCAG AA contrast is checked for both themes, with the results in the PR.
+- [x] `next-themes`: system, light and dark, with no flash on load.
+- [x] A `/dev/ui` gallery shows every primitive in every state, in light and dark. It's excluded from production builds.
+- [x] **Rebrand to HireFlow AI:** app title, metadata, favicon, README heading, and the `make setup` message. The old screens stay reachable but are wrapped in the new shell, until E1-04 to E1-08 replace them.
+- [x] `axios` and `react-toastify` are not used by any new code, and an ESLint rule bans them in `features/`. The old components are removed as their screens are replaced.
+- [x] An ESLint `no-restricted-imports` rule for feature-folder boundaries (spec §7).
+- [x] WCAG AA contrast is checked for both themes, with the results in the PR.
 
 ---
 
 ### E1-02 · Backend `/api/v2`
-**Status:** review  ·  **Size:** L  ·  **Branch:** `e1-02-api-v2`
+**Status:** done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36))  ·  **Size:** L  ·  **Branch:** `e1-02-api-v2`
 
 **Goal:** The resource API from spec §6, as thin routers over the existing module services.
 
@@ -81,18 +81,27 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-03 · API client and data layer
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-03-data-layer`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-03-data-layer`
 
 **Goal:** A typed, contract-first data layer for every feature (spec §7).
 
 **Acceptance criteria**
-- [ ] `openapi-typescript` generates `src/lib/api/schema.d.ts` from the backend's OpenAPI, using a `make api-client` / `npm run api:generate` script that exports the schema without a running server.
-- [ ] `src/lib/api/client.ts` uses `openapi-fetch` with problem+json parsing into a typed error. `query-keys.ts` holds one key factory per resource.
-- [ ] **CI drift check:** the `frontend` job regenerates the client and fails on `git diff --exit-code`.
-- [ ] TanStack Query provider with defaults (retry policy, stale times) and devtools in dev. Error toasts via sonner.
-- [ ] A `useCampaignEvents(campaignId)` hook: one `EventSource` that updates the Query cache, reconnects on drop, and closes on unmount.
-- [ ] Vitest + Testing Library set up. Tests cover the client's error mapping, the query keys and the SSE hook (with a mocked EventSource).
-- [ ] ADR 0006 *Contract-first API client* and ADR 0007 *Frontend state model*.
+- [x] `openapi-typescript` generates `src/lib/api/schema.d.ts` from the backend's OpenAPI, using a `make api-client` / `npm run api:generate` script that exports the schema without a running server.
+- [x] `src/lib/api/client.ts` uses `openapi-fetch` with problem+json parsing into a typed error. `query-keys.ts` holds one key factory per resource.
+- [x] **CI drift check:** the `frontend` job regenerates the client and fails on `git diff --exit-code`.
+- [x] TanStack Query provider with defaults (retry policy, stale times) and devtools in dev. Error toasts via sonner.
+- [x] A `useCampaignEvents(campaignId)` hook: one `EventSource` that updates the Query cache, reconnects on drop, and closes on unmount.
+- [x] Vitest + Testing Library set up. Tests cover the client's error mapping, the query keys and the SSE hook (with a mocked EventSource).
+- [x] ADR 0006 *Contract-first API client* and ADR 0007 *Frontend state model*.
+
+**Notes:**
+- **Export and generation.** `python -m app.devtools.export_openapi` writes `v2_app.openapi()` to `frontend/src/lib/api/openapi.v2.json` (sorted keys, stable format, dummy settings and `AI_PROVIDER=fake`, so no database, Redis or Gemini). `npm run api:generate` (openapi-typescript 7.13.0, pinned) writes `schema.d.ts`. `make api-client` runs both. The CI `frontend` job runs the same steps with uv and fails on `git diff --exit-code -- src/lib/api/`. Proved by renaming `Resume.size_bytes` locally: the check failed with the JSON and `schema.d.ts` diff, and `tsc` failed on code that used the old field.
+- **Client.** `src/lib/api/client.ts`: openapi-fetch 0.17.0 (pinned). Errors are an `ApiProblem` (`status`, `title`, `type`, `detail`, `errors`, `fieldErrors()`), network failures have status 0, and aborts pass through. `query-keys.ts` has factories for campaigns, applications, resumes, people, home and stats. Request bodies with server defaults come out required in TypeScript (`CampaignCreate.status`, `required_skills`; [backlog](../backlog.md#platform-and-tooling)).
+- **Query.** `src/lib/query/`: `DataProviders` in the root layout (Query and the nuqs adapter, added here so that E1-04 and E1-05 don't both edit the layout). Defaults: 30 s stale time, retry only network/5xx (up to 3), refetch on focus. Mutations, and failed background refetches, show a sonner toast with the problem's detail. Devtools in dev only.
+- **`useCampaignEvents`** lives in `src/lib/query/` rather than `features/uploads`, because the workspace (E1-04) and the Uploads tab (E1-06) both mount it. It patches resume lists, debounces invalidation of applications, campaign and stats on `done`, reconnects with backoff (1 s → 30 s, jittered, then resyncs) and closes on unmount. It keeps one connection under StrictMode.
+- **Tests.** Vitest 5 + Testing Library + jsdom, 39 tests (client error mapping, query keys, Query defaults and toasts, the SSE hook with a mocked `EventSource`). `@/` is resolved by Vite 8's native `resolve.tsconfigPaths`, and JSX by its built-in transform. `@vitejs/plugin-react` is not used: it only adds Fast Refresh, and its optional Babel 8 peer clashes with shadcn's Babel 7 in npm's resolver.
+- **Node 22.** The frontend Dockerfile and the CI job moved to Node 22 LTS (backlog item closed). `engines` is `>=22.22.2`, the floor of vitest 5 and jsdom 31.
+- ADRs [0006](../adr/0006-contract-first-api-client.md) and [0007](../adr/0007-frontend-state-model.md). New code (`src/features`, `src/lib/api`, `src/lib/query`) may not import `axios`, `react-toastify` or the legacy `@/lib/api`. The legacy client stays for `src/app/(legacy)`.
 
 ---
 

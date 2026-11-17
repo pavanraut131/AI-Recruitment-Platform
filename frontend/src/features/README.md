@@ -7,7 +7,7 @@ Product code is grouped by **feature**, one folder per area of the product
 features/
   campaigns/      list, new campaign, workspace tabs, hooks
   applications/   candidates table, filters, review panel, bulk actions
-  uploads/        dropzone, processing list, useCampaignEvents
+  uploads/        dropzone, processing list
   people/         person profile, talent list
   home/
 ```
@@ -23,9 +23,14 @@ Folders are created by the tickets that need them (E1-03 onwards).
    is shared code: move it to
    - `src/components/` for UI (`ui/` holds the shadcn primitives,
      `app-shell/` the sidebar, top bar and ⌘K palette), or
-   - `src/lib/` for non-UI code (API client, query keys, utilities).
-3. **No `axios` or `react-toastify`** in features. Use the generated API client
-   in `src/lib/api` (E1-03) and `toast` from `sonner`.
+   - `src/lib/` for non-UI code: the API client and query keys (`lib/api`),
+     the Query provider and shared data hooks such as `useCampaignEvents`
+     (`lib/query`; the campaign workspace and the Uploads tab both use it),
+     utilities.
+3. **No `axios`, `react-toastify` or legacy `@/lib/api`** (the v1 client) in
+   features. Use the generated client from `@/lib/api/client` (ADR 0006) with
+   the keys in `@/lib/api/query-keys`, and `toast` from `sonner`. Server state
+   lives in TanStack Query, URL state in nuqs, the rest in React (ADR 0007).
 
 Inside a feature, import freely, relatively or via `@/features/<same>/…`.
 
