@@ -1,4 +1,5 @@
-FROM node:20-alpine AS base
+# Node 22 LTS: same major as the frontend CI job; package.json engines >= 22.22.2.
+FROM node:22-alpine AS base
 
 WORKDIR /app
 COPY package*.json ./

@@ -118,7 +118,10 @@ contract migration, and dropped in E0-20.
   [0002 Person/Application split](docs/adr/0002-person-application-split.md) ·
   [0003 no cross-module foreign keys](docs/adr/0003-no-cross-module-foreign-keys.md) ·
   [0004 identity matching](docs/adr/0004-identity-matching-policy.md) ·
-  [0005 composition layer](docs/adr/0005-composition-layer.md)
+  [0005 composition layer](docs/adr/0005-composition-layer.md) ·
+  [0006 contract-first API client](docs/adr/0006-contract-first-api-client.md) ·
+  [0007 frontend state model](docs/adr/0007-frontend-state-model.md) ·
+  [0008 `/api/v2` sub-application](docs/adr/0008-api-v2-sub-application.md)
 - Runbook: [backfill, read switch and contract](docs/runbooks/person-application-backfill.md)
 - Sprints: [1](docs/sprints/sprint-01.md) · [2](docs/sprints/sprint-02.md) ·
   [3](docs/sprints/sprint-03.md) · [4](docs/sprints/sprint-04.md); open follow-ups:
@@ -261,8 +264,19 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 
 npm run lint              # ESLint, incl. feature-folder boundaries (src/features/README.md)
 npx tsc --noEmit          # type check
+npm test                  # Vitest + Testing Library (npm run test:watch to watch)
 npm run check:contrast    # WCAG AA contrast of the design tokens, light and dark
 ```
+
+Node 22 LTS or newer (`engines` in `package.json`; CI and the Docker image use Node 22).
+
+**API client.** New screens call `/api/v2` through a client generated from the backend's OpenAPI
+document ([ADR 0006](docs/adr/0006-contract-first-api-client.md)): `src/lib/api/client.ts`
+(`openapi-fetch`, errors as a typed `ApiProblem`), the generated `src/lib/api/schema.d.ts` and the
+TanStack Query keys in `src/lib/api/query-keys.ts`. After changing a v2 endpoint or schema, run
+`make api-client` (exports the document without a server, then `npm run api:generate`) and commit
+both files in `src/lib/api/`; CI fails if they are stale. How state is split between Query, the URL
+and React is in [ADR 0007](docs/adr/0007-frontend-state-model.md).
 
 The design system lives in `src/styles/tokens.css` (colour, radius and type tokens, light and dark)
 and `src/components/ui` (shadcn/ui primitives). Open **http://localhost:3000/dev/ui** in a dev build

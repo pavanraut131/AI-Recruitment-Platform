@@ -150,21 +150,49 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same major as the frontend Docker image (node:20-alpine).
+      # Same major as the frontend Docker image (node:22-alpine); package.json engines >= 22.22.2.
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
+      # Contract-first API client (ADR 0006): regenerate the /api/v2 OpenAPI document and the
+      # TypeScript types from the backend, and fail if they differ from what is committed. The
+      # export needs only the backend's runtime dependencies (no database, Redis or AI key).
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.12.23" # keep in sync with the backend jobs
+          python-version: "3.11"
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Export the /api/v2 OpenAPI document
+        working-directory: backend
+        run: uv run --frozen --no-dev python -m app.devtools.export_openapi
+
+      - name: Generate the API client types
+        run: npm run api:generate
+
+      - name: API client drift check
+        run: |
+          if ! git diff --exit-code -- src/lib/api/; then
+            echo "::error title=API client out of date::The /api/v2 contract changed. Run 'make api-client' and commit src/lib/api/openapi.v2.json and src/lib/api/schema.d.ts."
+            exit 1
+          fi
+
       - name: ESLint
         run: npm run lint
 
       - name: Type check
         run: npx tsc --noEmit
+
+      - name: Unit tests (Vitest)
+        run: npm test
 
       - name: Design-token contrast (WCAG AA, light and dark)
         run: npm run check:contrast

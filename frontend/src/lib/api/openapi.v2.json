@@ -1,0 +1,3793 @@
+{
+  "components": {
+    "schemas": {
+      "Application": {
+        "properties": {
+          "campaign_id": {
+            "format": "uuid",
+            "title": "Campaign Id",
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "missing_skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Skills",
+            "type": "array"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonRef"
+          },
+          "pipeline_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "resume_id": {
+            "description": "The current resume, the one scored.",
+            "format": "uuid",
+            "title": "Resume Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "score_breakdown": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sub-scores: skills_match, experience_match, project_relevance, education_bonus, communication_quality.",
+            "title": "Score Breakdown"
+          },
+          "skills": {
+            "description": "Skills extracted from the current resume.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "strengths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Strengths",
+            "type": "array"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weaknesses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Weaknesses",
+            "type": "array"
+          },
+          "years_of_experience": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years Of Experience"
+          }
+        },
+        "required": [
+          "id",
+          "campaign_id",
+          "resume_id",
+          "person",
+          "score",
+          "score_breakdown",
+          "category",
+          "summary",
+          "strengths",
+          "weaknesses",
+          "missing_skills",
+          "recommendation",
+          "skills",
+          "years_of_experience",
+          "pipeline_stage",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Application",
+        "type": "object"
+      },
+      "ApplicationCategory": {
+        "description": "The AI's verdict (or the recruiter's override of it).",
+        "enum": [
+          "strong_match",
+          "moderate_match",
+          "weak_match",
+          "rejected"
+        ],
+        "title": "ApplicationCategory",
+        "type": "string"
+      },
+      "ApplicationCounts": {
+        "properties": {
+          "by_category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryCounts"
+              }
+            ],
+            "default": {
+              "moderate_match": 0,
+              "rejected": 0,
+              "strong_match": 0,
+              "weak_match": 0
+            }
+          },
+          "by_stage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StageCounts"
+              }
+            ],
+            "default": {
+              "hired": 0,
+              "offer": 0,
+              "phone_call": 0,
+              "rejected_manual": 0,
+              "screened": 0,
+              "technical": 0,
+              "unreviewed": 0
+            }
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ApplicationCounts",
+        "type": "object"
+      },
+      "ApplicationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Application"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ApplicationPage",
+        "type": "object"
+      },
+      "ApplicationSort": {
+        "description": "List order. ``-`` is descending; scores sort unscored last either way; ties by id.",
+        "enum": [
+          "score",
+          "-score",
+          "updated_at",
+          "-updated_at",
+          "name"
+        ],
+        "title": "ApplicationSort",
+        "type": "string"
+      },
+      "ApplicationUpdate": {
+        "additionalProperties": false,
+        "description": "Only the fields sent are changed. ``pipeline_stage`` and ``notes`` may be ``null``\n(cleared); ``category`` (the recruiter's override of the AI's) may not.",
+        "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationCategory"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "pipeline_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ApplicationUpdate",
+        "type": "object"
+      },
+      "Body_uploadResumes": {
+        "properties": {
+          "files": {
+            "description": "PDF resumes (multipart field files).",
+            "items": {
+              "format": "binary",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_uploadResumes",
+        "type": "object"
+      },
+      "BulkApplicationAction": {
+        "description": "``{action, ids, stage?}``: ``stage`` is required for (and only allowed with) the\n``stage`` action. A model of its own so the OpenAPI document names it and keeps the\ndiscriminator (the client gets a tagged union).",
+        "discriminator": {
+          "mapping": {
+            "delete": "#/components/schemas/BulkDelete",
+            "reject": "#/components/schemas/BulkReject",
+            "stage": "#/components/schemas/BulkStage"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BulkStage"
+          },
+          {
+            "$ref": "#/components/schemas/BulkReject"
+          },
+          {
+            "$ref": "#/components/schemas/BulkDelete"
+          }
+        ],
+        "title": "BulkApplicationAction"
+      },
+      "BulkApplicationResult": {
+        "properties": {
+          "action": {
+            "enum": [
+              "stage",
+              "reject",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "affected": {
+            "description": "The campaign's applications acted on.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Affected",
+            "type": "array"
+          },
+          "not_found": {
+            "description": "Requested ids that are not applications of this campaign (nothing done).",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Not Found",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "affected",
+          "not_found"
+        ],
+        "title": "BulkApplicationResult",
+        "type": "object"
+      },
+      "BulkDelete": {
+        "additionalProperties": false,
+        "description": "Delete the applications and their resumes.",
+        "properties": {
+          "action": {
+            "const": "delete",
+            "enum": [
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "ids"
+        ],
+        "title": "BulkDelete",
+        "type": "object"
+      },
+      "BulkReject": {
+        "additionalProperties": false,
+        "description": "Move the applications to the ``rejected_manual`` stage.",
+        "properties": {
+          "action": {
+            "const": "reject",
+            "enum": [
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "ids"
+        ],
+        "title": "BulkReject",
+        "type": "object"
+      },
+      "BulkStage": {
+        "additionalProperties": false,
+        "description": "Move the applications to ``stage``.",
+        "properties": {
+          "action": {
+            "const": "stage",
+            "enum": [
+              "stage"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/PipelineStage"
+          }
+        },
+        "required": [
+          "action",
+          "ids",
+          "stage"
+        ],
+        "title": "BulkStage",
+        "type": "object"
+      },
+      "Campaign": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CampaignCounts"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_activity_at": {
+            "description": "Latest change to the campaign, one of its applications or its resumes.",
+            "format": "date-time",
+            "title": "Last Activity At",
+            "type": "string"
+          },
+          "required_skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Skills",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CampaignStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "role",
+          "description",
+          "required_skills",
+          "status",
+          "created_at",
+          "updated_at",
+          "last_activity_at",
+          "counts"
+        ],
+        "title": "Campaign",
+        "type": "object"
+      },
+      "CampaignCounts": {
+        "properties": {
+          "applications": {
+            "description": "Scored applications.",
+            "title": "Applications",
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Resumes that failed or hit the AI quota.",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "in_progress": {
+            "description": "Resumes still being processed.",
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "new_resumes_24h": {
+            "description": "Resumes uploaded in the last 24 hours.",
+            "title": "New Resumes 24H",
+            "type": "integer"
+          },
+          "resumes": {
+            "description": "Resumes uploaded, in any status.",
+            "title": "Resumes",
+            "type": "integer"
+          },
+          "strong_matches": {
+            "description": "Applications in the strong_match category.",
+            "title": "Strong Matches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resumes",
+          "in_progress",
+          "failed",
+          "new_resumes_24h",
+          "applications",
+          "strong_matches"
+        ],
+        "title": "CampaignCounts",
+        "type": "object"
+      },
+      "CampaignCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "required_skills": {
+            "default": [],
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Required Skills",
+            "type": "array"
+          },
+          "role": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CampaignStatus"
+              }
+            ],
+            "default": "active"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "role"
+        ],
+        "title": "CampaignCreate",
+        "type": "object"
+      },
+      "CampaignPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Campaign"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "CampaignPage",
+        "type": "object"
+      },
+      "CampaignRef": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CampaignStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status"
+        ],
+        "title": "CampaignRef",
+        "type": "object"
+      },
+      "CampaignStats": {
+        "properties": {
+          "applications": {
+            "$ref": "#/components/schemas/ApplicationCounts"
+          },
+          "avg_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean score of the scored applications, to 2 decimals; null if none.",
+            "title": "Avg Score"
+          },
+          "resumes": {
+            "$ref": "#/components/schemas/ResumeCounts"
+          },
+          "score_histogram": {
+            "description": "Ten buckets of width 10, 0 to 100.",
+            "items": {
+              "$ref": "#/components/schemas/ScoreBucket"
+            },
+            "title": "Score Histogram",
+            "type": "array"
+          },
+          "top_skills": {
+            "description": "The 10 most frequent skills.",
+            "items": {
+              "$ref": "#/components/schemas/SkillCount"
+            },
+            "title": "Top Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resumes",
+          "applications",
+          "avg_score",
+          "score_histogram",
+          "top_skills"
+        ],
+        "title": "CampaignStats",
+        "type": "object"
+      },
+      "CampaignStatus": {
+        "enum": [
+          "active",
+          "closed",
+          "archived"
+        ],
+        "title": "CampaignStatus",
+        "type": "string"
+      },
+      "CampaignStatusCounts": {
+        "properties": {
+          "active": {
+            "default": 0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "archived": {
+            "default": 0,
+            "title": "Archived",
+            "type": "integer"
+          },
+          "closed": {
+            "default": 0,
+            "title": "Closed",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "CampaignStatusCounts",
+        "type": "object"
+      },
+      "CampaignUpdate": {
+        "additionalProperties": false,
+        "description": "Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others\nmay be omitted but not ``null``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "required_skills": {
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Required Skills",
+            "type": "array"
+          },
+          "role": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CampaignStatus"
+              }
+            ]
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "CampaignUpdate",
+        "type": "object"
+      },
+      "CategoryCounts": {
+        "properties": {
+          "moderate_match": {
+            "default": 0,
+            "title": "Moderate Match",
+            "type": "integer"
+          },
+          "rejected": {
+            "default": 0,
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "strong_match": {
+            "default": 0,
+            "title": "Strong Match",
+            "type": "integer"
+          },
+          "weak_match": {
+            "default": 0,
+            "title": "Weak Match",
+            "type": "integer"
+          }
+        },
+        "title": "CategoryCounts",
+        "type": "object"
+      },
+      "ConflictRole": {
+        "description": "This Person's side of an identity conflict (ADR 0004).",
+        "enum": [
+          "chosen",
+          "conflicting"
+        ],
+        "title": "ConflictRole",
+        "type": "string"
+      },
+      "ConnectedEvent": {
+        "description": "The data of the first event, ``connected``: the stream is subscribed.",
+        "properties": {
+          "campaign_id": {
+            "format": "uuid",
+            "title": "Campaign Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "campaign_id"
+        ],
+        "title": "ConnectedEvent",
+        "type": "object"
+      },
+      "FieldError": {
+        "description": "One invalid request field.",
+        "properties": {
+          "loc": {
+            "description": "Path of the field: where it is (body, query, path, header) then its keys.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Loc",
+            "type": "array"
+          },
+          "msg": {
+            "description": "What is wrong with it.",
+            "title": "Msg",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg"
+        ],
+        "title": "FieldError",
+        "type": "object"
+      },
+      "Home": {
+        "description": "Everything the Home screen shows, in one response.",
+        "properties": {
+          "active_campaigns": {
+            "description": "The most recently updated active campaigns, with their counts.",
+            "items": {
+              "$ref": "#/components/schemas/Campaign"
+            },
+            "title": "Active Campaigns",
+            "type": "array"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/HomeProcessing"
+          },
+          "recent_strong_matches": {
+            "description": "The newest strong-match applications across campaigns.",
+            "items": {
+              "$ref": "#/components/schemas/RecentMatch"
+            },
+            "title": "Recent Strong Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active_campaigns",
+          "processing",
+          "recent_strong_matches"
+        ],
+        "title": "Home",
+        "type": "object"
+      },
+      "HomeProcessing": {
+        "properties": {
+          "items": {
+            "description": "The newest of them.",
+            "items": {
+              "$ref": "#/components/schemas/ProcessingResume"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "description": "Resumes still being processed, across campaigns.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "HomeProcessing",
+        "type": "object"
+      },
+      "Identifier": {
+        "properties": {
+          "inferred": {
+            "description": "A phone whose country was only assumed: kept, never used to match.",
+            "title": "Inferred",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdentifierKind"
+          },
+          "value": {
+            "description": "As written on the resume it was first seen on.",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "inferred"
+        ],
+        "title": "Identifier",
+        "type": "object"
+      },
+      "IdentifierKind": {
+        "enum": [
+          "email",
+          "phone"
+        ],
+        "title": "IdentifierKind",
+        "type": "string"
+      },
+      "IdentityConflictFlag": {
+        "description": "A resume whose email matched one Person and phone another (read-only; reviewed in E6).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "other_person_id": {
+            "format": "uuid",
+            "title": "Other Person Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resume_id": {
+            "format": "uuid",
+            "title": "Resume Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ConflictRole"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "resume_id",
+          "other_person_id",
+          "reason",
+          "created_at",
+          "resolved_at"
+        ],
+        "title": "IdentityConflictFlag",
+        "type": "object"
+      },
+      "JobDescription": {
+        "properties": {
+          "job_description": {
+            "maxLength": 50000,
+            "minLength": 1,
+            "title": "Job Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_description"
+        ],
+        "title": "JobDescription",
+        "type": "object"
+      },
+      "ParsedJobDescription": {
+        "properties": {
+          "role_title": {
+            "title": "Role Title",
+            "type": "string"
+          },
+          "seniority": {
+            "description": "junior | mid | senior | staff, as the AI judged it.",
+            "title": "Seniority",
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role_title",
+          "seniority",
+          "skills"
+        ],
+        "title": "ParsedJobDescription",
+        "type": "object"
+      },
+      "Person": {
+        "properties": {
+          "applications": {
+            "description": "Every application across campaigns, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/PersonApplication"
+            },
+            "title": "Applications",
+            "type": "array"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityConflictFlag"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "github_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Url"
+          },
+          "has_unresolved_conflicts": {
+            "title": "Has Unresolved Conflicts",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "identifiers": {
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "github_url",
+          "linkedin_url",
+          "profile",
+          "identifiers",
+          "conflicts",
+          "has_unresolved_conflicts",
+          "created_at",
+          "updated_at",
+          "applications"
+        ],
+        "title": "Person",
+        "type": "object"
+      },
+      "PersonApplication": {
+        "description": "One of a Person's applications, for their profile.",
+        "properties": {
+          "campaign": {
+            "$ref": "#/components/schemas/CampaignRef"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "pipeline_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resume_id": {
+            "format": "uuid",
+            "title": "Resume Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "campaign",
+          "resume_id",
+          "score",
+          "category",
+          "pipeline_stage",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PersonApplication",
+        "type": "object"
+      },
+      "PersonListItem": {
+        "properties": {
+          "application_count": {
+            "description": "Applications across all campaigns.",
+            "title": "Application Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first email seen for the Person, as written.",
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_applied_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the Person's latest resume was uploaded (null: no applications).",
+            "title": "Last Applied At"
+          },
+          "latest_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Title of the first entry of the extracted work experience (resumes list the most recent first).",
+            "title": "Latest Role"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "years_of_experience": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years Of Experience"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "latest_role",
+          "skills",
+          "years_of_experience",
+          "created_at",
+          "updated_at",
+          "application_count",
+          "last_applied_at"
+        ],
+        "title": "PersonListItem",
+        "type": "object"
+      },
+      "PersonPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PersonListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PersonPage",
+        "type": "object"
+      },
+      "PersonRef": {
+        "description": "Who applied. ``name`` and ``email`` are those of the resume this application was scored\non (its current resume), as in the candidate list; the Person's profile may be newer.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "PersonRef",
+        "type": "object"
+      },
+      "PipelineStage": {
+        "description": "Where the recruiter has moved the application (``null``: not reviewed yet).",
+        "enum": [
+          "screened",
+          "phone_call",
+          "technical",
+          "offer",
+          "hired",
+          "rejected_manual"
+        ],
+        "title": "PipelineStage",
+        "type": "string"
+      },
+      "Problem": {
+        "description": "An error, as RFC 9457 problem details (``application/problem+json``).",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explanation specific to this occurrence.",
+            "title": "Detail"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Validation errors (422 only), one per invalid field.",
+            "title": "Errors"
+          },
+          "status": {
+            "description": "The HTTP status code.",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Short summary of the problem type (the HTTP status phrase).",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "A URI reference identifying the problem type; about:blank for a plain HTTP error.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
+      "ProcessingResume": {
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The application the resume belongs to, once it is scored.",
+            "title": "Application Id"
+          },
+          "campaign": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CampaignRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null only if the campaign was deleted."
+          },
+          "campaign_id": {
+            "format": "uuid",
+            "title": "Campaign Id",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "processing_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retry_count": {
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResumeStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "campaign_id",
+          "filename",
+          "size_bytes",
+          "status",
+          "processing_step",
+          "error_message",
+          "retry_count",
+          "application_id",
+          "uploaded_at",
+          "updated_at",
+          "campaign"
+        ],
+        "title": "ProcessingResume",
+        "type": "object"
+      },
+      "ProcessingStep": {
+        "description": "The step in progress, or the one that failed.",
+        "enum": [
+          "extract_text",
+          "extract_profile",
+          "resolve_person",
+          "score",
+          "save"
+        ],
+        "title": "ProcessingStep",
+        "type": "string"
+      },
+      "Profile": {
+        "description": "The Person's profile: from their most recently uploaded resume, in any campaign.",
+        "properties": {
+          "certifications": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Certifications",
+            "type": "array"
+          },
+          "education": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Education",
+            "type": "array"
+          },
+          "projects": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "work_experience": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Work Experience",
+            "type": "array"
+          },
+          "years_of_experience": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years Of Experience"
+          }
+        },
+        "required": [
+          "skills",
+          "education",
+          "work_experience",
+          "certifications",
+          "projects",
+          "years_of_experience"
+        ],
+        "title": "Profile",
+        "type": "object"
+      },
+      "RecentMatch": {
+        "description": "A recent strong match, for the Home screen.",
+        "properties": {
+          "campaign": {
+            "$ref": "#/components/schemas/CampaignRef"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "The application's id.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonRef"
+          },
+          "pipeline_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "id",
+          "campaign",
+          "person",
+          "score",
+          "category",
+          "pipeline_stage",
+          "created_at"
+        ],
+        "title": "RecentMatch",
+        "type": "object"
+      },
+      "RejectedFile": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it was not accepted (type, size, duplicate, ...).",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "reason"
+        ],
+        "title": "RejectedFile",
+        "type": "object"
+      },
+      "Resume": {
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The application the resume belongs to, once it is scored.",
+            "title": "Application Id"
+          },
+          "campaign_id": {
+            "format": "uuid",
+            "title": "Campaign Id",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "processing_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retry_count": {
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResumeStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "campaign_id",
+          "filename",
+          "size_bytes",
+          "status",
+          "processing_step",
+          "error_message",
+          "retry_count",
+          "application_id",
+          "uploaded_at",
+          "updated_at"
+        ],
+        "title": "Resume",
+        "type": "object"
+      },
+      "ResumeCounts": {
+        "properties": {
+          "done": {
+            "default": 0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "extracting": {
+            "default": 0,
+            "title": "Extracting",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "processing": {
+            "default": 0,
+            "title": "Processing",
+            "type": "integer"
+          },
+          "quota_exceeded": {
+            "default": 0,
+            "title": "Quota Exceeded",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ResumeCounts",
+        "type": "object"
+      },
+      "ResumeEvent": {
+        "description": "The data of a ``resume_update`` event: a resume of the campaign changed status. Every\nfield is always present; those a status does not carry are ``null``: ``filename``\n(``extracting``, ``done``), ``error`` (``failed``, ``quota_exceeded``), and for ``done`` the\nscoring summary and the Person the resume was attached to.",
+        "properties": {
+          "candidate_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Candidate Name"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filename"
+          },
+          "matched_existing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the Person existed before this resume (done only).",
+            "title": "Matched Existing"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Person Id"
+          },
+          "resume_id": {
+            "format": "uuid",
+            "title": "Resume Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Score"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResumeStatus"
+          }
+        },
+        "required": [
+          "resume_id",
+          "status"
+        ],
+        "title": "ResumeEvent",
+        "type": "object"
+      },
+      "ResumePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Resume"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ResumePage",
+        "type": "object"
+      },
+      "ResumeStatus": {
+        "description": "``pending`` (queued) \u2192 ``extracting`` (PDF text) \u2192 ``processing`` (AI) \u2192 ``done``; or\n``failed`` / ``quota_exceeded`` (the AI provider's quota; retry later).",
+        "enum": [
+          "pending",
+          "extracting",
+          "processing",
+          "done",
+          "failed",
+          "quota_exceeded"
+        ],
+        "title": "ResumeStatus",
+        "type": "string"
+      },
+      "RetryResult": {
+        "properties": {
+          "retried": {
+            "description": "The resumes queued again.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Retried",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retried"
+        ],
+        "title": "RetryResult",
+        "type": "object"
+      },
+      "ScoreBucket": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "max": {
+            "description": "Upper bound, exclusive (inclusive for the last bucket).",
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "description": "Lower bound, inclusive.",
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "count"
+        ],
+        "title": "ScoreBucket",
+        "type": "object"
+      },
+      "SkillCount": {
+        "properties": {
+          "count": {
+            "description": "Applications whose resume lists the skill.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "required": {
+            "description": "Whether the campaign requires it (case-insensitive).",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "count",
+          "required"
+        ],
+        "title": "SkillCount",
+        "type": "object"
+      },
+      "StageCounts": {
+        "properties": {
+          "hired": {
+            "default": 0,
+            "title": "Hired",
+            "type": "integer"
+          },
+          "offer": {
+            "default": 0,
+            "title": "Offer",
+            "type": "integer"
+          },
+          "phone_call": {
+            "default": 0,
+            "title": "Phone Call",
+            "type": "integer"
+          },
+          "rejected_manual": {
+            "default": 0,
+            "title": "Rejected Manual",
+            "type": "integer"
+          },
+          "screened": {
+            "default": 0,
+            "title": "Screened",
+            "type": "integer"
+          },
+          "technical": {
+            "default": 0,
+            "title": "Technical",
+            "type": "integer"
+          },
+          "unreviewed": {
+            "default": 0,
+            "description": "Applications with no stage yet.",
+            "title": "Unreviewed",
+            "type": "integer"
+          }
+        },
+        "title": "StageCounts",
+        "type": "object"
+      },
+      "Stats": {
+        "properties": {
+          "applications": {
+            "$ref": "#/components/schemas/ApplicationCounts"
+          },
+          "campaigns": {
+            "$ref": "#/components/schemas/CampaignStatusCounts"
+          },
+          "people": {
+            "description": "People known across all campaigns.",
+            "title": "People",
+            "type": "integer"
+          },
+          "resumes": {
+            "$ref": "#/components/schemas/ResumeCounts"
+          }
+        },
+        "required": [
+          "campaigns",
+          "resumes",
+          "applications",
+          "people"
+        ],
+        "title": "Stats",
+        "type": "object"
+      },
+      "UploadResult": {
+        "properties": {
+          "accepted": {
+            "description": "Stored and queued for processing.",
+            "items": {
+              "$ref": "#/components/schemas/Resume"
+            },
+            "title": "Accepted",
+            "type": "array"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedFile"
+            },
+            "title": "Rejected",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accepted",
+          "rejected"
+        ],
+        "title": "UploadResult",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "The HireFlow AI resource API. Lists return `{items, total, page, page_size}`; errors are RFC 9457 problem details (`application/problem+json`).",
+    "title": "HireFlow AI API",
+    "version": "2.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/applications/{application_id}": {
+      "delete": {
+        "description": "Delete the application with its resumes and their stored PDFs.",
+        "operationId": "deleteApplication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Delete Application",
+        "tags": [
+          "applications"
+        ]
+      },
+      "get": {
+        "operationId": "getApplication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Application",
+        "tags": [
+          "applications"
+        ]
+      },
+      "patch": {
+        "description": "The recruiter's changes: pipeline stage, notes, category override (only those sent).",
+        "operationId": "updateApplication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Update Application",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/campaigns": {
+      "get": {
+        "description": "Campaigns, newest first, with their counts.",
+        "operationId": "listCampaigns",
+        "parameters": [
+          {
+            "description": "Only campaigns in any of these statuses.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/CampaignStatus"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only campaigns in any of these statuses.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Contained in the title or the role.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in the title or the role.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Campaigns",
+        "tags": [
+          "campaigns"
+        ]
+      },
+      "post": {
+        "description": "Create a campaign (status ``active`` unless given).",
+        "operationId": "createCampaign",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Campaign"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Campaign",
+        "tags": [
+          "campaigns"
+        ]
+      }
+    },
+    "/campaigns/parse-jd": {
+      "post": {
+        "description": "Extract the role title, seniority and skills from a job description with the AI.\n502 when the AI provider is not configured or its call fails.",
+        "operationId": "parseJobDescription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobDescription"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParsedJobDescription"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "summary": "Parse Job Description",
+        "tags": [
+          "campaigns"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}": {
+      "delete": {
+        "description": "Delete the campaign with its applications, resumes and stored PDFs.",
+        "operationId": "deleteCampaign",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Delete Campaign",
+        "tags": [
+          "campaigns"
+        ]
+      },
+      "get": {
+        "operationId": "getCampaign",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Campaign"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Campaign",
+        "tags": [
+          "campaigns"
+        ]
+      },
+      "patch": {
+        "description": "Change the fields sent (title, role, description, required skills, status).",
+        "operationId": "updateCampaign",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Campaign"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Update Campaign",
+        "tags": [
+          "campaigns"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/applications": {
+      "get": {
+        "description": "The campaign's applications matching the filters, best score first by default.",
+        "operationId": "listCampaignApplications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Contained in the name or the email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in the name or the email.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Any of these categories.",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ApplicationCategory"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any of these categories.",
+              "title": "Category"
+            }
+          },
+          {
+            "description": "Any of these pipeline stages.",
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/PipelineStage"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any of these pipeline stages.",
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Score"
+            }
+          },
+          {
+            "description": "Contained in one of the skills.",
+            "in": "query",
+            "name": "skill",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in one of the skills.",
+              "title": "Skill"
+            }
+          },
+          {
+            "description": "Years of experience, at least.",
+            "in": "query",
+            "name": "min_experience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Years of experience, at least.",
+              "title": "Min Experience"
+            }
+          },
+          {
+            "description": "Order; scores sort unscored last; ties by id.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ApplicationSort"
+                }
+              ],
+              "default": "-score",
+              "description": "Order; scores sort unscored last; ties by id.",
+              "title": "Sort"
+            }
+          },
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Campaign Applications",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/applications/bulk": {
+      "post": {
+        "description": "Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them\n(with their resumes). Ids that are not this campaign's applications are reported in\n``not_found``; the others are acted on.",
+        "operationId": "bulkApplicationAction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkApplicationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkApplicationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Bulk Application Action",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/applications/export": {
+      "get": {
+        "description": "Every application matching the filters (no paging) as CSV.",
+        "operationId": "exportCampaignApplications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only these applications (export a selection).",
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these applications (export a selection).",
+              "title": "Ids"
+            }
+          },
+          {
+            "description": "Contained in the name or the email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in the name or the email.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Any of these categories.",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ApplicationCategory"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any of these categories.",
+              "title": "Category"
+            }
+          },
+          {
+            "description": "Any of these pipeline stages.",
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/PipelineStage"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any of these pipeline stages.",
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Score"
+            }
+          },
+          {
+            "description": "Contained in one of the skills.",
+            "in": "query",
+            "name": "skill",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in one of the skills.",
+              "title": "Skill"
+            }
+          },
+          {
+            "description": "Years of experience, at least.",
+            "in": "query",
+            "name": "min_experience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Years of experience, at least.",
+              "title": "Min Experience"
+            }
+          },
+          {
+            "description": "Order; scores sort unscored last; ties by id.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ApplicationSort"
+                }
+              ],
+              "default": "-score",
+              "description": "Order; scores sort unscored last; ties by id.",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV, one row per application, in the list's order."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Export Campaign Applications",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/events": {
+      "get": {
+        "description": "Live processing progress of the campaign's resumes (one connection per open campaign).",
+        "operationId": "streamCampaignEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-Sent Events: first `connected` (data: ConnectedEvent), then `resume_update` (data: ResumeEvent) each time one of the campaign's resumes changes status. Only this campaign's resumes."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Stream Campaign Events",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/resumes": {
+      "get": {
+        "description": "The campaign's resumes, newest upload first.",
+        "operationId": "listCampaignResumes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only resumes in any of these statuses.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ResumeStatus"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only resumes in any of these statuses.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Campaign Resumes",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/resumes/retry-failed": {
+      "post": {
+        "description": "Queue the campaign's failed and quota-exceeded resumes again; each resumes from the\nstep it stopped at.",
+        "operationId": "retryFailedResumes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Retry Failed Resumes",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/stats": {
+      "get": {
+        "description": "The Insights numbers: resumes by status, applications by category and stage, mean\nscore, score histogram and top skills.",
+        "operationId": "getCampaignStats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Campaign Stats",
+        "tags": [
+          "campaigns"
+        ]
+      }
+    },
+    "/campaigns/{campaign_id}/uploads": {
+      "post": {
+        "description": "Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a\nfile that is not a PDF, too large, or a duplicate of one already processed or in progress\nis listed in ``rejected`` with the reason. Too many files is a 422.",
+        "operationId": "uploadResumes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_uploadResumes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Upload Resumes",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/home": {
+      "get": {
+        "description": "The Home screen in one call.",
+        "operationId": "getHome",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Home"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Home",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/people": {
+      "get": {
+        "description": "People across all campaigns, most recently updated first (search by name or email\nonly; semantic search is E6).",
+        "operationId": "listPeople",
+        "parameters": [
+          {
+            "description": "Contained in the name or one of the emails.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in the name or one of the emails.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List People",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/people/{person_id}": {
+      "get": {
+        "description": "The Person's profile, identifiers and identity conflicts, with all their applications.",
+        "operationId": "getPerson",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Person"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Person",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/stats": {
+      "get": {
+        "description": "Counts across all campaigns: campaigns by status, resumes by status, applications by\ncategory and stage, and people.",
+        "operationId": "getStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Stats",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v2"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Campaigns, their counts and stats, JD parsing.",
+      "name": "campaigns"
+    },
+    {
+      "description": "A Person's application to a campaign.",
+      "name": "applications"
+    },
+    {
+      "description": "Resume uploads, processing status and live events.",
+      "name": "uploads"
+    },
+    {
+      "description": "People across campaigns.",
+      "name": "people"
+    },
+    {
+      "description": "Workspace counts and the Home screen.",
+      "name": "dashboard"
+    }
+  ]
+}
