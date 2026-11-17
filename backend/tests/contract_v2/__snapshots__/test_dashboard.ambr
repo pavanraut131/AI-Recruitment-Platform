@@ -1,0 +1,243 @@
+# serializer version: 1
+# name: test_home
+  dict({
+    'body': dict({
+      'active_campaigns': list([
+        dict({
+          'counts': dict({
+            'applications': 1,
+            'failed': 1,
+            'in_progress': 1,
+            'new_resumes_24h': 0,
+            'resumes': 3,
+            'strong_matches': 1,
+          }),
+          'created_at': '<datetime>',
+          'description': 'Build and run the Python services behind our recruiting product.',
+          'id': '<uuid:1>',
+          'last_activity_at': '<datetime>',
+          'required_skills': list([
+            'Python',
+            'FastAPI',
+            'PostgreSQL',
+          ]),
+          'role': 'Backend Engineer',
+          'status': 'active',
+          'title': 'Data',
+          'updated_at': '<datetime>',
+        }),
+        dict({
+          'counts': dict({
+            'applications': 1,
+            'failed': 0,
+            'in_progress': 1,
+            'new_resumes_24h': 1,
+            'resumes': 2,
+            'strong_matches': 1,
+          }),
+          'created_at': '<datetime>',
+          'description': 'Build and run the Python services behind our recruiting product.',
+          'id': '<uuid:2>',
+          'last_activity_at': '<datetime>',
+          'required_skills': list([
+            'Python',
+            'FastAPI',
+            'PostgreSQL',
+          ]),
+          'role': 'Backend Engineer',
+          'status': 'active',
+          'title': 'Backend',
+          'updated_at': '<datetime>',
+        }),
+      ]),
+      'processing': dict({
+        'items': list([
+          dict({
+            'application_id': None,
+            'campaign': dict({
+              'id': '<uuid:2>',
+              'status': 'active',
+              'title': 'Backend',
+            }),
+            'campaign_id': '<uuid:2>',
+            'error_message': None,
+            'filename': 'queued.pdf',
+            'id': '<uuid:3>',
+            'processing_step': None,
+            'retry_count': 0,
+            'size_bytes': 48213,
+            'status': 'pending',
+            'updated_at': '<datetime>',
+            'uploaded_at': '<datetime>',
+          }),
+          dict({
+            'application_id': None,
+            'campaign': dict({
+              'id': '<uuid:1>',
+              'status': 'active',
+              'title': 'Data',
+            }),
+            'campaign_id': '<uuid:1>',
+            'error_message': None,
+            'filename': 'reading.pdf',
+            'id': '<uuid:4>',
+            'processing_step': None,
+            'retry_count': 0,
+            'size_bytes': 48213,
+            'status': 'extracting',
+            'updated_at': '<datetime>',
+            'uploaded_at': '<datetime>',
+          }),
+        ]),
+        'total': 2,
+      }),
+      'recent_strong_matches': list([
+        dict({
+          'campaign': dict({
+            'id': '<uuid:1>',
+            'status': 'active',
+            'title': 'Data',
+          }),
+          'category': 'strong_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:5>',
+          'person': dict({
+            'email': 'applicant2@example.com',
+            'id': '<uuid:6>',
+            'name': 'Grace',
+          }),
+          'pipeline_stage': 'phone_call',
+          'score': 85.0,
+        }),
+        dict({
+          'campaign': dict({
+            'id': '<uuid:2>',
+            'status': 'active',
+            'title': 'Backend',
+          }),
+          'category': 'strong_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:7>',
+          'person': dict({
+            'email': 'applicant1@example.com',
+            'id': '<uuid:8>',
+            'name': 'Ada',
+          }),
+          'pipeline_stage': None,
+          'score': 90.0,
+        }),
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_home_empty
+  dict({
+    'body': dict({
+      'active_campaigns': list([
+      ]),
+      'processing': dict({
+        'items': list([
+        ]),
+        'total': 0,
+      }),
+      'recent_strong_matches': list([
+      ]),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_stats
+  dict({
+    'body': dict({
+      'applications': dict({
+        'by_category': dict({
+          'moderate_match': 0,
+          'rejected': 0,
+          'strong_match': 2,
+          'weak_match': 1,
+        }),
+        'by_stage': dict({
+          'hired': 0,
+          'offer': 0,
+          'phone_call': 1,
+          'rejected_manual': 0,
+          'screened': 0,
+          'technical': 0,
+          'unreviewed': 2,
+        }),
+        'total': 3,
+      }),
+      'campaigns': dict({
+        'active': 2,
+        'archived': 1,
+        'closed': 1,
+        'total': 4,
+      }),
+      'people': 4,
+      'resumes': dict({
+        'done': 3,
+        'extracting': 1,
+        'failed': 1,
+        'pending': 1,
+        'processing': 0,
+        'quota_exceeded': 0,
+        'total': 6,
+      }),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_stats_empty
+  dict({
+    'body': dict({
+      'applications': dict({
+        'by_category': dict({
+          'moderate_match': 0,
+          'rejected': 0,
+          'strong_match': 0,
+          'weak_match': 0,
+        }),
+        'by_stage': dict({
+          'hired': 0,
+          'offer': 0,
+          'phone_call': 0,
+          'rejected_manual': 0,
+          'screened': 0,
+          'technical': 0,
+          'unreviewed': 0,
+        }),
+        'total': 0,
+      }),
+      'campaigns': dict({
+        'active': 0,
+        'archived': 0,
+        'closed': 0,
+        'total': 0,
+      }),
+      'people': 0,
+      'resumes': dict({
+        'done': 0,
+        'extracting': 0,
+        'failed': 0,
+        'pending': 0,
+        'processing': 0,
+        'quota_exceeded': 0,
+        'total': 0,
+      }),
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---

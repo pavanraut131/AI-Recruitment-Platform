@@ -27,9 +27,7 @@ def files(*items: tuple[str, bytes]) -> list[tuple[str, tuple[str, bytes, str]]]
     return [("files", (name, content, "application/pdf")) for name, content in items]
 
 
-async def applicant(
-    db: AsyncSession, campaign: Campaign, i: int, **overrides: Any
-) -> Application:
+async def applicant(db: AsyncSession, campaign: Campaign, i: int, **overrides: Any) -> Application:
     """The i-th applicant of a campaign: its own resume (uploaded at ``at(i)``) and Person."""
     resume = await make_resume(
         db, campaign, original_filename=f"cv_{campaign.title}_{i}.pdf", uploaded_at=at(i)

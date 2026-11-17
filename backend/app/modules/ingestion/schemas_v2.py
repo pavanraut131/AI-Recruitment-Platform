@@ -73,12 +73,10 @@ class RetryResult(BaseModel):
 
 
 class ResumeEvent(BaseModel):
-    """The data of a ``resume_update`` event: a resume of the campaign changed status.
-
-    The fields a status does not carry are ``null``: ``filename`` (``extracting``, ``done``),
-    ``error`` (``failed``, ``quota_exceeded``), and for ``done`` the scoring summary and the
-    Person the resume was attached to.
-    """
+    """The data of a ``resume_update`` event: a resume of the campaign changed status. Every
+    field is always present; those a status does not carry are ``null``: ``filename``
+    (``extracting``, ``done``), ``error`` (``failed``, ``quota_exceeded``), and for ``done`` the
+    scoring summary and the Person the resume was attached to."""
 
     model_config = ConfigDict(extra="ignore")
 

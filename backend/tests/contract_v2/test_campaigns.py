@@ -255,8 +255,11 @@ async def test_parse_jd(
 ) -> None:
     fake_gemini.respond_with(
         json.dumps(
-            {"role_title": "Senior Python Engineer", "seniority": "senior",
-             "skills": ["Python", "FastAPI", "PostgreSQL", "AWS"]}
+            {
+                "role_title": "Senior Python Engineer",
+                "seniority": "senior",
+                "skills": ["Python", "FastAPI", "PostgreSQL", "AWS"],
+            }
         )  # fmt: skip
     )
     resp = await client.post(f"{V2}/campaigns/parse-jd", json={"job_description": JD})
