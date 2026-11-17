@@ -14,7 +14,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 |---|---|---|---|
 | B4 | Upgrade python-multipart (upload parsing DoS) | S | todo |
 | E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | todo |
-| E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | todo |
+| E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | review |
 | E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | todo |
 | E1-04 | Campaign list and new campaign (JD extraction) | M | todo |
 | E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | todo |
@@ -62,17 +62,19 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-02 · Backend `/api/v2`
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e1-02-api-v2`
+**Status:** review  ·  **Size:** L  ·  **Branch:** `e1-02-api-v2`
 
 **Goal:** The resource API from spec §6, as thin routers over the existing module services.
 
 **Acceptance criteria**
-- [ ] Every endpoint in the spec §6 table is implemented. v2 routers live with their modules or in `app/api` for composed endpoints. **No business logic in routers.**
-- [ ] List endpoints return `{ items, total, page, page_size }`. Errors use RFC 9457 `application/problem+json` (one exception handler for `/api/v2`, with validation errors mapped to field paths).
-- [ ] Explicit, stable `operation_id`s. Enums (category, stage, resume status, campaign status) appear in OpenAPI as enums.
-- [ ] `GET /api/v2/people/{id}` returns the person with all applications and conflict flags. `GET /api/v2/home` aggregates the Home screen in one call.
-- [ ] **Contract snapshots** for every v2 endpoint, including errors, in the same pattern as v1. **The v1 snapshots stay byte-identical.**
-- [ ] import-linter stays green. Query counts are bounded (no N+1) on list endpoints, asserted in tests.
+- [x] Every endpoint in the spec §6 table is implemented. v2 routers live with their modules or in `app/api` for composed endpoints. **No business logic in routers.**
+- [x] List endpoints return `{ items, total, page, page_size }`. Errors use RFC 9457 `application/problem+json` (one exception handler for `/api/v2`, with validation errors mapped to field paths).
+- [x] Explicit, stable `operation_id`s. Enums (category, stage, resume status, campaign status) appear in OpenAPI as enums.
+- [x] `GET /api/v2/people/{id}` returns the person with all applications and conflict flags. `GET /api/v2/home` aggregates the Home screen in one call.
+- [x] **Contract snapshots** for every v2 endpoint, including errors, in the same pattern as v1. **The v1 snapshots stay byte-identical.**
+- [x] import-linter stays green. Query counts are bounded (no N+1) on list endpoints, asserted in tests.
+
+**Notes:** `/api/v2` is a mounted sub-application with its own OpenAPI document (`/api/v2/openapi.json`), [ADR 0008](../adr/0008-api-v2-sub-application.md); the final endpoint table, shapes and query counts are in [spec §6.1](../specs/EPIC-01-frontend.md#61-as-built-e1-02). v2 fixes B5, B7, B8, B9 and part of B10 (v1 keeps them).
 
 ---
 
