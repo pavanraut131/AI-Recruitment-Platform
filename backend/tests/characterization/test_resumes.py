@@ -269,6 +269,45 @@ async def test_upload_validation_error(
     assert response_data(resp) == snapshot
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"data": {"note": "x" * (16 * 1024 + 1)}, "files": files(("a.pdf", pdf("a")))},
+            id="oversized-non-file-field",
+        ),
+        pytest.param(
+            {"data": {f"f{i}": "x" for i in range(11)}, "files": files(("a.pdf", pdf("a")))},
+            id="too-many-non-file-fields",
+        ),
+        pytest.param(
+            {"files": files(*[(f"r{i:02d}.pdf", pdf(str(i))) for i in range(52)])},
+            id="files-past-the-parser-limit",
+        ),
+        pytest.param({"data": {"files": "x" * 16 * 1024}}, id="oversized-urlencoded-field"),
+    ],
+)
+async def test_upload_body_over_parsing_limits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    celery_calls: CeleryRecorder,
+    fake_storage: InMemoryStorage,
+    snapshot: SnapshotAssertion,
+    kwargs: dict[str, Any],
+) -> None:
+    """S1 (app.platform.uploads): a body over a parsing limit is refused while it is parsed,
+    400 with Starlette's message, before the endpoint runs. Recorded with the default
+    MAX_FILES_PER_BATCH (50): the parser accepts 51 files (so 51 still get the endpoint's own
+    answer, ``test_upload_too_many_files``), 52 are cut off."""
+    campaign = await make_campaign(db_session)
+    resp = await client.post(f"{API}/campaigns/{campaign.id}/upload", **kwargs)
+    assert {
+        "response": response_data(resp),
+        "celery_calls": celery_calls_data(celery_calls),
+        "stored_objects": stored_objects_data(fake_storage),
+    } == snapshot
+
+
 async def test_upload_invalid_campaign_id(client: AsyncClient, snapshot: SnapshotAssertion) -> None:
     resp = await client.post(f"{API}/campaigns/not-a-uuid/upload", files=files(("a.pdf", pdf("a"))))
     assert response_data(resp) == snapshot

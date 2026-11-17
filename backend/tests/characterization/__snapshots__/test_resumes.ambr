@@ -449,6 +449,74 @@
     ]),
   })
 # ---
+# name: test_upload_body_over_parsing_limits[files-past-the-parser-limit]
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Too many files. Maximum number of files is 51.',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 400,
+    }),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_body_over_parsing_limits[oversized-non-file-field]
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Part exceeded maximum size of 16KB.',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 400,
+    }),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_body_over_parsing_limits[oversized-urlencoded-field]
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Field exceeded maximum size of 16KB.',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 400,
+    }),
+    'stored_objects': list([
+    ]),
+  })
+# ---
+# name: test_upload_body_over_parsing_limits[too-many-non-file-fields]
+  dict({
+    'celery_calls': list([
+    ]),
+    'response': dict({
+      'body': dict({
+        'detail': 'Too many fields. Maximum number of fields is 10.',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 400,
+    }),
+    'stored_objects': list([
+    ]),
+  })
+# ---
 # name: test_upload_duplicates
   dict({
     'celery_calls': list([

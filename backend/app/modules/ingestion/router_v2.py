@@ -20,8 +20,10 @@ from app.modules.ingestion.schemas_v2 import ResumePage, ResumeStatus, RetryResu
 from app.platform.database import get_db
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
+from app.platform.uploads import UploadRoute
 
-router = APIRouter(prefix="/campaigns/{campaign_id}", tags=["uploads"])
+# UploadRoute: the upload body is parsed with explicit limits (app.platform.uploads, S1).
+router = APIRouter(prefix="/campaigns/{campaign_id}", tags=["uploads"], route_class=UploadRoute)
 
 STATUS_CODES: dict[type[Exception], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,
@@ -35,7 +37,7 @@ STATUS_CODES: dict[type[Exception], int] = {
     operation_id="uploadResumes",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=UploadResult,
-    responses=problem_responses(404, 422),
+    responses=problem_responses(400, 404, 422),
 )
 async def upload_resumes(
     campaign_id: uuid.UUID,
@@ -44,7 +46,9 @@ async def upload_resumes(
 ) -> UploadResult:
     """Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a
     file that is not a PDF, too large, or a duplicate of one already processed or in progress
-    is listed in ``rejected`` with the reason. Too many files is a 422."""
+    is listed in ``rejected`` with the reason. Too many files is a 422. A body that is not
+    parsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than
+    10 non-file fields, more files than the batch limit plus one)."""
     with errors_as_http(STATUS_CODES):
         return await service.upload_resumes_v2(db, campaign_id, files)
 

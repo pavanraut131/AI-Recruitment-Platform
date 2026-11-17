@@ -79,6 +79,40 @@ async def test_upload_without_files(
     assert response_data(resp) == snapshot
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"data": {"note": "x" * (16 * 1024 + 1)}, "files": files(("a.pdf", pdf("a")))},
+            id="oversized-non-file-field",
+        ),
+        pytest.param(
+            {"data": {f"f{i}": "x" for i in range(11)}, "files": files(("a.pdf", pdf("a")))},
+            id="too-many-non-file-fields",
+        ),
+        pytest.param(
+            {"files": files(*((f"{i:02d}.pdf", pdf(str(i))) for i in range(52)))},
+            id="files-past-the-parser-limit",
+        ),
+    ],
+)
+async def test_upload_body_over_parsing_limits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    celery_calls: CeleryRecorder,
+    snapshot: SnapshotAssertion,
+    kwargs: dict[str, Any],
+) -> None:
+    """A body over a parsing limit (app.platform.uploads) is a 400 problem, before the
+    endpoint runs; 52 files is one past what the parser accepts with MAX_FILES_PER_BATCH=50."""
+    campaign = await make_campaign(db_session)
+    resp = await client.post(f"{V2}/campaigns/{campaign.id}/uploads", **kwargs)
+    assert {
+        "response": response_data(resp),
+        "celery_calls": celery_calls_data(celery_calls),
+    } == snapshot
+
+
 # ── GET /campaigns/{id}/resumes ───────────────────────────────
 async def _campaign_with_resumes(db: AsyncSession) -> Any:
     campaign = await make_campaign(db)
