@@ -1,28 +1,51 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import "react-toastify/dist/ReactToastify.css";
-import { ToastContainer } from "react-toastify";
-import Sidebar from "@/components/Sidebar";
+import type { Metadata } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+import { AppShell } from "@/components/app-shell/app-shell"
+import { ThemeProvider } from "@/components/app-shell/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
+import "./globals.css"
+
+const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" })
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" })
 
 export const metadata: Metadata = {
-  title: "ResumeAI — Bulk Resume Processing",
-  description: "AI-powered bulk resume import, extraction, and intelligent candidate categorization platform for modern recruitment teams.",
-  keywords: ["resume", "AI", "recruitment", "candidate", "bulk import"],
-};
+  title: {
+    default: "HireFlow AI",
+    template: "%s · HireFlow AI",
+  },
+  description:
+    "HireFlow AI screens and ranks resumes for recruitment agencies: upload a batch, get a ranked shortlist, review every candidate as a person across campaigns.",
+  applicationName: "HireFlow AI",
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="bg-[#08090c] bg-premium-pattern text-white antialiased">
-        <Sidebar />
-        <main className="main-content">
-          {children}
-        </main>
-        <ToastContainer theme="dark" position="bottom-right" />
+    // suppressHydrationWarning: next-themes sets the theme class on <html>
+    // before hydration (no flash), so server and client markup differ there.
+    <html
+      lang="en"
+      className={cn(geistSans.variable, geistMono.variable)}
+      suppressHydrationWarning
+    >
+      <body>
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-md"
+        >
+          Skip to content
+        </a>
+        <ThemeProvider>
+          <TooltipProvider>
+            <AppShell>{children}</AppShell>
+            <Toaster position="bottom-right" />
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }

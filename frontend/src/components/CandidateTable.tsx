@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Search, SlidersHorizontal, Trash2, Download, ArrowUpRight } from "lucide-react";
 import clsx from "clsx";
 import * as Dialog from "@radix-ui/react-dialog";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 
 const CATEGORIES = [
   { value: "", label: "All" },
