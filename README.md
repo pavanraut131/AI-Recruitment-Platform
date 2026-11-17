@@ -1,6 +1,6 @@
-# AI Resume Bulk Import System
+# HireFlow AI
 
-> Scalable, AI-powered bulk resume processing and candidate categorization platform built with FastAPI, Celery, Next.js, and Google Gemini.
+> AI resume screening for recruitment agencies: upload a batch of resumes, get a ranked shortlist, and review every candidate as one person across campaigns. Built with FastAPI, Celery, Next.js and Google Gemini.
 
 ---
 
@@ -258,7 +258,16 @@ returns today; they define the API contract. Read its
 cd frontend
 npm install
 NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+
+npm run lint              # ESLint, incl. feature-folder boundaries (src/features/README.md)
+npx tsc --noEmit          # type check
+npm run check:contrast    # WCAG AA contrast of the design tokens, light and dark
 ```
+
+The design system lives in `src/styles/tokens.css` (colour, radius and type tokens, light and dark)
+and `src/components/ui` (shadcn/ui primitives). Open **http://localhost:3000/dev/ui** in a dev build
+to see every component in every state, in both themes. Press **⌘K / Ctrl+K** anywhere for the
+command palette.
 
 ---
 
@@ -306,18 +315,18 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 │   └── alembic/              # Database migrations
 ├── frontend/
 │   └── src/
-│       ├── app/              # Next.js App Router pages
-│       │   ├── page.tsx              # Dashboard
-│       │   ├── campaigns/page.tsx    # Campaign list
-│       │   ├── campaigns/new/page.tsx
-│       │   ├── campaigns/[id]/page.tsx  # Upload + Candidates + Stats
-│       │   └── candidates/[id]/page.tsx # Full candidate profile
+│       ├── app/              # Next.js App Router routes (thin)
+│       │   ├── layout.tsx            # Root layout: fonts, themes, app shell, toaster
+│       │   ├── (legacy)/             # Prototype screens, same URLs; replaced in E1-04..08
+│       │   ├── talent/, settings/    # Placeholders until E1-08 / E2
+│       │   └── dev/ui/               # Component gallery (dev builds only)
 │       ├── components/
-│       │   ├── Sidebar.tsx
-│       │   ├── UploadZone.tsx    # Drag-and-drop + SSE consumer
-│       │   ├── CandidateTable.tsx
-│       │   └── StatsPanel.tsx   # Recharts analytics
-│       └── lib/api.ts           # Typed API client
+│       │   ├── ui/               # shadcn/ui primitives
+│       │   ├── app-shell/        # Sidebar, top bar, ⌘K palette, theme toggle
+│       │   └── *.tsx             # Prototype components, removed with their screens
+│       ├── features/             # Product features (one folder each; see README there)
+│       ├── styles/tokens.css     # Design tokens (light + dark)
+│       └── lib/                  # API client and utilities
 ├── docker-compose.yml
 ├── .env.example
 └── README.md

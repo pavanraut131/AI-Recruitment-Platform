@@ -105,7 +105,7 @@ setup:
 	$(MAKE) migrate-up
 	$(MAKE) seed SEED_FLAGS=--if-empty
 	@echo ""
-	@echo "✅ ResumeAI is ready! (ports below are the defaults; see .env)"
+	@echo "✅ HireFlow AI is ready! (ports below are the defaults; see .env)"
 	@echo "   Frontend:  http://localhost:3000"
 	@echo "   API Docs:  http://localhost:8000/docs"
 	@echo "   Flower:    http://localhost:5555"
