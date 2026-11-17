@@ -85,6 +85,14 @@ coverage:
 	$(BACKEND_RUN) coverage report --include='app/modules/*' --skip-covered --fail-under=$(COVERAGE_MIN)
 
 # ── Frontend ─────────────────────────────────────────────────
+# The generated /api/v2 client (E1-03, ADR 0006): export the v2 OpenAPI document without a
+# server (no database, Redis or AI key) and regenerate the TypeScript types from it. Commit
+# both files; CI runs the same two steps and fails if they differ from what is committed.
+.PHONY: api-client
+api-client:
+	$(BACKEND_RUN) python -m app.devtools.export_openapi
+	cd frontend && npm run api:generate
+
 frontend-install:
 	cd frontend && npm install
 
