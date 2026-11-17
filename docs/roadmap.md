@@ -38,7 +38,7 @@ Ordering notes:
 | [2](sprints/sprint-02.md) | 2026-10-14 → 10-15 | Modules in place: modular layout with enforced boundaries; parse-jd and skill filter fixed | done |
 | [3](sprints/sprint-03.md) | 2026-10-15 → 10-19 | People and applications side by side: expand, dual write, backfill, verify | done |
 | [4](sprints/sprint-04.md) | 2026-10-19 (closed early) | Switch reads, contract, close E0 | done |
-| [5](sprints/sprint-05.md) | 2026-10-20 → 10-26 | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | planned |
+| [5](sprints/sprint-05.md) | 2026-11-17 → 11-23 | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | in progress |
 
 Open follow-ups (bugs, upgrades, small debts) that no sprint has taken yet: [backlog.md](backlog.md).
 
