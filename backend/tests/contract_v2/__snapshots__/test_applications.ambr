@@ -1,0 +1,1032 @@
+# serializer version: 1
+# name: test_bulk_delete_partial
+  dict({
+    'deleted': '<uuid:1>',
+    'response': dict({
+      'body': dict({
+        'action': 'delete',
+        'affected': list([
+          '<uuid:1>',
+        ]),
+        'not_found': list([
+          '<uuid:2>',
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_bulk_invalid[invalid-id]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'delete',
+            'ids',
+            0,
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_invalid[no-action]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+          ]),
+          'msg': "Unable to extract tag using discriminator 'action'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_invalid[no-ids]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'delete',
+            'ids',
+          ]),
+          'msg': 'List should have at least 1 item after validation, not 0',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_invalid[stage-with-reject]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'reject',
+            'stage',
+          ]),
+          'msg': 'Extra inputs are not permitted',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_invalid[stage-without-stage]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'stage',
+            'stage',
+          ]),
+          'msg': 'Field required',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_invalid[unknown-action]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+          ]),
+          'msg': "Input tag 'archive' found using 'action' does not match any of the expected tags: 'stage', 'reject', 'delete'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_bulk_stage_reports_not_found_ids
+  dict({
+    'requested': list([
+      '<uuid:1>',
+      '<uuid:2>',
+      '<uuid:3>',
+      '<uuid:4>',
+    ]),
+    'response': dict({
+      'body': dict({
+        'action': 'stage',
+        'affected': list([
+          '<uuid:1>',
+          '<uuid:3>',
+        ]),
+        'not_found': list([
+          '<uuid:2>',
+          '<uuid:4>',
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_bulk_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_export_applications
+  dict({
+    'body': list([
+      'Name,Email,Phone,Score,Category,Pipeline Stage,Years Experience,Skills,Missing Skills,Strengths,Recommendation,LinkedIn URL,GitHub URL',
+      'Zoe Adams,applicant0@example.com,+1 555 0100,91,strong_match,,7.0,Python | Go,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+      'Ben Evans,applicant4@example.com,+1 555 0100,91,strong_match,offer,10.0,Rust | Python,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+      'amy brown,applicant1@example.com,+1 555 0100,74,moderate_match,screened,3.0,Python | SQL,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+      'Carl Diaz,applicant2@example.com,+1 555 0100,45,weak_match,,1.0,Java,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+      ',,+1 555 0100,,,,,,,Strong Python | API design,,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+    ]),
+    'headers': dict({
+      'content-disposition': 'attachment; filename="applications_<uuid:1>.csv"',
+      'content-type': 'text/csv; charset=utf-8',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_export_applies_every_list_filter
+  list([
+    'Ben Evans,applicant4@example.com,+1 555 0100,91,strong_match,offer,10.0,Rust | Python,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+    'Zoe Adams,applicant0@example.com,+1 555 0100,91,strong_match,,7.0,Python | Go,,Strong Python | API design,Proceed to technical interview.,https://www.linkedin.com/in/janedoe,https://github.com/janedoe',
+  ])
+# ---
+# name: test_export_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_get_application
+  dict({
+    'body': dict({
+      'campaign_id': '<uuid:1>',
+      'category': 'strong_match',
+      'created_at': '<datetime>',
+      'id': '<uuid:2>',
+      'missing_skills': list([
+      ]),
+      'notes': 'Call back',
+      'person': dict({
+        'email': 'applicant1@example.com',
+        'id': '<uuid:3>',
+        'name': 'Applicant 1',
+      }),
+      'pipeline_stage': 'offer',
+      'recommendation': 'Proceed to technical interview.',
+      'resume_id': '<uuid:4>',
+      'score': 82.0,
+      'score_breakdown': dict({
+        'communication_quality': 80,
+        'education_bonus': 5,
+        'experience_match': 80,
+        'project_relevance': 75,
+        'skills_match': 90,
+      }),
+      'skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+        'Docker',
+      ]),
+      'strengths': list([
+        'Strong Python',
+        'API design',
+      ]),
+      'summary': 'Backend engineer with five years of Python API experience.',
+      'updated_at': '<datetime>',
+      'weaknesses': list([
+        'Limited frontend experience',
+      ]),
+      'years_of_experience': 5.0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_get_application_without_extraction
+  dict({
+    'body': dict({
+      'campaign_id': '<uuid:1>',
+      'category': 'strong_match',
+      'created_at': '<datetime>',
+      'id': '<uuid:2>',
+      'missing_skills': list([
+      ]),
+      'notes': None,
+      'person': dict({
+        'email': None,
+        'id': '<uuid:3>',
+        'name': None,
+      }),
+      'pipeline_stage': None,
+      'recommendation': 'Proceed to technical interview.',
+      'resume_id': '<uuid:4>',
+      'score': 82.0,
+      'score_breakdown': dict({
+        'communication_quality': 80,
+        'education_bonus': 5,
+        'experience_match': 80,
+        'project_relevance': 75,
+        'skills_match': 90,
+      }),
+      'skills': list([
+      ]),
+      'strengths': list([
+        'Strong Python',
+        'API design',
+      ]),
+      'summary': 'Backend engineer with five years of Python API experience.',
+      'updated_at': '<datetime>',
+      'weaknesses': list([
+        'Limited frontend experience',
+      ]),
+      'years_of_experience': None,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_applications
+  dict({
+    'body': dict({
+      'items': list([
+        dict({
+          'campaign_id': '<uuid:1>',
+          'category': 'strong_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:2>',
+          'missing_skills': list([
+          ]),
+          'notes': None,
+          'person': dict({
+            'email': 'applicant0@example.com',
+            'id': '<uuid:3>',
+            'name': 'Zoe Adams',
+          }),
+          'pipeline_stage': None,
+          'recommendation': 'Proceed to technical interview.',
+          'resume_id': '<uuid:4>',
+          'score': 91.0,
+          'score_breakdown': dict({
+            'communication_quality': 80,
+            'education_bonus': 5,
+            'experience_match': 80,
+            'project_relevance': 75,
+            'skills_match': 90,
+          }),
+          'skills': list([
+            'Python',
+            'Go',
+          ]),
+          'strengths': list([
+            'Strong Python',
+            'API design',
+          ]),
+          'summary': 'Backend engineer with five years of Python API experience.',
+          'updated_at': '<datetime>',
+          'weaknesses': list([
+            'Limited frontend experience',
+          ]),
+          'years_of_experience': 7.0,
+        }),
+        dict({
+          'campaign_id': '<uuid:1>',
+          'category': 'strong_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:5>',
+          'missing_skills': list([
+          ]),
+          'notes': None,
+          'person': dict({
+            'email': 'applicant4@example.com',
+            'id': '<uuid:6>',
+            'name': 'Ben Evans',
+          }),
+          'pipeline_stage': 'offer',
+          'recommendation': 'Proceed to technical interview.',
+          'resume_id': '<uuid:7>',
+          'score': 91.0,
+          'score_breakdown': dict({
+            'communication_quality': 80,
+            'education_bonus': 5,
+            'experience_match': 80,
+            'project_relevance': 75,
+            'skills_match': 90,
+          }),
+          'skills': list([
+            'Rust',
+            'Python',
+          ]),
+          'strengths': list([
+            'Strong Python',
+            'API design',
+          ]),
+          'summary': 'Backend engineer with five years of Python API experience.',
+          'updated_at': '<datetime>',
+          'weaknesses': list([
+            'Limited frontend experience',
+          ]),
+          'years_of_experience': 10.0,
+        }),
+        dict({
+          'campaign_id': '<uuid:1>',
+          'category': 'moderate_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:8>',
+          'missing_skills': list([
+          ]),
+          'notes': None,
+          'person': dict({
+            'email': 'applicant1@example.com',
+            'id': '<uuid:9>',
+            'name': 'amy brown',
+          }),
+          'pipeline_stage': 'screened',
+          'recommendation': 'Proceed to technical interview.',
+          'resume_id': '<uuid:10>',
+          'score': 74.0,
+          'score_breakdown': dict({
+            'communication_quality': 80,
+            'education_bonus': 5,
+            'experience_match': 80,
+            'project_relevance': 75,
+            'skills_match': 90,
+          }),
+          'skills': list([
+            'Python',
+            'SQL',
+          ]),
+          'strengths': list([
+            'Strong Python',
+            'API design',
+          ]),
+          'summary': 'Backend engineer with five years of Python API experience.',
+          'updated_at': '<datetime>',
+          'weaknesses': list([
+            'Limited frontend experience',
+          ]),
+          'years_of_experience': 3.0,
+        }),
+        dict({
+          'campaign_id': '<uuid:1>',
+          'category': 'weak_match',
+          'created_at': '<datetime>',
+          'id': '<uuid:11>',
+          'missing_skills': list([
+          ]),
+          'notes': None,
+          'person': dict({
+            'email': 'applicant2@example.com',
+            'id': '<uuid:12>',
+            'name': 'Carl Diaz',
+          }),
+          'pipeline_stage': None,
+          'recommendation': 'Proceed to technical interview.',
+          'resume_id': '<uuid:13>',
+          'score': 45.0,
+          'score_breakdown': dict({
+            'communication_quality': 80,
+            'education_bonus': 5,
+            'experience_match': 80,
+            'project_relevance': 75,
+            'skills_match': 90,
+          }),
+          'skills': list([
+            'Java',
+          ]),
+          'strengths': list([
+            'Strong Python',
+            'API design',
+          ]),
+          'summary': 'Backend engineer with five years of Python API experience.',
+          'updated_at': '<datetime>',
+          'weaknesses': list([
+            'Limited frontend experience',
+          ]),
+          'years_of_experience': 1.0,
+        }),
+        dict({
+          'campaign_id': '<uuid:1>',
+          'category': None,
+          'created_at': '<datetime>',
+          'id': '<uuid:14>',
+          'missing_skills': list([
+          ]),
+          'notes': None,
+          'person': dict({
+            'email': None,
+            'id': '<uuid:15>',
+            'name': None,
+          }),
+          'pipeline_stage': None,
+          'recommendation': None,
+          'resume_id': '<uuid:16>',
+          'score': None,
+          'score_breakdown': None,
+          'skills': list([
+          ]),
+          'strengths': list([
+            'Strong Python',
+            'API design',
+          ]),
+          'summary': None,
+          'updated_at': '<datetime>',
+          'weaknesses': list([
+            'Limited frontend experience',
+          ]),
+          'years_of_experience': None,
+        }),
+      ]),
+      'page': 1,
+      'page_size': 20,
+      'total': 5,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[categories]
+  dict({
+    'names': list([
+      'Zoe Adams',
+      'Ben Evans',
+      'Carl Diaz',
+    ]),
+    'total': 3,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[default-score-desc]
+  dict({
+    'names': list([
+      'Zoe Adams',
+      'Ben Evans',
+      'amy brown',
+      'Carl Diaz',
+      None,
+    ]),
+    'total': 5,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[min-experience]
+  dict({
+    'names': list([
+      'Zoe Adams',
+      'Ben Evans',
+    ]),
+    'total': 2,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[name-case-insensitive-unnamed-last]
+  dict({
+    'names': list([
+      'amy brown',
+      'Ben Evans',
+      'Carl Diaz',
+      'Zoe Adams',
+      None,
+    ]),
+    'total': 5,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[no-match]
+  dict({
+    'names': list([
+    ]),
+    'total': 0,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[profile-filter-name-sort-page-2]
+  dict({
+    'names': list([
+      'Zoe Adams',
+    ]),
+    'total': 3,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[q-email]
+  dict({
+    'names': list([
+      'Carl Diaz',
+    ]),
+    'total': 1,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[q-name]
+  dict({
+    'names': list([
+      'Zoe Adams',
+    ]),
+    'total': 1,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[score-asc-nulls-last]
+  dict({
+    'names': list([
+      'Carl Diaz',
+      'amy brown',
+      'Zoe Adams',
+      'Ben Evans',
+      None,
+    ]),
+    'total': 5,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[score-range]
+  dict({
+    'names': list([
+      'amy brown',
+    ]),
+    'total': 1,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[skill]
+  dict({
+    'names': list([
+      'Zoe Adams',
+      'Ben Evans',
+      'amy brown',
+    ]),
+    'total': 3,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[stages]
+  dict({
+    'names': list([
+      'Ben Evans',
+      'amy brown',
+    ]),
+    'total': 2,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[updated-asc]
+  dict({
+    'names': list([
+      'Zoe Adams',
+      'amy brown',
+      'Carl Diaz',
+      None,
+      'Ben Evans',
+    ]),
+    'total': 5,
+  })
+# ---
+# name: test_list_applications_filters_and_sort[updated-desc]
+  dict({
+    'names': list([
+      'Ben Evans',
+      None,
+      'Carl Diaz',
+      'amy brown',
+      'Zoe Adams',
+    ]),
+    'total': 5,
+  })
+# ---
+# name: test_list_applications_invalid_query[page-size-over-100]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'page_size',
+          ]),
+          'msg': 'Input should be less than or equal to 100',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_invalid_query[page-zero]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'page',
+          ]),
+          'msg': 'Input should be greater than or equal to 1',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_invalid_query[score-over-100]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'min_score',
+          ]),
+          'msg': 'Input should be less than or equal to 100',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_invalid_query[unknown-category]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'category',
+            0,
+          ]),
+          'msg': "Input should be 'strong_match', 'moderate_match', 'weak_match' or 'rejected'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_invalid_query[unknown-sort]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'sort',
+          ]),
+          'msg': "Input should be 'score', '-score', 'updated_at', '-updated_at' or 'name'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_invalid_query[unknown-stage]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'stage',
+            0,
+          ]),
+          'msg': "Input should be 'screened', 'phone_call', 'technical', 'offer', 'hired' or 'rejected_manual'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_applications_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_unknown_application[delete]
+  dict({
+    'body': dict({
+      'detail': 'Application not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_unknown_application[get]
+  dict({
+    'body': dict({
+      'detail': 'Application not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_unknown_application[patch]
+  dict({
+    'body': dict({
+      'detail': 'Application not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_update_application
+  dict({
+    'body': dict({
+      'campaign_id': '<uuid:1>',
+      'category': 'moderate_match',
+      'created_at': '<datetime>',
+      'id': '<uuid:2>',
+      'missing_skills': list([
+      ]),
+      'notes': 'old',
+      'person': dict({
+        'email': 'applicant1@example.com',
+        'id': '<uuid:3>',
+        'name': 'Applicant 1',
+      }),
+      'pipeline_stage': 'technical',
+      'recommendation': 'Proceed to technical interview.',
+      'resume_id': '<uuid:4>',
+      'score': 82.0,
+      'score_breakdown': dict({
+        'communication_quality': 80,
+        'education_bonus': 5,
+        'experience_match': 80,
+        'project_relevance': 75,
+        'skills_match': 90,
+      }),
+      'skills': list([
+        'Python',
+        'FastAPI',
+        'PostgreSQL',
+        'Docker',
+      ]),
+      'strengths': list([
+        'Strong Python',
+        'API design',
+      ]),
+      'summary': 'Backend engineer with five years of Python API experience.',
+      'updated_at': '<datetime>',
+      'weaknesses': list([
+        'Limited frontend experience',
+      ]),
+      'years_of_experience': 5.0,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_update_application_invalid[notes-too-long]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'notes',
+          ]),
+          'msg': 'String should have at most 10000 characters',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_application_invalid[null-category]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'category',
+          ]),
+          'msg': "Input should be 'strong_match', 'moderate_match', 'weak_match' or 'rejected'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_application_invalid[unknown-category]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'category',
+          ]),
+          'msg': "Input should be 'strong_match', 'moderate_match', 'weak_match' or 'rejected'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_application_invalid[unknown-field]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'score',
+          ]),
+          'msg': 'Extra inputs are not permitted',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_application_invalid[unknown-stage]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'pipeline_stage',
+          ]),
+          'msg': "Input should be 'screened', 'phone_call', 'technical', 'offer', 'hired' or 'rejected_manual'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
