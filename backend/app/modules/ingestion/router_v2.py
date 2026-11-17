@@ -26,7 +26,7 @@ router = APIRouter(prefix="/campaigns/{campaign_id}", tags=["uploads"])
 STATUS_CODES: dict[type[Exception], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,
     # Too many files: a request that can never succeed as sent (v1 answers 400).
-    service.InvalidInputError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    service.InvalidInputError: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
 
