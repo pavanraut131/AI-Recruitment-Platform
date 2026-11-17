@@ -12,6 +12,10 @@ shared by the list and the CSV export, the legacy response mapping and the stats
 Job descriptions are parsed by the ``ai`` module. Errors are raised as :class:`HiringError`
 subclasses carrying the user-facing ``detail``; the routers map them to status codes.
 
+The ``/api/v2`` use cases (E1-02, EPIC-01 spec §6) are in the section "/api/v2 resources": they
+return the resources of ``schemas_v2`` and take ingestion's data through the same kind of ports
+(:class:`ResumeProfiles`, :class:`ResumeTallies`), passed in by ``app.api.v2``.
+
 The legacy candidate API after the switch (E0-19, spec §7)
 ---------------------------------------------------------
 The ``/candidates`` endpoints keep their paths and exact response shapes, but a "candidate" is
@@ -893,11 +897,6 @@ async def update_campaign_v2(
     logger.info("campaign_updated", id=str(campaign_id), fields=sorted(changes))
     (resource,) = await _campaign_resources(db, [campaign], tallies)
     return resource
-
-
-async def require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
-    """Raise :class:`NotFoundError` unless the campaign exists."""
-    await _require_campaign(db, campaign_id)
 
 
 async def campaign_insights(
