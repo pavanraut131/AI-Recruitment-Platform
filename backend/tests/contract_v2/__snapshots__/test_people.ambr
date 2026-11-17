@@ -195,7 +195,7 @@
         dict({
           'application_count': 2,
           'created_at': '<datetime>',
-          'email': 'jd@work.io',
+          'email': 'Jane.Doe@Example.com',
           'id': '<uuid:2>',
           'last_applied_at': '<datetime>',
           'latest_role': 'Staff Engineer',

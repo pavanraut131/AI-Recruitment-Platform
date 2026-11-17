@@ -36,9 +36,9 @@ async def _people(db: AsyncSession) -> dict[str, Person]:
             pipeline_stage="technical", created_at=at(30), updated_at=at(31),
         )
     )  # fmt: skip
-    await add_identifier(db, jane, "email", "Jane.Doe@Example.com")
-    await add_identifier(db, jane, "email", "jd@work.io")
-    await add_identifier(db, jane, "phone", "98765 43210", inferred=True)
+    await add_identifier(db, jane, "email", "Jane.Doe@Example.com", created_at=at(1))
+    await add_identifier(db, jane, "email", "jd@work.io", created_at=at(2))
+    await add_identifier(db, jane, "phone", "98765 43210", inferred=True, created_at=at(3))
 
     raj_app = await applicant(db, first, 2, name="Raj Patel", work_experience=[])
     raj = await db.get(Person, raj_app.person_id)
@@ -100,8 +100,8 @@ async def test_get_person(
     people = await _people(db_session)
     jane, raj = people["jane"], people["raj"]
     # Jane got a resume whose phone was Raj's (chosen); and one of hers went to Raj.
-    await add_conflict(db_session, jane.id, raj.id, uuid.uuid4())
-    await add_conflict(db_session, raj.id, jane.id, uuid.uuid4())
+    await add_conflict(db_session, jane.id, raj.id, uuid.uuid4(), created_at=at(100))
+    await add_conflict(db_session, raj.id, jane.id, uuid.uuid4(), created_at=at(101))
     resp = await client.get(f"{V2}/people/{jane.id}")
     assert {"response": response_data(resp), "jane": jane.id, "raj": raj.id} == snapshot
 

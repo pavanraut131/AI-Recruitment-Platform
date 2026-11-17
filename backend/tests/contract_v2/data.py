@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Engine, event
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application, Campaign
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier
-from tests.factories import at, make_campaign, make_candidate, make_resume
+from tests.factories import BASE_TIME, at, make_campaign, make_candidate, make_resume
 
 V2 = "/api/v2"
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
@@ -78,8 +79,16 @@ async def ranked_campaign(db: AsyncSession) -> Campaign:
 
 
 async def add_identifier(
-    db: AsyncSession, person: Person | uuid.UUID, kind: str, raw: str, *, inferred: bool = False
+    db: AsyncSession,
+    person: Person | uuid.UUID,
+    kind: str,
+    raw: str,
+    *,
+    inferred: bool = False,
+    created_at: datetime = BASE_TIME,
 ) -> None:
+    """Store an identifier. Pass ``created_at`` to order several (``now()`` is frozen in a test's
+    transaction, so server defaults would tie)."""
     person_id = person if isinstance(person, uuid.UUID) else person.id
     db.add(
         PersonIdentifier(
@@ -88,13 +97,19 @@ async def add_identifier(
             value_normalized=raw.strip().lower(),
             raw_value=raw,
             inferred=inferred,
+            created_at=created_at,
         )
     )
     await db.flush()
 
 
 async def add_conflict(
-    db: AsyncSession, chosen: uuid.UUID, conflicting: uuid.UUID, resume_id: uuid.UUID
+    db: AsyncSession,
+    chosen: uuid.UUID,
+    conflicting: uuid.UUID,
+    resume_id: uuid.UUID,
+    *,
+    created_at: datetime = BASE_TIME,
 ) -> None:
     db.add(
         IdentityConflict(
@@ -103,7 +118,7 @@ async def add_conflict(
             conflicting_person_id=conflicting,
             reason="email matched one person and phone matched another; "
             "attached to the email match (ADR 0004)",
-            created_at=at(100),
+            created_at=created_at,
         )
     )
     await db.flush()
