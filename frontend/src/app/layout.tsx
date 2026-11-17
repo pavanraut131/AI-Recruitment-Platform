@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell/app-shell"
 import { ThemeProvider } from "@/components/app-shell/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { DataProviders } from "@/lib/query/provider"
 import { cn } from "@/lib/utils"
 import "./globals.css"
 
@@ -40,10 +41,12 @@ export default function RootLayout({
           Skip to content
         </a>
         <ThemeProvider>
-          <TooltipProvider>
-            <AppShell>{children}</AppShell>
-            <Toaster position="bottom-right" />
-          </TooltipProvider>
+          <DataProviders>
+            <TooltipProvider>
+              <AppShell>{children}</AppShell>
+              <Toaster position="bottom-right" />
+            </TooltipProvider>
+          </DataProviders>
         </ThemeProvider>
       </body>
     </html>
