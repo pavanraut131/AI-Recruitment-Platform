@@ -42,7 +42,7 @@ export function AppSidebar() {
               className="cursor-default hover:bg-transparent active:bg-transparent"
             >
               <div>
-                <LogoMark className="size-8" />
+                <LogoMark className="size-8!" />
                 <span className="grid flex-1 text-left leading-tight">
                   <span className="truncate font-semibold">HireFlow AI</span>
                   <span className="truncate text-xs text-muted-foreground">
