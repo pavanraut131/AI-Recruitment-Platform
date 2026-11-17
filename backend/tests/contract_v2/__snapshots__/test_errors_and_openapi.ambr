@@ -1,4 +1,26 @@
 # serializer version: 1
+# name: test_json_body_without_content_type
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+          ]),
+          'msg': 'Input should be a valid dictionary or object to extract fields from',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
 # name: test_malformed_json_body
   dict({
     'body': dict({

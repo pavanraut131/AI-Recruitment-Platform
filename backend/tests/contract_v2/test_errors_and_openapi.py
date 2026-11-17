@@ -42,6 +42,16 @@ async def test_malformed_json_body(client: AsyncClient, snapshot: SnapshotAssert
     assert data == snapshot
 
 
+async def test_json_body_without_content_type(
+    client: AsyncClient, snapshot: SnapshotAssertion
+) -> None:
+    # v2 keeps FastAPI's strict_content_type default (v1 turns it off): a body without a JSON
+    # Content-Type is not parsed as JSON, so the campaign body is invalid.
+    resp = await client.post(f"{V2}/campaigns", content=b'{"title": "T", "role": "Dev"}')
+    assert "content-type" not in resp.request.headers
+    assert response_data(resp) == snapshot
+
+
 async def test_unhandled_error_is_a_problem_without_internals(
     raw_client: AsyncClient, monkeypatch: pytest.MonkeyPatch, snapshot: SnapshotAssertion
 ) -> None:

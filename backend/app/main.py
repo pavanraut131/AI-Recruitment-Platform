@@ -37,6 +37,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    # v1 is frozen: it has always parsed a JSON body sent without a Content-Type header.
+    # FastAPI >= 0.132 rejects that by default (422); /api/v2 (its own app) keeps the strict
+    # default.
+    strict_content_type=False,
 )
 
 # ── CORS ──────────────────────────────────────────────────────
