@@ -22,8 +22,13 @@ from typing import Any
 
 import redis
 import redis.asyncio as aioredis
+import structlog
+from pydantic import ValidationError
 
+from app.modules.ingestion.schemas_v2 import ResumeEvent
 from app.platform.config import settings
+
+logger = structlog.get_logger()
 
 
 def campaign_channel(campaign_id: uuid.UUID | str) -> str:
@@ -68,3 +73,22 @@ async def campaign_event_stream(campaign_id: uuid.UUID) -> AsyncIterator[dict[st
     except asyncio.CancelledError:
         await pubsub.unsubscribe(channel)
         await r.aclose()
+
+
+async def typed_campaign_event_stream(campaign_id: uuid.UUID) -> AsyncIterator[dict[str, str]]:
+    """The ``/api/v2`` stream: the same channel, events and order as
+    :func:`campaign_event_stream`, with each ``resume_update`` payload validated into
+    :class:`~app.modules.ingestion.schemas_v2.ResumeEvent` and sent with **every** field (the
+    ones its status does not carry as ``null``). A payload that does not validate (never
+    published by the tasks) is logged and skipped rather than sent malformed. ``connected``
+    carries ``{"campaign_id": ...}`` as before."""
+    async for event in campaign_event_stream(campaign_id):
+        if event["event"] != "resume_update":
+            yield event
+            continue
+        try:
+            typed = ResumeEvent.model_validate_json(event["data"])
+        except ValidationError:
+            logger.warning("sse_event_skipped", campaign_id=str(campaign_id), data=event["data"])
+            continue
+        yield {"event": "resume_update", "data": typed.model_dump_json()}

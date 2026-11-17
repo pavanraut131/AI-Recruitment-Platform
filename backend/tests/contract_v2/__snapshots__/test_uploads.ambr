@@ -1,0 +1,317 @@
+# serializer version: 1
+# name: test_events_are_typed_and_campaign_filtered
+  dict({
+    'content_type': 'text/event-stream; charset=utf-8',
+    'events': list([
+      dict({
+        'data': dict({
+          'campaign_id': '<uuid:1>',
+        }),
+        'event': 'connected',
+      }),
+      dict({
+        'data': dict({
+          'candidate_name': None,
+          'category': None,
+          'error': None,
+          'filename': 'jane.pdf',
+          'matched_existing': None,
+          'person_id': None,
+          'resume_id': '<uuid:2>',
+          'score': None,
+          'status': 'extracting',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'candidate_name': 'Jane Doe',
+          'category': 'strong_match',
+          'error': None,
+          'filename': 'jane.pdf',
+          'matched_existing': False,
+          'person_id': '<uuid:3>',
+          'resume_id': '<uuid:2>',
+          'score': 82.0,
+          'status': 'done',
+        }),
+        'event': 'resume_update',
+      }),
+      dict({
+        'data': dict({
+          'candidate_name': None,
+          'category': None,
+          'error': 'quota',
+          'filename': None,
+          'matched_existing': None,
+          'person_id': None,
+          'resume_id': '<uuid:2>',
+          'score': None,
+          'status': 'quota_exceeded',
+        }),
+        'event': 'resume_update',
+      }),
+    ]),
+    'status_code': 200,
+  })
+# ---
+# name: test_events_invalid_campaign_id
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'path',
+            'campaign_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_resumes
+  dict({
+    'body': dict({
+      'items': list([
+        dict({
+          'application_id': '<uuid:1>',
+          'campaign_id': '<uuid:2>',
+          'error_message': None,
+          'filename': 'cv_Backend Engineer - Q1 Hiring_10.pdf',
+          'id': '<uuid:3>',
+          'processing_step': None,
+          'retry_count': 0,
+          'size_bytes': 48213,
+          'status': 'done',
+          'updated_at': '<datetime>',
+          'uploaded_at': '<datetime>',
+        }),
+        dict({
+          'application_id': None,
+          'campaign_id': '<uuid:2>',
+          'error_message': 'Gemini returned invalid JSON',
+          'filename': 'failed.pdf',
+          'id': '<uuid:4>',
+          'processing_step': 'score',
+          'retry_count': 3,
+          'size_bytes': 48213,
+          'status': 'failed',
+          'updated_at': '<datetime>',
+          'uploaded_at': '<datetime>',
+        }),
+        dict({
+          'application_id': None,
+          'campaign_id': '<uuid:2>',
+          'error_message': None,
+          'filename': 'processing.pdf',
+          'id': '<uuid:5>',
+          'processing_step': None,
+          'retry_count': 0,
+          'size_bytes': 48213,
+          'status': 'processing',
+          'updated_at': '<datetime>',
+          'uploaded_at': '<datetime>',
+        }),
+        dict({
+          'application_id': None,
+          'campaign_id': '<uuid:2>',
+          'error_message': None,
+          'filename': 'extracting.pdf',
+          'id': '<uuid:6>',
+          'processing_step': None,
+          'retry_count': 0,
+          'size_bytes': 48213,
+          'status': 'extracting',
+          'updated_at': '<datetime>',
+          'uploaded_at': '<datetime>',
+        }),
+        dict({
+          'application_id': None,
+          'campaign_id': '<uuid:2>',
+          'error_message': None,
+          'filename': 'pending.pdf',
+          'id': '<uuid:7>',
+          'processing_step': None,
+          'retry_count': 0,
+          'size_bytes': 48213,
+          'status': 'pending',
+          'updated_at': '<datetime>',
+          'uploaded_at': '<datetime>',
+        }),
+      ]),
+      'page': 1,
+      'page_size': 20,
+      'total': 5,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_resumes_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_retry_failed
+  dict({
+    'order': list([
+      '<uuid:1>',
+      '<uuid:2>',
+    ]),
+    'response': dict({
+      'body': dict({
+        'retried': list([
+          '<uuid:1>',
+          '<uuid:2>',
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'tasks': list([
+      'workers.ai_task.process_candidate_ai',
+      'workers.extract_task.extract_resume',
+    ]),
+  })
+# ---
+# name: test_retry_failed_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_upload
+  dict({
+    'celery_calls': list([
+      dict({
+        'args': list([
+          '<uuid:1>',
+        ]),
+        'kwargs': dict({
+        }),
+        'options': dict({
+          'queue': 'extract_queue',
+        }),
+        'task': 'workers.extract_task.extract_resume',
+      }),
+    ]),
+    'response': dict({
+      'body': dict({
+        'accepted': list([
+          dict({
+            'application_id': None,
+            'campaign_id': '<uuid:2>',
+            'error_message': None,
+            'filename': 'alice.pdf',
+            'id': '<uuid:1>',
+            'processing_step': None,
+            'retry_count': 0,
+            'size_bytes': 17,
+            'status': 'pending',
+            'updated_at': '<datetime>',
+            'uploaded_at': '<datetime>',
+          }),
+        ]),
+        'rejected': list([
+          dict({
+            'filename': 'notes.txt',
+            'reason': 'Only PDF files are accepted',
+          }),
+          dict({
+            'filename': 'fake.pdf',
+            'reason': 'Invalid PDF file',
+          }),
+          dict({
+            'filename': 'again.pdf',
+            'reason': 'Duplicate file (already processed successfully)',
+          }),
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 202,
+    }),
+  })
+# ---
+# name: test_upload_too_many_files
+  dict({
+    'body': dict({
+      'detail': 'Maximum 2 files per upload batch',
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_upload_unknown_campaign
+  dict({
+    'body': dict({
+      'detail': 'Campaign not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_upload_without_files
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'files',
+          ]),
+          'msg': 'Field required',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---

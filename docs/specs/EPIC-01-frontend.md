@@ -117,6 +117,63 @@ The new UI uses **only `/api/v2`**. `/api/v1` is frozen: it serves the character
 
 v2 gets its own **characterization-style contract tests** (syrupy snapshots), in the same pattern as v1.
 
+### 6.1 As built (E1-02)
+
+**The v2 application and its OpenAPI document** ([ADR 0008](../adr/0008-api-v2-sub-application.md)). `/api/v2` is a FastAPI sub-application (`backend/app/v2.py`, `v2_app`) mounted by `app.main`. It has its own document, **`/api/v2/openapi.json`** (Swagger UI at `/api/v2/docs`), with `servers: [{url: "/api/v2"}]`, so paths below are relative to `/api/v2`; `app.v2.v2_app.openapi()` returns the same document without a server (for E1-03's generator). The root `/openapi.json` and every v1 response are unchanged (the 179 v1 snapshots are byte-identical). Problem details are installed on the v2 app only.
+
+**Where the code lives.** Endpoints that need one module: `app/modules/hiring/router_v2.py` (create campaign, parse-jd) and `app/modules/ingestion/router_v2.py` (uploads, resumes, retry, events). Endpoints that span modules: `app/api/v2/` (ADR 0005): `campaigns.py`, `applications.py`, `people.py`, `dashboard.py`, plus `schemas.py` for composed resources. Each module's v2 resources are in its `schemas_v2.py` (public, like `schemas.py`). Business rules stay in the module services (new functions: `hiring.service` campaign/application resources, insights, bulk; `ingestion.service` v2 uploads, resume pages, tallies; `talent.service.list_people` / `get_person` / `count_people`). Import-linter: `schemas_v2` joins the public interfaces, and the new contract `v2-independent-of-v1` keeps v2 code off v1 routers (9 contracts).
+
+| Method | Path | operationId | Tag | Response (2xx) | Errors |
+|---|---|---|---|---|---|
+| GET | `/campaigns` | `listCampaigns` | campaigns | `CampaignPage` | 422 |
+| POST | `/campaigns` | `createCampaign` | campaigns | 201 `Campaign` | 422 |
+| GET | `/campaigns/{campaign_id}` | `getCampaign` | campaigns | `Campaign` | 404, 422 |
+| PATCH | `/campaigns/{campaign_id}` | `updateCampaign` | campaigns | `Campaign` | 404, 422 |
+| DELETE | `/campaigns/{campaign_id}` | `deleteCampaign` | campaigns | 204 | 404, 422 |
+| GET | `/campaigns/{campaign_id}/stats` | `getCampaignStats` | campaigns | `CampaignStats` | 404, 422 |
+| POST | `/campaigns/parse-jd` | `parseJobDescription` | campaigns | `ParsedJobDescription` | 422, 502 |
+| GET | `/campaigns/{campaign_id}/applications` | `listCampaignApplications` | applications | `ApplicationPage` | 404, 422 |
+| GET | `/campaigns/{campaign_id}/applications/export` | `exportCampaignApplications` | applications | `text/csv` | 404, 422 |
+| POST | `/campaigns/{campaign_id}/applications/bulk` | `bulkApplicationAction` | applications | `BulkApplicationResult` | 404, 422 |
+| GET | `/applications/{application_id}` | `getApplication` | applications | `Application` | 404, 422 |
+| PATCH | `/applications/{application_id}` | `updateApplication` | applications | `Application` | 404, 422 |
+| DELETE | `/applications/{application_id}` | `deleteApplication` | applications | 204 | 404, 422 |
+| POST | `/campaigns/{campaign_id}/uploads` | `uploadResumes` | uploads | 202 `UploadResult` | 404, 422 |
+| GET | `/campaigns/{campaign_id}/resumes` | `listCampaignResumes` | uploads | `ResumePage` | 404, 422 |
+| POST | `/campaigns/{campaign_id}/resumes/retry-failed` | `retryFailedResumes` | uploads | `RetryResult` | 404, 422 |
+| GET | `/campaigns/{campaign_id}/events` | `streamCampaignEvents` | uploads | `text/event-stream` | 404, 422 |
+| GET | `/people` | `listPeople` | people | `PersonPage` | 422 |
+| GET | `/people/{person_id}` | `getPerson` | people | `Person` | 404, 422 |
+| GET | `/stats` | `getStats` | dashboard | `Stats` | — |
+| GET | `/home` | `getHome` | dashboard | `Home` | — |
+
+Every endpoint can also answer 500 (problem details). 422 covers invalid path ids, query parameters and bodies.
+
+**Errors.** `application/problem+json`: `{type, title, status, detail?, errors?}`; `type` is `about:blank` and `title` the HTTP status phrase; `errors` (422 only) has one `{loc, msg}` per invalid field, `loc` being the path (`["query", "page_size"]`, `["body", "required_skills", 0]`). Unknown routes (404) and wrong methods (405) are problems too, and a 500 never echoes the URL or the exception (B10). Example:
+
+```json
+{"type": "about:blank", "title": "Unprocessable Entity", "status": 422, "detail": "1 invalid field",
+ "errors": [{"loc": ["query", "page_size"], "msg": "Input should be less than or equal to 100"}]}
+```
+
+**Lists.** `{items, total, page, page_size}`, named per resource (`CampaignPage`, `ApplicationPage`, `ResumePage`, `PersonPage`). `page` ≥ 1, 1 ≤ `page_size` ≤ 100 (default 20); out of range is a 422.
+
+**Resources** (component names in the v2 document):
+
+- **`Campaign`**: `id, title, role, description, required_skills, status, created_at, updated_at, last_activity_at` (latest change to the campaign, an application or a resume) and `counts {resumes, in_progress, failed (incl. quota), new_resumes_24h, applications, strong_matches}`. `CampaignCreate` / `CampaignUpdate` validate lengths, the status enum and unknown fields (B5); in a PATCH, fields may be omitted but only `description` may be `null`. List filters: `status` (repeatable), `q` (title or role); newest first.
+- **`CampaignStats`** (Insights): `resumes` (count per status), `applications {total, by_category, by_stage (incl. unreviewed)}`, `avg_score` (mean of scored applications, B9 fixed), `score_histogram` (10 buckets of 10), `top_skills [{skill, count, required}]`.
+- **`Application`**: `id, campaign_id, resume_id, person {id, name, email}, score, score_breakdown, category, summary, strengths, weaknesses, missing_skills, recommendation, skills, years_of_experience, pipeline_stage, notes, created_at, updated_at`. The person's name/email, skills and experience are from the application's current resume (§7.1 of EPIC-00, as v1). List filters: `q` (name/email), `category` and `stage` (repeatable, any of), `min_score`, `max_score`, `skill`, `min_experience`; `sort` = `-score` (default) / `score` (unscored last both ways) / `-updated_at` / `updated_at` / `name` (case-insensitive, unnamed last); ties by id. The export takes the same filters and sort (B8 fixed) and optional repeatable `ids` (a selection); it has v1's CSV columns. `ApplicationUpdate`: `pipeline_stage`, `notes` (both nullable), `category` (override, not nullable). v2 ids are application ids only: merged legacy candidate ids do not resolve (only v1 needs `legacy_candidate_map`).
+- **Bulk**: request `BulkApplicationAction`, a tagged union on `action`: `{action: "stage", ids, stage}`, `{action: "reject", ids}` (stage `rejected_manual`), `{action: "delete", ids}` (with resumes and PDFs); 1–500 ids. Response `{action, affected, not_found}`: ids that are not this campaign's applications are reported, not acted on; duplicates count once.
+- **`Resume`**: `id, campaign_id, filename, size_bytes, status, processing_step, error_message, retry_count, application_id` (once scored), `uploaded_at, updated_at`. Upload answers `UploadResult {accepted: [Resume], rejected: [{filename, reason}]}`; too many files is a 422 (v1: 400). Retry answers `{retried: [resume id]}`.
+- **Events** (`GET /campaigns/{id}/events`): the per-campaign Redis channel of E0-21 (only that campaign's resumes; 404 for an unknown campaign, B7). Events `connected` (data `ConnectedEvent {campaign_id}`) and `resume_update` (data `ResumeEvent {resume_id, status, filename, error, candidate_name, score, category, person_id, matched_existing}`): v1's payload, validated and always with every field (`null` where a status has none); an invalid payload is logged and skipped. Both schemas are in the document's components for the client. The check's read transaction ends before streaming, so an open stream holds no database connection.
+- **`Person`** (`GET /people/{id}`): `id, name, github_url, linkedin_url, profile {skills, education, work_experience, certifications, projects, years_of_experience}, identifiers [{kind, value (raw), inferred}], conflicts [{id, role (chosen | conflicting), resume_id, other_person_id, reason, created_at, resolved_at}], has_unresolved_conflicts, created_at, updated_at`, and `applications [{id, campaign {id, title, status}, resume_id, score, category, pipeline_stage, created_at, updated_at}]`, newest first. The list item (`PersonListItem`): `id, name, email (first seen), latest_role (first work-experience title), skills, years_of_experience, application_count, last_applied_at, created_at, updated_at`; most recently updated first; `q` matches the name or any email (raw or normalised), case-insensitively, wildcards literal.
+- **`Stats`**: `campaigns {total, active, closed, archived}`, `resumes` (per status), `applications {total, by_category, by_stage}`, `people`.
+- **`Home`**: `active_campaigns` (10 most recently updated active campaigns, as `Campaign`), `processing {total, items}` (the 10 newest in-progress resumes across campaigns, each a `Resume` with `campaign {id, title, status}`), `recent_strong_matches` (10 newest strong-match applications: `{id, campaign, person, score, category, pipeline_stage, created_at}`).
+
+**Bugs fixed in v2 only** (v1 is frozen and keeps them, [backlog](../backlog.md)): B5 (campaign validation → 422), B7 (unknown campaign → 404 on every campaign-scoped endpoint), B8 (export applies every filter), B9 (mean score), B10 (invalid category/stage → 422; the 500 body does not echo the URL).
+
+**Query counts** (asserted in `tests/contract_v2/test_query_counts.py`, the same for 3 and 30 rows): campaigns list 4; applications list 4 (5 with profile filters or `sort=name`); export 4; resumes list 4; people list 4; Person 4; campaign stats 7; stats 5; home 8.
+
 ## 7. Frontend architecture
 
 | Concern | Choice | Why |

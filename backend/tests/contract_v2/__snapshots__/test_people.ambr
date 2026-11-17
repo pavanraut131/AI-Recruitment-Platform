@@ -1,0 +1,259 @@
+# serializer version: 1
+# name: test_get_person
+  dict({
+    'jane': '<uuid:1>',
+    'raj': '<uuid:2>',
+    'response': dict({
+      'body': dict({
+        'applications': list([
+          dict({
+            'campaign': dict({
+              'id': '<uuid:3>',
+              'status': 'closed',
+              'title': 'Platform',
+            }),
+            'category': 'moderate_match',
+            'created_at': '<datetime>',
+            'id': '<uuid:4>',
+            'pipeline_stage': 'technical',
+            'resume_id': '<uuid:5>',
+            'score': 55.0,
+            'updated_at': '<datetime>',
+          }),
+          dict({
+            'campaign': dict({
+              'id': '<uuid:6>',
+              'status': 'active',
+              'title': 'Backend',
+            }),
+            'category': 'strong_match',
+            'created_at': '<datetime>',
+            'id': '<uuid:7>',
+            'pipeline_stage': None,
+            'resume_id': '<uuid:8>',
+            'score': 82.0,
+            'updated_at': '<datetime>',
+          }),
+        ]),
+        'conflicts': list([
+          dict({
+            'created_at': '<datetime>',
+            'id': '<uuid:9>',
+            'other_person_id': '<uuid:2>',
+            'reason': 'email matched one person and phone matched another; attached to the email match (ADR 0004)',
+            'resolved_at': None,
+            'resume_id': '<uuid:10>',
+            'role': 'chosen',
+          }),
+          dict({
+            'created_at': '<datetime>',
+            'id': '<uuid:11>',
+            'other_person_id': '<uuid:2>',
+            'reason': 'email matched one person and phone matched another; attached to the email match (ADR 0004)',
+            'resolved_at': None,
+            'resume_id': '<uuid:12>',
+            'role': 'conflicting',
+          }),
+        ]),
+        'created_at': '<datetime>',
+        'github_url': 'https://github.com/janedoe',
+        'has_unresolved_conflicts': True,
+        'id': '<uuid:1>',
+        'identifiers': list([
+          dict({
+            'inferred': False,
+            'kind': 'email',
+            'value': 'Jane.Doe@Example.com',
+          }),
+          dict({
+            'inferred': False,
+            'kind': 'email',
+            'value': 'jd@work.io',
+          }),
+          dict({
+            'inferred': True,
+            'kind': 'phone',
+            'value': '98765 43210',
+          }),
+        ]),
+        'linkedin_url': 'https://www.linkedin.com/in/janedoe',
+        'name': 'Jane Doe',
+        'profile': dict({
+          'certifications': list([
+            'AWS Certified Developer',
+          ]),
+          'education': list([
+            dict({
+              'degree': 'BSc Computer Science',
+              'institution': 'State University',
+            }),
+          ]),
+          'projects': list([
+            dict({
+              'description': 'FastAPI + Postgres',
+              'name': 'Job board API',
+            }),
+          ]),
+          'skills': list([
+            'Python',
+            'FastAPI',
+            'PostgreSQL',
+            'Docker',
+          ]),
+          'work_experience': list([
+            dict({
+              'company': 'Acme',
+              'title': 'Staff Engineer',
+            }),
+            dict({
+              'title': 'Engineer',
+            }),
+          ]),
+          'years_of_experience': 5.0,
+        }),
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_get_person_not_found
+  dict({
+    'body': dict({
+      'detail': 'Person not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_get_person_without_applications
+  dict({
+    'body': dict({
+      'applications': list([
+      ]),
+      'conflicts': list([
+      ]),
+      'created_at': '<datetime>',
+      'github_url': None,
+      'has_unresolved_conflicts': False,
+      'id': '<uuid:1>',
+      'identifiers': list([
+      ]),
+      'linkedin_url': None,
+      'name': 'Old Timer',
+      'profile': dict({
+        'certifications': list([
+        ]),
+        'education': list([
+        ]),
+        'projects': list([
+        ]),
+        'skills': list([
+          'COBOL',
+        ]),
+        'work_experience': list([
+        ]),
+        'years_of_experience': None,
+      }),
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_people
+  dict({
+    'body': dict({
+      'items': list([
+        dict({
+          'application_count': 1,
+          'created_at': '<datetime>',
+          'email': 'raj@example.com',
+          'id': '<uuid:1>',
+          'last_applied_at': '<datetime>',
+          'latest_role': None,
+          'name': 'Raj Patel',
+          'skills': list([
+            'Python',
+            'FastAPI',
+            'PostgreSQL',
+            'Docker',
+          ]),
+          'updated_at': '<datetime>',
+          'years_of_experience': 5.0,
+        }),
+        dict({
+          'application_count': 2,
+          'created_at': '<datetime>',
+          'email': 'Jane.Doe@Example.com',
+          'id': '<uuid:2>',
+          'last_applied_at': '<datetime>',
+          'latest_role': 'Staff Engineer',
+          'name': 'Jane Doe',
+          'skills': list([
+            'Python',
+            'FastAPI',
+            'PostgreSQL',
+            'Docker',
+          ]),
+          'updated_at': '<datetime>',
+          'years_of_experience': 5.0,
+        }),
+        dict({
+          'application_count': 0,
+          'created_at': '<datetime>',
+          'email': None,
+          'id': '<uuid:3>',
+          'last_applied_at': None,
+          'latest_role': None,
+          'name': 'Old Timer',
+          'skills': list([
+            'COBOL',
+          ]),
+          'updated_at': '<datetime>',
+          'years_of_experience': None,
+        }),
+      ]),
+      'page': 1,
+      'page_size': 20,
+      'total': 3,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_people_invalid_query
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'page_size',
+          ]),
+          'msg': 'Input should be less than or equal to 100',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
