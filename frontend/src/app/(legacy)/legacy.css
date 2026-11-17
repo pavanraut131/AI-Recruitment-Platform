@@ -1,0 +1,171 @@
+/*
+ * TODO(E1-04..08): minimal styles still needed by the prototype screens in
+ * src/app/(legacy) and the old src/components/*.tsx. Scoped to
+ * `.legacy-prototype` and expressed with design tokens (no hex). Remove the
+ * rules a screen uses when that screen is replaced; E1-09 deletes this file.
+ */
+
+.legacy-prototype {
+  & .page-wrapper,
+  & .page-wrapper-full {
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem 2.5rem;
+    max-width: 920px;
+  }
+  & .page-wrapper-full {
+    max-width: 1060px;
+  }
+
+  & .page-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+  & .gradient-text {
+    color: var(--primary);
+  }
+
+  & .glass-card,
+  & .stat-card,
+  & .form-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+  }
+  & .stat-card {
+    padding: 20px 22px;
+  }
+  & .form-section {
+    padding: 26px;
+  }
+  & .form-section-title {
+    margin-bottom: 18px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  & .form-label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+
+  & .btn-primary,
+  & .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 150ms;
+  }
+  & .btn-primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border: 1px solid transparent;
+  }
+  & .btn-secondary {
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border: 1px solid var(--border);
+  }
+  & .btn-primary:disabled,
+  & .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  & .input-field {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: 13.5px;
+    outline: none;
+  }
+  & .input-field::placeholder {
+    color: var(--muted-foreground);
+  }
+  & .input-field:focus-visible {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+
+  & .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+  & .tag-strong {
+    background: var(--category-strong-muted);
+    color: var(--category-strong-foreground);
+  }
+  & .tag-moderate {
+    background: var(--category-moderate-muted);
+    color: var(--category-moderate-foreground);
+  }
+  & .tag-weak {
+    background: var(--category-weak-muted);
+    color: var(--category-weak-foreground);
+  }
+  & .tag-rejected {
+    background: var(--category-rejected-muted);
+    color: var(--category-rejected-foreground);
+  }
+  & .tag-pending {
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+
+  & .upload-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius-xl);
+    cursor: pointer;
+  }
+  & .upload-zone:hover,
+  & .upload-zone.dragging {
+    border-color: var(--ring);
+  }
+
+  & .progress-bar {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--muted);
+  }
+  & .progress-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 150ms;
+  }
+
+  & .divider {
+    height: 1px;
+    background: var(--border);
+  }
+  & .table-row-hover:hover {
+    background: var(--muted);
+  }
+}

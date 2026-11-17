@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createCampaign, parseJobDescription } from "@/lib/api";
 import { ArrowLeft, Plus, X, Briefcase, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 
 export default function NewCampaignPage() {
   const router = useRouter();
