@@ -87,6 +87,7 @@
       'cache-control': 'no-cache',
       'connection': 'keep-alive',
       'content-type': 'text/event-stream; charset=utf-8',
+      'vary': 'Origin',
       'x-accel-buffering': 'no',
     }),
     'status_code': 200,
