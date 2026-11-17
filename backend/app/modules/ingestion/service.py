@@ -17,8 +17,9 @@ carrying the user-facing ``detail``; the router maps them to status codes.
 import asyncio
 import hashlib
 import uuid
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 import structlog
@@ -26,7 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
-from app.modules.ingestion import repository, tasks
+from app.modules.ingestion import events, repository, tasks
+from app.modules.ingestion import schemas_v2 as v2
 from app.modules.ingestion.models import Resume
 from app.modules.ingestion.schemas import UploadBatchResponse
 from app.platform import storage
@@ -87,6 +89,23 @@ async def upload_resumes(
     a duplicate of a failed or quota-exceeded resume is accepted again as a new row. Rejected
     files are reported, not raised.
     """
+    accepted_ids, rejected = await _accept_uploads(db, campaign_id, files)
+    return UploadBatchResponse(
+        batch_id=str(uuid.uuid4()),
+        campaign_id=campaign_id,
+        total_files=len(files),
+        accepted_files=len(accepted_ids),
+        rejected_files=rejected,
+        resume_ids=accepted_ids,
+        message=f"Processing {len(accepted_ids)} resumes asynchronously",
+    )
+
+
+async def _accept_uploads(
+    db: AsyncSession, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+) -> tuple[list[uuid.UUID], list[dict[str, str]]]:
+    """The upload itself (see :func:`upload_resumes`): stores and queues the accepted files;
+    returns their resume ids and the rejected files with the reason."""
     if not await hiring_service.campaign_exists(db, campaign_id):
         raise NotFoundError("Campaign not found")
 
@@ -164,16 +183,7 @@ async def upload_resumes(
         accepted=len(accepted_ids),
         rejected=len(rejected),
     )
-
-    return UploadBatchResponse(
-        batch_id=str(uuid.uuid4()),
-        campaign_id=campaign_id,
-        total_files=len(files),
-        accepted_files=len(accepted_ids),
-        rejected_files=rejected,
-        resume_ids=accepted_ids,
-        message=f"Processing {len(accepted_ids)} resumes asynchronously",
-    )
+    return accepted_ids, rejected
 
 
 # ── Resumes ───────────────────────────────────────────────────
@@ -197,9 +207,14 @@ async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
     the AI task, which skips the steps already done; any other (failed text extraction, or
     processed before ``processing_step`` existed) starts again with text extraction.
     """
+    return len(await _retry_failed(db, campaign_id))
+
+
+async def _retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
+    """The retry itself (see :func:`retry_failed`); returns the resumes queued again."""
     resumes = await repository.failed_in_campaign(db, campaign_id)
     if not resumes:
-        return 0
+        return []
 
     for resume in resumes:
         resume.status = "pending"
@@ -214,7 +229,7 @@ async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
         else:
             tasks.enqueue_extraction(resume.id)
 
-    return len(resumes)
+    return resumes
 
 
 # ── For other use cases (composed in app.api) ─────────────────
@@ -316,9 +331,155 @@ class _ResumeProfiles:
         campaign_id, person_id = found
         return hiring_service.ResumeOwner(campaign_id=campaign_id, person_id=person_id)
 
+    async def names(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str | None]:
+        return await repository.names(self._db, resume_ids)
+
 
 def resume_profiles(db: AsyncSession) -> hiring_service.ResumeProfiles:
     """The resumes' extraction snapshots, as the legacy candidate endpoints read them (E0-19):
     the per-resume name, contacts and profile, the list's profile filters, and a resume's
     campaign and Person. ``app.api`` passes it to ``hiring.service``."""
     return _ResumeProfiles(db)
+
+
+# ══ /api/v2 (E1-02, EPIC-01 spec §6) ══════════════════════════
+# Unlike the legacy endpoints, an unknown campaign is a 404 (B7) and a batch with too many files
+# is reported as a validation error by the router (B10).
+RECENT_UPLOADS = timedelta(hours=24)
+
+
+async def _require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
+    if not await hiring_service.campaign_exists(db, campaign_id):
+        raise NotFoundError("Campaign not found")
+
+
+async def open_campaign_stream(
+    db: AsyncSession, campaign_id: uuid.UUID
+) -> AsyncIterator[dict[str, str]]:
+    """The campaign's typed progress stream (:func:`events.typed_campaign_event_stream`); 404 for
+    an unknown campaign.
+
+    The existence check's read transaction is ended before the stream is returned, so the
+    request's session holds no database connection while the (long-lived) stream is open,
+    whenever the framework closes the session.
+    """
+    await _require_campaign(db, campaign_id)
+    await repository.commit(db)
+    return events.typed_campaign_event_stream(campaign_id)
+
+
+def _resume_resource(resume: Resume, application_id: uuid.UUID | None) -> v2.Resume:
+    return v2.Resume(
+        id=resume.id,
+        campaign_id=resume.campaign_id,
+        filename=resume.original_filename,
+        size_bytes=resume.file_size_bytes,
+        status=v2.ResumeStatus(resume.status),
+        processing_step=(
+            v2.ProcessingStep(resume.processing_step) if resume.processing_step else None
+        ),
+        error_message=resume.error_message,
+        retry_count=resume.retry_count or 0,
+        application_id=application_id,
+        uploaded_at=resume.uploaded_at,
+        updated_at=resume.updated_at,
+    )
+
+
+async def resume_resources(db: AsyncSession, resumes: Sequence[Resume]) -> list[v2.Resume]:
+    """The v2 ``Resume`` of each resume, with the application it belongs to (the application of
+    its Person in its campaign, from hiring): one query for all of them."""
+    owners = {
+        r.id: hiring_service.ResumeOwner(campaign_id=r.campaign_id, person_id=r.person_id)
+        for r in resumes
+        if r.person_id is not None
+    }
+    applications = await hiring_service.application_ids_of(db, list(owners.values()))
+    return [
+        _resume_resource(r, applications.get(owners[r.id]) if r.id in owners else None)
+        for r in resumes
+    ]
+
+
+async def upload_resumes_v2(
+    db: AsyncSession, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+) -> v2.UploadResult:
+    """:func:`upload_resumes`, answering with the accepted resumes themselves."""
+    accepted_ids, rejected = await _accept_uploads(db, campaign_id, files)
+    stored = {r.id: r for r in await repository.by_ids(db, accepted_ids)}
+    accepted = [stored[rid] for rid in accepted_ids]
+    return v2.UploadResult(
+        accepted=[_resume_resource(r, None) for r in accepted],
+        rejected=[v2.RejectedFile(**item) for item in rejected],
+    )
+
+
+async def list_resumes_page(
+    db: AsyncSession, campaign_id: uuid.UUID, statuses: Sequence[str], offset: int, limit: int
+) -> tuple[list[v2.Resume], int]:
+    """A page of the campaign's resumes, newest first (404 for an unknown campaign): four
+    queries whatever the page size."""
+    await _require_campaign(db, campaign_id)
+    resumes, total = await repository.page_for_campaign(
+        db, campaign_id, statuses, offset=offset, limit=limit
+    )
+    return await resume_resources(db, resumes), total
+
+
+async def retry_failed_v2(db: AsyncSession, campaign_id: uuid.UUID) -> v2.RetryResult:
+    """:func:`retry_failed` (404 for an unknown campaign), answering with the resumes queued
+    again, oldest upload first."""
+    await _require_campaign(db, campaign_id)
+    resumes = await _retry_failed(db, campaign_id)
+    ordered = sorted(resumes, key=lambda r: (r.uploaded_at, r.id))
+    return v2.RetryResult(retried=[r.id for r in ordered])
+
+
+async def resumes_in_progress(db: AsyncSession, limit: int) -> tuple[list[v2.Resume], int]:
+    """The newest resumes still being processed, across campaigns, and how many there are."""
+    resumes, total = await repository.page_in_statuses(db, IN_PROGRESS_STATUSES, limit=limit)
+    return await resume_resources(db, resumes), total
+
+
+def _tally(rows: Sequence[repository.TallyRow]) -> hiring_service.ResumeTally:
+    by_status: dict[str, int] = {}
+    recent = 0
+    latest: datetime | None = None
+    for _, status, count, new, updated in rows:
+        by_status[status] = by_status.get(status, 0) + count
+        recent += new
+        if updated is not None and (latest is None or updated > latest):
+            latest = updated
+    return hiring_service.ResumeTally(
+        by_status=by_status, uploaded_last_24h=recent, last_updated_at=latest
+    )
+
+
+async def resume_tally(
+    db: AsyncSession, campaign_id: uuid.UUID | None = None
+) -> hiring_service.ResumeTally:
+    """The resume tally of one campaign, or (``None``) of every campaign: one query."""
+    ids = [campaign_id] if campaign_id is not None else None
+    return _tally(await repository.tallies(db, ids, RECENT_UPLOADS))
+
+
+class _ResumeTallies:
+    """:class:`hiring.service.ResumeTallies` over this module's ``resumes`` table."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+
+    async def by_campaign(
+        self, campaign_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, hiring_service.ResumeTally]:
+        rows = await repository.tallies(self._db, campaign_ids, RECENT_UPLOADS)
+        grouped: dict[uuid.UUID, list[repository.TallyRow]] = {}
+        for row in rows:
+            grouped.setdefault(row[0], []).append(row)
+        return {cid: _tally(campaign_rows) for cid, campaign_rows in grouped.items()}
+
+
+def resume_tallies(db: AsyncSession) -> hiring_service.ResumeTallies:
+    """The campaigns' resume tallies for hiring's v2 campaign resources; ``app.api`` passes it
+    to ``hiring.service``."""
+    return _ResumeTallies(db)

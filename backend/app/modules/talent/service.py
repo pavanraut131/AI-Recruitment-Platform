@@ -4,7 +4,9 @@ Other modules call :func:`resolve_person` (and use the types in ``app.modules.ta
 they never touch talent's tables. The callers are the upload pipeline (E0-16) and the seed
 generator (``app.devtools.seed``; until E0-20 also the backfill), all running a synchronous
 ``Session``. The verification (``app.modules.ingestion.verify_people_applications``) reads
-through the functions under "Reads for the verification".
+through the functions under "Reads for the verification". The ``/api/v2`` people endpoints
+(``app.api.v2``, E1-02) read through the functions under "People (v2)", with the request's
+``AsyncSession``.
 
 Matching policy: ADR 0004 and its 2026-10-16 amendment (phones without a country code).
 
@@ -23,9 +25,11 @@ from typing import Any
 
 import structlog
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.talent import repository
+from app.modules.talent import schemas_v2 as v2
 from app.modules.talent.identity import classify_phone, normalize_email
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
@@ -186,6 +190,101 @@ def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UU
 def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
     """The resume of every ``identity_conflicts`` row (one entry per row)."""
     return repository.identity_conflict_resume_ids(session)
+
+
+# ── People (v2, E1-02) ────────────────────────────────────────
+class TalentError(Exception):
+    """A talent read failed; ``detail`` is the message returned to the client."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class NotFoundError(TalentError):
+    """The Person does not exist."""
+
+
+def _latest_role(work_experience: Sequence[Any] | None) -> str | None:
+    """The title of the first work-experience entry (resumes list the most recent first)."""
+    for entry in work_experience or []:
+        if isinstance(entry, dict):
+            title = entry.get("title")
+            return str(title) if title else None
+        return None
+    return None
+
+
+def _summary(person: Person, email: str | None) -> v2.PersonSummary:
+    return v2.PersonSummary(
+        id=person.id,
+        name=person.full_name,
+        email=email,
+        latest_role=_latest_role(person.work_experience),
+        skills=person.skills or [],
+        years_of_experience=person.years_of_experience,
+        created_at=person.created_at,
+        updated_at=person.updated_at,
+    )
+
+
+async def list_people(
+    db: AsyncSession, q: str | None, offset: int, limit: int
+) -> tuple[list[v2.PersonSummary], int]:
+    """A page of people, most recently updated first, and how many match: ``q`` is contained in
+    the name or one of the emails (case-insensitive). Three queries whatever the page size."""
+    people, total = await repository.search_people(db, q or None, offset=offset, limit=limit)
+    emails = await repository.first_emails(db, [p.id for p in people])
+    return [_summary(p, emails.get(p.id)) for p in people], total
+
+
+async def get_person(db: AsyncSession, person_id: uuid.UUID) -> v2.PersonDetail:
+    """The Person with their profile, identifiers (raw values) and identity conflicts (three
+    queries). Raises :class:`NotFoundError`."""
+    person = await repository.get_person(db, person_id)
+    if person is None:
+        raise NotFoundError("Person not found")
+    identifiers = await repository.identifiers_of(db, person_id)
+    conflicts = await repository.conflicts_of(db, person_id)
+    return v2.PersonDetail(
+        id=person.id,
+        name=person.full_name,
+        github_url=person.github_url,
+        linkedin_url=person.linkedin_url,
+        profile=v2.Profile(
+            skills=person.skills or [],
+            education=person.education or [],
+            work_experience=person.work_experience or [],
+            certifications=person.certifications or [],
+            projects=person.projects or [],
+            years_of_experience=person.years_of_experience,
+        ),
+        identifiers=[
+            v2.Identifier(kind=v2.IdentifierKind(i.kind), value=i.raw_value, inferred=i.inferred)
+            for i in identifiers
+        ],
+        conflicts=[_conflict_flag(c, person_id) for c in conflicts],
+        has_unresolved_conflicts=any(c.resolved_at is None for c in conflicts),
+        created_at=person.created_at,
+        updated_at=person.updated_at,
+    )
+
+
+def _conflict_flag(conflict: IdentityConflict, person_id: uuid.UUID) -> v2.IdentityConflictFlag:
+    chosen = conflict.chosen_person_id == person_id
+    return v2.IdentityConflictFlag(
+        id=conflict.id,
+        role=v2.ConflictRole.chosen if chosen else v2.ConflictRole.conflicting,
+        resume_id=conflict.resume_id,
+        other_person_id=conflict.conflicting_person_id if chosen else conflict.chosen_person_id,
+        reason=conflict.reason,
+        created_at=conflict.created_at,
+        resolved_at=conflict.resolved_at,
+    )
+
+
+async def count_people(db: AsyncSession) -> int:
+    return await repository.count_people(db)
 
 
 # ── Steps ─────────────────────────────────────────────────────

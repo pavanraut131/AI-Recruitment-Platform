@@ -69,6 +69,7 @@ the data crosses this interface instead:
 """
 
 import csv
+import dataclasses
 import io
 import uuid
 from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -77,13 +78,14 @@ from datetime import datetime
 from typing import Any, Protocol
 
 import structlog
-from sqlalchemy import ColumnElement, any_
+from sqlalchemy import ColumnElement, any_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.ai import service as ai_service
 from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import repository
+from app.modules.hiring import schemas_v2 as v2
 from app.modules.hiring.models import Application, Campaign
 from app.modules.hiring.schemas import (
     CampaignCreate,
@@ -96,7 +98,7 @@ from app.modules.hiring.schemas import (
     JDParseRequest,
     JDParseResponse,
 )
-from app.platform.sql import uuid_array
+from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 logger = structlog.get_logger()
 
@@ -371,6 +373,10 @@ class ResumeProfiles(Protocol):
 
     async def owner(self, resume_id: uuid.UUID) -> ResumeOwner | None:
         """The resume's campaign and Person, or ``None`` if it does not exist."""
+        ...
+
+    async def names(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str | None]:
+        """The extracted ``name`` of each resume (the v2 list's ``sort=name``)."""
         ...
 
 
@@ -713,6 +719,622 @@ async def _delete_applications(
         await repository.delete_application(db, application)
     await repository.flush(db)
     return deleted
+
+
+# ══ /api/v2 resources (E1-02, EPIC-01 spec §6) ════════════════
+# The v2 use cases return the resources of ``schemas_v2``. They share the rules above (filters on
+# the extraction snapshot, field sources, deletes) and differ from the legacy ones where v2
+# fixes a recorded bug: unknown campaigns are a 404 (B7), the export applies every list filter
+# (B8), ``avg_score`` is the mean over the scored applications (B9), and invalid values are
+# rejected by the request schema (422) before they get here (B5, B10). Ids are application ids
+# only: v2 does not resolve merged legacy candidate ids (``legacy_candidate_map``), which only
+# the v1 compatibility layer needs.
+STRONG_MATCH = v2.ApplicationCategory.strong_match.value
+REJECTED_STAGE = v2.PipelineStage.rejected_manual.value
+TOP_SKILLS = 10
+
+
+@dataclass(frozen=True)
+class ResumeTally:
+    """What ingestion reports about the resumes of a campaign (or of all campaigns): counts by
+    status, how many were uploaded in the last 24 hours, and the latest change to any of them."""
+
+    by_status: Mapping[str, int] = dataclasses.field(default_factory=dict)
+    uploaded_last_24h: int = 0
+    last_updated_at: datetime | None = None
+
+
+class ResumeTallies(Protocol):
+    """The resume tallies of several campaigns (``app.api`` passes
+    ``ingestion.service.resume_tallies(db)``)."""
+
+    async def by_campaign(
+        self, campaign_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, ResumeTally]:
+        """One tally per campaign that has resumes (one query); others are left out."""
+        ...
+
+
+def _status(value: str) -> v2.CampaignStatus:
+    return v2.CampaignStatus(value)
+
+
+def _category(value: str | None) -> v2.ApplicationCategory | None:
+    return v2.ApplicationCategory(value) if value is not None else None
+
+
+def _stage(value: str | None) -> v2.PipelineStage | None:
+    return v2.PipelineStage(value) if value is not None else None
+
+
+def _campaign_ref(campaign: Campaign) -> v2.CampaignRef:
+    return v2.CampaignRef(id=campaign.id, title=campaign.title, status=_status(campaign.status))
+
+
+def resume_counts(tally: ResumeTally) -> v2.ResumeCounts:
+    by_status = tally.by_status
+    return v2.ResumeCounts(
+        total=sum(by_status.values()),
+        pending=by_status.get("pending", 0),
+        extracting=by_status.get("extracting", 0),
+        processing=by_status.get("processing", 0),
+        done=by_status.get("done", 0),
+        failed=by_status.get("failed", 0),
+        quota_exceeded=by_status.get("quota_exceeded", 0),
+    )
+
+
+def campaign_resource(
+    campaign: Campaign,
+    applications: tuple[int, int, datetime | None] | None,
+    resumes: ResumeTally,
+) -> v2.Campaign:
+    """The v2 ``Campaign``, given its ``(applications, strong matches, latest application
+    change)`` and its resume tally. The last activity is the latest change to the campaign, any
+    of its applications or any of its resumes."""
+    count, strong, latest_application = applications or (0, 0, None)
+    by_status = resumes.by_status
+    changes = [campaign.updated_at, latest_application, resumes.last_updated_at]
+    return v2.Campaign(
+        id=campaign.id,
+        title=campaign.title,
+        role=campaign.role,
+        description=campaign.description,
+        required_skills=campaign.required_skills or [],
+        status=_status(campaign.status),
+        created_at=campaign.created_at,
+        updated_at=campaign.updated_at,
+        last_activity_at=max(t for t in changes if t is not None),
+        counts=v2.CampaignCounts(
+            resumes=sum(by_status.values()),
+            in_progress=sum(by_status.get(s, 0) for s in PROCESSING_STATUSES),
+            failed=sum(by_status.get(s, 0) for s in TERMINAL_FAILED_STATUSES),
+            new_resumes_24h=resumes.uploaded_last_24h,
+            applications=count,
+            strong_matches=strong,
+        ),
+    )
+
+
+async def _campaign_resources(
+    db: AsyncSession, campaigns: Sequence[Campaign], tallies: ResumeTallies
+) -> list[v2.Campaign]:
+    """Every campaign's resource, with two grouped queries whatever their number (no N+1)."""
+    ids = [c.id for c in campaigns]
+    if not ids:
+        return []
+    applications = await repository.application_tallies(db, ids, STRONG_MATCH)
+    resumes = await tallies.by_campaign(ids)
+    return [
+        campaign_resource(c, applications.get(c.id), resumes.get(c.id, ResumeTally()))
+        for c in campaigns
+    ]
+
+
+# ── v2: campaigns ─────────────────────────────────────────────
+@dataclass(frozen=True)
+class CampaignQuery:
+    """The campaign list filters: any of ``statuses``; ``q`` contained in the title or the role
+    (case-insensitive, wildcards literal)."""
+
+    statuses: Sequence[str] = ()
+    q: str | None = None
+
+
+def _campaign_clauses(query: CampaignQuery) -> list[ColumnElement[bool]]:
+    clauses: list[ColumnElement[bool]] = []
+    if query.statuses:
+        clauses.append(Campaign.status.in_(list(query.statuses)))
+    if query.q:
+        pattern = f"%{escape_like(query.q)}%"
+        clauses.append(
+            or_(
+                Campaign.title.ilike(pattern, escape=LIKE_ESCAPE),
+                Campaign.role.ilike(pattern, escape=LIKE_ESCAPE),
+            )
+        )
+    return clauses
+
+
+async def list_campaigns_page(
+    db: AsyncSession, query: CampaignQuery, offset: int, limit: int, tallies: ResumeTallies
+) -> tuple[list[v2.Campaign], int]:
+    """A page of campaigns, newest first, and how many match: four queries."""
+    campaigns, total = await repository.find_campaigns(
+        db, _campaign_clauses(query), offset=offset, limit=limit
+    )
+    return await _campaign_resources(db, campaigns, tallies), total
+
+
+async def create_campaign_v2(db: AsyncSession, payload: v2.CampaignCreate) -> v2.Campaign:
+    """Create a campaign. A new campaign has no resumes or applications yet, so its counts are
+    zero without asking ingestion."""
+    campaign = await repository.add_campaign(db, Campaign(**payload.model_dump(mode="json")))
+    logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
+    return campaign_resource(campaign, None, ResumeTally())
+
+
+async def get_campaign_v2(
+    db: AsyncSession, campaign_id: uuid.UUID, tallies: ResumeTallies
+) -> v2.Campaign:
+    (resource,) = await _campaign_resources(db, [await _require_campaign(db, campaign_id)], tallies)
+    return resource
+
+
+async def update_campaign_v2(
+    db: AsyncSession, campaign_id: uuid.UUID, payload: v2.CampaignUpdate, tallies: ResumeTallies
+) -> v2.Campaign:
+    """Apply the fields the client sent (unset fields are left alone)."""
+    campaign = await _require_campaign(db, campaign_id)
+    changes = payload.model_dump(exclude_unset=True, mode="json")
+    for name, value in changes.items():
+        setattr(campaign, name, value)
+    await repository.commit_and_refresh(db, campaign)
+    logger.info("campaign_updated", id=str(campaign_id), fields=sorted(changes))
+    (resource,) = await _campaign_resources(db, [campaign], tallies)
+    return resource
+
+
+async def require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
+    """Raise :class:`NotFoundError` unless the campaign exists."""
+    await _require_campaign(db, campaign_id)
+
+
+async def campaign_insights(
+    db: AsyncSession, campaign_id: uuid.UUID, resumes: ResumeTally, profiles: ResumeProfiles
+) -> v2.CampaignStats:
+    """The Insights numbers of one campaign (404 for an unknown one): resume counts by status,
+    application counts by category and stage, the mean score, a score histogram and the top
+    skills (from each application's current resume, oldest application first so equal counts
+    keep a stable order), flagged when the campaign requires them. Six queries."""
+    campaign = await _require_campaign(db, campaign_id)
+    category_rows = await repository.category_score_rows(db, campaign_id)
+    stages = await repository.stage_counts(db, campaign_id)
+    buckets = await repository.score_buckets(db, campaign_id)
+    resume_ids = await repository.campaign_resume_ids(db, campaign_id)
+    skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
+    return v2.CampaignStats(
+        resumes=resume_counts(resumes),
+        applications=application_counts(category_rows, stages),
+        avg_score=mean_score(category_rows),
+        score_histogram=[
+            v2.ScoreBucket(min=i * 10, max=(i + 1) * 10, count=buckets.get(i, 0)) for i in range(10)
+        ],
+        top_skills=top_skills(
+            (skills.get(rid) for rid in resume_ids), campaign.required_skills or []
+        ),
+    )
+
+
+def application_counts(
+    category_rows: Iterable[tuple[str | None, int, int, float | None]],
+    stages: Mapping[str | None, int],
+) -> v2.ApplicationCounts:
+    """Application counts by category and by stage (unknown values count in the total only)."""
+    rows = list(category_rows)
+    by_category = {category: count for category, count, _, _ in rows}
+    return v2.ApplicationCounts(
+        total=sum(count for _, count, _, _ in rows),
+        by_category=v2.CategoryCounts(
+            strong_match=by_category.get("strong_match", 0),
+            moderate_match=by_category.get("moderate_match", 0),
+            weak_match=by_category.get("weak_match", 0),
+            rejected=by_category.get("rejected", 0),
+        ),
+        by_stage=v2.StageCounts(
+            unreviewed=stages.get(None, 0),
+            screened=stages.get("screened", 0),
+            phone_call=stages.get("phone_call", 0),
+            technical=stages.get("technical", 0),
+            offer=stages.get("offer", 0),
+            hired=stages.get("hired", 0),
+            rejected_manual=stages.get("rejected_manual", 0),
+        ),
+    )
+
+
+def mean_score(category_rows: Iterable[tuple[str | None, int, int, float | None]]) -> float | None:
+    """The mean over every scored application, to 2 decimals (the v1 ``avg_score`` is a mean of
+    per-category means that also drops a 0 mean: B9)."""
+    scored = 0
+    total = 0.0
+    for _, _, n_scored, score_sum in category_rows:
+        scored += n_scored
+        total += score_sum or 0.0
+    return round(total / scored, 2) if scored else None
+
+
+def top_skills(
+    skill_lists: Iterable[list[str] | None], required: Sequence[str]
+) -> list[v2.SkillCount]:
+    """The :data:`TOP_SKILLS` most frequent skills (ties keep first-seen order), each flagged when
+    it is one of ``required`` (compared case-insensitively)."""
+    counts: dict[str, int] = {}
+    for skills in skill_lists:
+        for skill in skills or []:
+            counts[skill] = counts.get(skill, 0) + 1
+    wanted = {skill.casefold() for skill in required}
+    ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)[:TOP_SKILLS]
+    return [
+        v2.SkillCount(skill=skill, count=count, required=skill.casefold() in wanted)
+        for skill, count in ranked
+    ]
+
+
+async def workspace_stats(db: AsyncSession, resumes: ResumeTally) -> v2.WorkspaceStats:
+    """Counts across every campaign, given every resume's tally (from ingestion): three
+    single-table queries."""
+    campaign_counts = await repository.campaign_status_counts(db)
+    category_rows = await repository.category_score_rows(db)
+    stages = await repository.stage_counts(db)
+    return v2.WorkspaceStats(
+        campaigns=v2.CampaignStatusCounts(
+            total=sum(campaign_counts.values()),
+            active=campaign_counts.get("active", 0),
+            closed=campaign_counts.get("closed", 0),
+            archived=campaign_counts.get("archived", 0),
+        ),
+        resumes=resume_counts(resumes),
+        applications=application_counts(category_rows, stages),
+    )
+
+
+async def parse_job_description_v2(payload: v2.JobDescription) -> v2.ParsedJobDescription:
+    parsed = await parse_job_description(JDParseRequest(job_description=payload.job_description))
+    return v2.ParsedJobDescription(
+        role_title=parsed.role_title, seniority=parsed.seniority, skills=parsed.skills
+    )
+
+
+# ── v2: applications ──────────────────────────────────────────
+@dataclass(frozen=True)
+class ApplicationQuery:
+    """The application list (and export) filters of one campaign. Empty means "don't filter";
+    ``categories`` / ``stages`` match any of their values; ``q``, ``skill`` and
+    ``min_experience`` read the extraction snapshot, as the legacy ``search`` / ``skill`` /
+    ``min_experience`` do (:class:`ProfileFilters`); ``ids`` restricts to these applications
+    (the export of a selection)."""
+
+    campaign_id: uuid.UUID
+    q: str | None = None
+    categories: Sequence[str] = ()
+    stages: Sequence[str] = ()
+    min_score: float | None = None
+    max_score: float | None = None
+    skill: str | None = None
+    min_experience: float | None = None
+    ids: Sequence[uuid.UUID] = ()
+    sort: v2.ApplicationSort = v2.ApplicationSort.score_desc
+
+    def profile(self) -> ProfileFilters:
+        return ProfileFilters(
+            search=self.q or None, skill=self.skill or None, min_experience=self.min_experience
+        )
+
+
+# Scores sort unscored last in both directions; every order ends with the id, so pages are
+# stable. ``name`` is not here: the name is in ingestion's snapshot (see _application_page).
+_V2_ORDERS: dict[v2.ApplicationSort, tuple[ColumnElement[Any], ...]] = {
+    v2.ApplicationSort.score_desc: (Application.score.desc().nullslast(), Application.id.asc()),
+    v2.ApplicationSort.score: (Application.score.asc().nullslast(), Application.id.asc()),
+    v2.ApplicationSort.updated_at_desc: (Application.updated_at.desc(), Application.id.asc()),
+    v2.ApplicationSort.updated_at: (Application.updated_at.asc(), Application.id.asc()),
+}
+
+
+def _application_clauses(query: ApplicationQuery) -> list[ColumnElement[bool]]:
+    clauses: list[ColumnElement[bool]] = [Application.campaign_id == query.campaign_id]
+    if query.categories:
+        clauses.append(Application.category.in_(list(query.categories)))
+    if query.stages:
+        clauses.append(Application.pipeline_stage.in_(list(query.stages)))
+    if query.min_score is not None:
+        clauses.append(Application.score >= query.min_score)
+    if query.max_score is not None:
+        clauses.append(Application.score <= query.max_score)
+    if query.ids:
+        clauses.append(Application.id == any_(uuid_array(query.ids)))
+    return clauses
+
+
+def _name_order(name: str | None, application_id: uuid.UUID) -> tuple[bool, str, uuid.UUID]:
+    """Name ascending (case-insensitive), unnamed last, then the id."""
+    return (name is None, (name or "").casefold(), application_id)
+
+
+async def _application_page(
+    db: AsyncSession,
+    query: ApplicationQuery,
+    profiles: ResumeProfiles,
+    *,
+    offset: int | None,
+    limit: int | None,
+) -> tuple[Sequence[Application], int]:
+    """The applications matching ``query`` in its order (one page, or all without
+    ``offset``/``limit``) and how many match in all.
+
+    Without profile filters and with an order on hiring's columns: a count and the page (2
+    queries). Otherwise the matching ``(id, resume_id)`` pairs are read first; ingestion keeps
+    those whose snapshot matches the profile filters, and for ``sort=name`` gives the resumes'
+    names, by which the pairs are sorted here; then the page is read (at most 4 queries, however
+    many rows).
+    """
+    clauses = _application_clauses(query)
+    profile_filters = query.profile()
+    by_name = query.sort is v2.ApplicationSort.name
+    if not profile_filters.active and not by_name:
+        total = await repository.count_where(db, clauses)
+        if not total:
+            return [], 0
+        order = _V2_ORDERS[query.sort]
+        page = await repository.page_of_applications(db, clauses, order, offset=offset, limit=limit)
+        return page, total
+
+    pairs = await repository.application_resume_pairs(db, clauses)
+    if profile_filters.active and pairs:
+        matched = set(await profiles.matching([rid for _, rid in pairs], profile_filters))
+        pairs = [pair for pair in pairs if pair[1] in matched]
+    if not pairs:
+        return [], 0
+    if not by_name:
+        clauses.append(Application.id == any_(uuid_array([aid for aid, _ in pairs])))
+        page = await repository.page_of_applications(
+            db, clauses, _V2_ORDERS[query.sort], offset=offset, limit=limit
+        )
+        return page, len(pairs)
+    names = await profiles.names([rid for _, rid in pairs])
+    pairs.sort(key=lambda pair: _name_order(names.get(pair[1]), pair[0]))
+    start = offset or 0
+    window = pairs[start : start + limit if limit is not None else None]
+    found = {a.id: a for a in await repository.applications_by_id(db, [aid for aid, _ in window])}
+    return [found[aid] for aid, _ in window if aid in found], len(pairs)
+
+
+def _person_ref(application: Application, extracted: Mapping[str, Any] | None) -> v2.PersonRef:
+    snapshot = extracted or {}
+    return v2.PersonRef(
+        id=application.person_id, name=snapshot.get("name"), email=snapshot.get("email")
+    )
+
+
+def application_resource(
+    application: Application, extracted: Mapping[str, Any] | None
+) -> v2.Application:
+    """The v2 ``Application``, given its current resume's extraction (spec §7.1 sources)."""
+    profile = _profile(extracted)
+    return v2.Application(
+        id=application.id,
+        campaign_id=application.campaign_id,
+        resume_id=application.resume_id,
+        person=_person_ref(application, extracted),
+        score=application.score,
+        score_breakdown=application.score_breakdown,
+        category=_category(application.category),
+        summary=application.summary,
+        strengths=application.strengths or [],
+        weaknesses=application.weaknesses or [],
+        missing_skills=application.missing_skills or [],
+        recommendation=application.recommendation,
+        skills=profile["skills"],
+        years_of_experience=profile["years_of_experience"],
+        pipeline_stage=_stage(application.pipeline_stage),
+        notes=application.notes,
+        created_at=application.created_at,
+        updated_at=application.updated_at,
+    )
+
+
+async def _resource(profiles: ResumeProfiles, application: Application) -> v2.Application:
+    snapshots = await _snapshots(profiles, [application])
+    return application_resource(application, snapshots.get(application.resume_id))
+
+
+async def list_applications_page(
+    db: AsyncSession,
+    query: ApplicationQuery,
+    offset: int,
+    limit: int,
+    profiles: ResumeProfiles,
+) -> tuple[list[v2.Application], int]:
+    """A page of the campaign's applications (404 for an unknown campaign) and how many match:
+    at most 6 queries whatever the page size (campaign, at most 4 for the page, extractions)."""
+    await _require_campaign(db, query.campaign_id)
+    applications, total = await _application_page(db, query, profiles, offset=offset, limit=limit)
+    snapshots = await _snapshots(profiles, applications)
+    return [application_resource(a, snapshots.get(a.resume_id)) for a in applications], total
+
+
+async def export_applications_csv(
+    db: AsyncSession, query: ApplicationQuery, profiles: ResumeProfiles
+) -> str:
+    """Every matching application (no paging) as CSV, in the query's order, with the columns
+    of the legacy export (:data:`CSV_FIELDS`). 404 for an unknown campaign."""
+    await _require_campaign(db, query.campaign_id)
+    applications, _ = await _application_page(db, query, profiles, offset=None, limit=None)
+    snapshots = await _snapshots(profiles, applications)
+    return render_candidates_csv(
+        candidate_detail(a, snapshots.get(a.resume_id)) for a in applications
+    )
+
+
+async def _require_application_v2(db: AsyncSession, application_id: uuid.UUID) -> Application:
+    application = await repository.get_application_by_id(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found")
+    return application
+
+
+async def get_application_v2(
+    db: AsyncSession, application_id: uuid.UUID, profiles: ResumeProfiles
+) -> v2.Application:
+    return await _resource(profiles, await _require_application_v2(db, application_id))
+
+
+async def update_application_v2(
+    db: AsyncSession,
+    application_id: uuid.UUID,
+    payload: v2.ApplicationUpdate,
+    profiles: ResumeProfiles,
+) -> v2.Application:
+    """The recruiter's changes: stage, notes, category override (only the fields sent)."""
+    application = await _require_application_v2(db, application_id)
+    changes = payload.model_dump(exclude_unset=True, mode="json")
+    for name, value in changes.items():
+        setattr(application, name, value)
+    await repository.commit_and_refresh(db, application)
+    logger.info("application_updated", application_id=str(application_id), fields=sorted(changes))
+    return await _resource(profiles, application)
+
+
+async def delete_application_v2(db: AsyncSession, application_id: uuid.UUID) -> DeletedApplication:
+    """Delete one application. Flushes but does not commit: the caller deletes its resumes in
+    the same transaction and commits."""
+    (deleted,) = await _delete_applications(db, [await _require_application_v2(db, application_id)])
+    logger.info("application_deleted", application_id=str(application_id))
+    return deleted
+
+
+async def bulk_applications(
+    db: AsyncSession, campaign_id: uuid.UUID, action: v2.BulkAction
+) -> tuple[v2.BulkApplicationResult, list[DeletedApplication]]:
+    """Apply a bulk action to the campaign's applications that ``action.ids`` names (404 for an
+    unknown campaign). Ids that are not applications of this campaign are reported as
+    ``not_found`` and nothing is done to them; duplicates count once.
+
+    ``stage`` and ``reject`` (stage ``rejected_manual``) commit. ``delete`` flushes and returns
+    the deleted applications: the caller deletes their resumes in the same transaction and
+    commits.
+    """
+    await _require_campaign(db, campaign_id)
+    requested = list(dict.fromkeys(action.ids))
+    applications = await repository.lock_campaign_applications(db, campaign_id, requested)
+    found = {a.id for a in applications}
+    deleted: list[DeletedApplication] = []
+    if isinstance(action, v2.BulkDelete):
+        deleted = await _delete_applications(db, applications)
+    else:
+        stage = action.stage.value if isinstance(action, v2.BulkStage) else REJECTED_STAGE
+        for application in applications:
+            application.pipeline_stage = stage
+        await repository.commit(db)
+    logger.info("bulk_applications", action=action.action, count=len(applications))
+    result = v2.BulkApplicationResult(
+        action=action.action,
+        affected=[aid for aid in requested if aid in found],
+        not_found=[aid for aid in requested if aid not in found],
+    )
+    return result, deleted
+
+
+# ── v2: people, Home ──────────────────────────────────────────
+@dataclass(frozen=True)
+class PersonActivity:
+    """A Person's applications: how many, and when their latest resume was uploaded."""
+
+    applications: int = 0
+    last_applied_at: datetime | None = None
+
+
+async def people_activity(
+    db: AsyncSession, person_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, PersonActivity]:
+    """The activity of each of these people (one grouped query); people without applications
+    get an empty :class:`PersonActivity`."""
+    rows = await repository.person_activity(db, person_ids)
+    return {
+        pid: PersonActivity(*rows[pid]) if pid in rows else PersonActivity() for pid in person_ids
+    }
+
+
+async def person_applications(db: AsyncSession, person_id: uuid.UUID) -> list[v2.PersonApplication]:
+    """Every application of the Person, newest first, with its campaign (one query)."""
+    return [
+        v2.PersonApplication(
+            id=a.id,
+            campaign=_campaign_ref(c),
+            resume_id=a.resume_id,
+            score=a.score,
+            category=_category(a.category),
+            pipeline_stage=_stage(a.pipeline_stage),
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+        )
+        for a, c in await repository.applications_of_person(db, person_id)
+    ]
+
+
+async def recent_strong_matches(
+    db: AsyncSession, limit: int, profiles: ResumeProfiles
+) -> list[v2.RecentMatch]:
+    """The newest strong-match applications across campaigns (two queries)."""
+    rows = await repository.recent_applications_in_category(db, STRONG_MATCH, limit)
+    snapshots = await _snapshots(profiles, [a for a, _ in rows])
+    return [
+        v2.RecentMatch(
+            id=a.id,
+            campaign=_campaign_ref(c),
+            person=_person_ref(a, snapshots.get(a.resume_id)),
+            score=a.score,
+            category=_category(a.category),
+            pipeline_stage=_stage(a.pipeline_stage),
+            created_at=a.created_at,
+        )
+        for a, c in rows
+    ]
+
+
+async def active_campaigns(
+    db: AsyncSession, limit: int, tallies: ResumeTallies
+) -> list[v2.Campaign]:
+    """The most recently updated active campaigns, with their counts (three queries)."""
+    campaigns = await repository.recently_updated_campaigns(
+        db, v2.CampaignStatus.active.value, limit
+    )
+    return await _campaign_resources(db, campaigns, tallies)
+
+
+async def campaign_refs(
+    db: AsyncSession, campaign_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, v2.CampaignRef]:
+    """``id -> CampaignRef`` of the campaigns among ``campaign_ids`` that exist."""
+    return {c.id: _campaign_ref(c) for c in await repository.campaigns_by_id(db, campaign_ids)}
+
+
+async def application_ids_of(
+    db: AsyncSession, owners: Sequence[ResumeOwner]
+) -> dict[ResumeOwner, uuid.UUID]:
+    """The application of each resolved resume owner (campaign and Person), in one query: the
+    application a resume belongs to, for the v2 resume list. Owners without a Person or without
+    an application (yet) are left out."""
+    pairs = list(
+        dict.fromkeys((o.campaign_id, o.person_id) for o in owners if o.person_id is not None)
+    )
+    found = await repository.application_ids_of(db, pairs)
+    return {
+        owner: found[(owner.campaign_id, owner.person_id)]
+        for owner in owners
+        if owner.person_id is not None and (owner.campaign_id, owner.person_id) in found
+    }
 
 
 # ── Upload pipeline ───────────────────────────────────────────

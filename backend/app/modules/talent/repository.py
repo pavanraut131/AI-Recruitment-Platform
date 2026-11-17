@@ -1,16 +1,20 @@
 """talent data access: the SQL behind ``talent.service``. Private to the talent module.
 
-Synchronous ``Session`` only: ``resolve_person`` runs in Celery workers and the seed generator,
-which have no event loop (see ``app.modules.ingestion.tasks``); so do the verification reads at the end.
+``resolve_person`` and the verification reads use a synchronous ``Session``: they run in Celery
+workers, the seed generator and a command, which have no event loop (see
+``app.modules.ingestion.tasks``). The ``/api/v2`` people reads at the end (E1-02) take the
+request's ``AsyncSession``.
 """
 
 import uuid
 from collections.abc import Iterable, Sequence
 
-from sqlalchemy import func, select, text, tuple_
+from sqlalchemy import ColumnElement, any_, exists, func, or_, select, text, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
+from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 
 def take_advisory_locks(session: Session, keys: Iterable[str]) -> list[int]:
@@ -123,3 +127,89 @@ def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UU
 
 def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
     return list(session.execute(select(IdentityConflict.resume_id)).scalars())
+
+
+# ── /api/v2 people (async, E1-02) ─────────────────────────────
+def _search_clause(q: str) -> ColumnElement[bool]:
+    """The name or any email identifier (as written or normalised) contains ``q``
+    (case-insensitive, LIKE wildcards literal)."""
+    pattern = f"%{escape_like(q)}%"
+    email_matches = exists().where(
+        PersonIdentifier.person_id == Person.id,
+        PersonIdentifier.kind == "email",
+        or_(
+            PersonIdentifier.raw_value.ilike(pattern, escape=LIKE_ESCAPE),
+            PersonIdentifier.value_normalized.ilike(pattern, escape=LIKE_ESCAPE),
+        ),
+    )
+    return or_(Person.full_name.ilike(pattern, escape=LIKE_ESCAPE), email_matches)
+
+
+async def search_people(
+    db: AsyncSession, q: str | None, *, offset: int, limit: int
+) -> tuple[Sequence[Person], int]:
+    """A page of people (matching ``q`` if given), most recently updated first (ties by id), and
+    how many match in all (two queries)."""
+    clauses = [_search_clause(q)] if q else []
+    total = await db.scalar(select(func.count(Person.id)).where(*clauses))
+    if not total:
+        return [], 0
+    result = await db.execute(
+        select(Person)
+        .where(*clauses)
+        .order_by(Person.updated_at.desc(), Person.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return result.scalars().all(), total
+
+
+async def first_emails(db: AsyncSession, person_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """``person_id -> raw value`` of each Person's first stored email (one query)."""
+    if not person_ids:
+        return {}
+    result = await db.execute(
+        select(PersonIdentifier.person_id, PersonIdentifier.raw_value)
+        .where(
+            PersonIdentifier.person_id == any_(uuid_array(person_ids)),
+            PersonIdentifier.kind == "email",
+        )
+        .order_by(PersonIdentifier.created_at, PersonIdentifier.id)
+    )
+    emails: dict[uuid.UUID, str] = {}
+    for person_id, raw_value in result.tuples():
+        emails.setdefault(person_id, raw_value)
+    return emails
+
+
+async def get_person(db: AsyncSession, person_id: uuid.UUID) -> Person | None:
+    return await db.get(Person, person_id)
+
+
+async def identifiers_of(db: AsyncSession, person_id: uuid.UUID) -> Sequence[PersonIdentifier]:
+    """The Person's identifiers, emails first, then in the order they were stored."""
+    result = await db.execute(
+        select(PersonIdentifier)
+        .where(PersonIdentifier.person_id == person_id)
+        .order_by(PersonIdentifier.kind, PersonIdentifier.created_at, PersonIdentifier.id)
+    )
+    return result.scalars().all()
+
+
+async def conflicts_of(db: AsyncSession, person_id: uuid.UUID) -> Sequence[IdentityConflict]:
+    """The identity conflicts this Person is on either side of, oldest first."""
+    result = await db.execute(
+        select(IdentityConflict)
+        .where(
+            or_(
+                IdentityConflict.chosen_person_id == person_id,
+                IdentityConflict.conflicting_person_id == person_id,
+            )
+        )
+        .order_by(IdentityConflict.created_at, IdentityConflict.id)
+    )
+    return result.scalars().all()
+
+
+async def count_people(db: AsyncSession) -> int:
+    return await db.scalar(select(func.count(Person.id))) or 0

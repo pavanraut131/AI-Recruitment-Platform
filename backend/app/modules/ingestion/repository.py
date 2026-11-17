@@ -8,6 +8,7 @@ caller decides where a unit of work ends.
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -198,6 +199,93 @@ async def _delete_where(db: AsyncSession, clause: ColumnElement[bool]) -> list[s
 
 async def commit(db: AsyncSession) -> None:
     await db.commit()
+
+
+# ── /api/v2 (E1-02) ───────────────────────────────────────────
+TallyRow = tuple[uuid.UUID, str, int, int, datetime | None]
+
+
+async def tallies(
+    db: AsyncSession, campaign_ids: Sequence[uuid.UUID] | None, recent: timedelta
+) -> list[TallyRow]:
+    """``(campaign_id, status, resumes, uploaded within `recent`, latest updated_at)`` per
+    campaign and status, for the given campaigns or (``None``) all of them: one grouped query."""
+    if campaign_ids is not None and not campaign_ids:
+        return []
+    query = select(
+        Resume.campaign_id,
+        Resume.status,
+        func.count(Resume.id),
+        func.count(Resume.id).filter(Resume.uploaded_at >= func.now() - recent),
+        func.max(Resume.updated_at),
+    )
+    if campaign_ids is not None:
+        query = query.where(Resume.campaign_id == any_(uuid_array(campaign_ids)))
+    result = await db.execute(query.group_by(Resume.campaign_id, Resume.status))
+    return [(cid, status, n, new, latest) for cid, status, n, new, latest in result.tuples()]
+
+
+async def page_for_campaign(
+    db: AsyncSession,
+    campaign_id: uuid.UUID,
+    statuses: Sequence[str],
+    *,
+    offset: int,
+    limit: int,
+) -> tuple[Sequence[Resume], int]:
+    """A page of the campaign's resumes (any of ``statuses``, or all), newest upload first (ties
+    by id), and how many match in all."""
+    clauses: list[ColumnElement[bool]] = [Resume.campaign_id == campaign_id]
+    if statuses:
+        clauses.append(Resume.status.in_(list(statuses)))
+    return await _page(db, clauses, offset=offset, limit=limit)
+
+
+async def page_in_statuses(
+    db: AsyncSession, statuses: Sequence[str], *, limit: int
+) -> tuple[Sequence[Resume], int]:
+    """The newest resumes in any of ``statuses`` across campaigns, and how many there are."""
+    return await _page(db, [Resume.status.in_(list(statuses))], offset=0, limit=limit)
+
+
+async def _page(
+    db: AsyncSession, clauses: Sequence[ColumnElement[bool]], *, offset: int, limit: int
+) -> tuple[Sequence[Resume], int]:
+    total = await db.scalar(select(func.count(Resume.id)).where(*clauses))
+    if not total:
+        return [], 0
+    result = await db.execute(
+        select(Resume)
+        .where(*clauses)
+        .order_by(Resume.uploaded_at.desc(), Resume.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return result.scalars().all(), total
+
+
+async def by_ids(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> Sequence[Resume]:
+    """The resumes with these ids, fresh from the database (server defaults loaded)."""
+    if not resume_ids:
+        return []
+    result = await db.execute(
+        select(Resume)
+        .where(Resume.id == any_(uuid_array(resume_ids)))
+        .execution_options(populate_existing=True)
+    )
+    return result.scalars().all()
+
+
+async def names(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str | None]:
+    """``id -> extracted->>'name'`` of the resumes among ``resume_ids`` that exist."""
+    if not resume_ids:
+        return {}
+    result = await db.execute(
+        select(Resume.id, Resume.extracted["name"].astext).where(
+            Resume.id == any_(uuid_array(resume_ids))
+        )
+    )
+    return {resume_id: name for resume_id, name in result.tuples()}
 
 
 # ── Sync (Celery tasks) ───────────────────────────────────────

@@ -12,6 +12,7 @@ live in ``app.modules.ingestion``).
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -209,6 +210,226 @@ async def commit(db: AsyncSession) -> None:
 async def commit_and_refresh(db: AsyncSession, row: Campaign | Application) -> None:
     await db.commit()
     await db.refresh(row)
+
+
+# ── /api/v2 (E1-02) ───────────────────────────────────────────
+async def find_campaigns(
+    db: AsyncSession,
+    filters: Sequence[ColumnElement[bool]],
+    *,
+    offset: int,
+    limit: int,
+) -> tuple[Sequence[Campaign], int]:
+    """A page of the campaigns matching ``filters``, newest first (ties by id), and how many
+    match in all (two queries)."""
+    total = await db.scalar(select(func.count(Campaign.id)).where(*filters))
+    result = await db.execute(
+        select(Campaign)
+        .where(*filters)
+        .order_by(Campaign.created_at.desc(), Campaign.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return result.scalars().all(), total or 0
+
+
+async def recently_updated_campaigns(
+    db: AsyncSession, status: str, limit: int
+) -> Sequence[Campaign]:
+    result = await db.execute(
+        select(Campaign)
+        .where(Campaign.status == status)
+        .order_by(Campaign.updated_at.desc(), Campaign.id)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def campaigns_by_id(db: AsyncSession, ids: Sequence[uuid.UUID]) -> Sequence[Campaign]:
+    if not ids:
+        return []
+    result = await db.execute(select(Campaign).where(Campaign.id == any_(uuid_array(ids))))
+    return result.scalars().all()
+
+
+async def application_tallies(
+    db: AsyncSession, campaign_ids: Sequence[uuid.UUID], strong_category: str
+) -> dict[uuid.UUID, tuple[int, int, datetime | None]]:
+    """``campaign_id -> (applications, strong matches, latest updated_at)`` for the campaigns
+    among ``campaign_ids`` that have applications (one grouped query)."""
+    if not campaign_ids:
+        return {}
+    result = await db.execute(
+        select(
+            Application.campaign_id,
+            func.count(Application.id),
+            func.count(Application.id).filter(Application.category == strong_category),
+            func.max(Application.updated_at),
+        )
+        .where(Application.campaign_id == any_(uuid_array(campaign_ids)))
+        .group_by(Application.campaign_id)
+    )
+    return {cid: (count, strong, latest) for cid, count, strong, latest in result.tuples()}
+
+
+async def category_score_rows(
+    db: AsyncSession, campaign_id: uuid.UUID | None = None
+) -> list[tuple[str | None, int, int, float | None]]:
+    """``(category, applications, scored applications, sum of scores)`` per category, for one
+    campaign or (``None``) all of them."""
+    query = select(
+        Application.category,
+        func.count(Application.id),
+        func.count(Application.score),
+        func.sum(Application.score),
+    )
+    if campaign_id is not None:
+        query = query.where(Application.campaign_id == campaign_id)
+    result = await db.execute(query.group_by(Application.category))
+    return [(category, n, scored, total) for category, n, scored, total in result.tuples()]
+
+
+async def stage_counts(
+    db: AsyncSession, campaign_id: uuid.UUID | None = None
+) -> dict[str | None, int]:
+    query = select(Application.pipeline_stage, func.count(Application.id))
+    if campaign_id is not None:
+        query = query.where(Application.campaign_id == campaign_id)
+    result = await db.execute(query.group_by(Application.pipeline_stage))
+    return {stage: count for stage, count in result.tuples()}
+
+
+async def score_buckets(db: AsyncSession, campaign_id: uuid.UUID) -> dict[int, int]:
+    """``bucket -> applications`` for the scored applications, bucket ``floor(score / 10)``
+    capped to 0..9 (a score of 100 is in bucket 9)."""
+    bucket = func.least(func.greatest(func.floor(Application.score / 10), 0), 9).label("bucket")
+    result = await db.execute(
+        select(bucket, func.count(Application.id))
+        .where(Application.campaign_id == campaign_id, Application.score.is_not(None))
+        .group_by(bucket)
+    )
+    return {int(b): count for b, count in result.tuples()}
+
+
+async def count_where(db: AsyncSession, filters: Sequence[ColumnElement[bool]]) -> int:
+    total = await db.scalar(select(func.count(Application.id)).where(and_(*filters)))
+    return total or 0
+
+
+async def page_of_applications(
+    db: AsyncSession,
+    filters: Sequence[ColumnElement[bool]],
+    order: Sequence[ColumnElement[Any]],
+    *,
+    offset: int | None = None,
+    limit: int | None = None,
+) -> Sequence[Application]:
+    query = select(Application).where(and_(*filters)).order_by(*order)
+    if offset is not None:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def application_resume_pairs(
+    db: AsyncSession, filters: Sequence[ColumnElement[bool]]
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """``(id, resume_id)`` of every application matching ``filters`` (unordered)."""
+    result = await db.execute(select(Application.id, Application.resume_id).where(and_(*filters)))
+    return [(application_id, resume_id) for application_id, resume_id in result.tuples()]
+
+
+async def applications_by_id(db: AsyncSession, ids: Sequence[uuid.UUID]) -> Sequence[Application]:
+    """The applications with these ids (unordered; unknown ids are left out)."""
+    if not ids:
+        return []
+    result = await db.execute(select(Application).where(Application.id == any_(uuid_array(ids))))
+    return result.scalars().all()
+
+
+async def get_application_by_id(db: AsyncSession, application_id: uuid.UUID) -> Application | None:
+    """The application with this id; unlike :func:`get_application`, a merged legacy candidate's
+    id is not redirected (v2 clients only ever hold application ids)."""
+    return await db.get(Application, application_id)
+
+
+async def lock_campaign_applications(
+    db: AsyncSession, campaign_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> Sequence[Application]:
+    """The campaign's applications among ``ids`` (own ids only), locked in id order (a fixed
+    order, so two bulk requests over overlapping applications cannot deadlock)."""
+    if not ids:
+        return []
+    result = await db.execute(
+        select(Application)
+        .where(Application.campaign_id == campaign_id, Application.id == any_(uuid_array(ids)))
+        .order_by(Application.id)
+        .with_for_update()
+    )
+    return result.scalars().all()
+
+
+async def applications_of_person(
+    db: AsyncSession, person_id: uuid.UUID
+) -> list[tuple[Application, Campaign]]:
+    """The Person's applications with their campaigns, newest application first (ties by id)."""
+    result = await db.execute(
+        select(Application, Campaign)
+        .join(Campaign, Campaign.id == Application.campaign_id)
+        .where(Application.person_id == person_id)
+        .order_by(Application.created_at.desc(), Application.id)
+    )
+    return [(application, campaign) for application, campaign in result.tuples()]
+
+
+async def person_activity(
+    db: AsyncSession, person_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, datetime | None]]:
+    """``person_id -> (applications, latest resume upload)`` for the people among ``person_ids``
+    that have applications. An application whose upload time is unknown counts with its
+    ``created_at``."""
+    if not person_ids:
+        return {}
+    result = await db.execute(
+        select(
+            Application.person_id,
+            func.count(Application.id),
+            func.max(func.coalesce(Application.resume_uploaded_at, Application.created_at)),
+        )
+        .where(Application.person_id == any_(uuid_array(person_ids)))
+        .group_by(Application.person_id)
+    )
+    return {pid: (count, latest) for pid, count, latest in result.tuples()}
+
+
+async def recent_applications_in_category(
+    db: AsyncSession, category: str, limit: int
+) -> list[tuple[Application, Campaign]]:
+    """The newest applications in ``category`` (ties by id), with their campaigns."""
+    result = await db.execute(
+        select(Application, Campaign)
+        .join(Campaign, Campaign.id == Application.campaign_id)
+        .where(Application.category == category)
+        .order_by(Application.created_at.desc(), Application.id)
+        .limit(limit)
+    )
+    return [(application, campaign) for application, campaign in result.tuples()]
+
+
+async def application_ids_of(
+    db: AsyncSession, owners: Sequence[tuple[uuid.UUID, uuid.UUID]]
+) -> dict[tuple[uuid.UUID, uuid.UUID], uuid.UUID]:
+    """``(campaign_id, person_id) -> application id`` for the pairs that have an application."""
+    if not owners:
+        return {}
+    result = await db.execute(
+        select(Application.campaign_id, Application.person_id, Application.id).where(
+            tuple_(Application.campaign_id, Application.person_id).in_(list(owners))
+        )
+    )
+    return {(cid, pid): application_id for cid, pid, application_id in result.tuples()}
 
 
 # ── Upload pipeline (sync, Celery tasks) ──────────────────────

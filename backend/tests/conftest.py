@@ -25,7 +25,8 @@ Fixtures
         The FastAPI application (imported lazily).
     ``client`` (function)
         ``httpx.AsyncClient`` on ``ASGITransport(app=app)``, base URL ``http://test``. Overrides
-        ``get_db`` so requests use ``db_session`` (the same session and transaction as the test).
+        ``get_db`` so requests use ``db_session`` (the same session and transaction as the test),
+        in the root app and in the mounted ``/api/v2`` app (which has overrides of its own).
         ASGITransport does not send lifespan events, so the app's startup hook
         (``ensure_bucket_exists``) does not run.
     ``celery_calls`` (function, autouse)
@@ -131,6 +132,16 @@ def app() -> FastAPI:
     return fastapi_app
 
 
+def _fastapi_apps(app: FastAPI) -> list[FastAPI]:
+    """``app`` and the FastAPI applications mounted in it (``/api/v2``): each resolves its own
+    dependency overrides."""
+    from fastapi import FastAPI
+    from starlette.routing import Mount
+
+    mounted = [r.app for r in app.routes if isinstance(r, Mount) and isinstance(r.app, FastAPI)]
+    return [app, *mounted]
+
+
 @pytest_asyncio.fixture
 async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     from app.platform.database import get_db
@@ -138,12 +149,15 @@ async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncC
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db_session
 
-    app.dependency_overrides[get_db] = override_get_db
+    apps = _fastapi_apps(app)
+    for each in apps:
+        each.dependency_overrides[get_db] = override_get_db
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
     finally:
-        app.dependency_overrides.pop(get_db, None)
+        for each in apps:
+            each.dependency_overrides.pop(get_db, None)
 
 
 # ── External services ─────────────────────────────────────────

@@ -11,6 +11,7 @@ from app.modules.ingestion import router as ingestion
 from app.platform.config import settings
 from app.platform.logging import configure_logging
 from app.platform.storage import ensure_bucket_exists
+from app.v2 import v2_app
 
 configure_logging(debug=settings.DEBUG)
 logger = structlog.get_logger()
@@ -57,6 +58,11 @@ app.include_router(hiring.parse_jd_router, prefix=PREFIX)
 app.include_router(ingestion.router, prefix=PREFIX)
 app.include_router(composed.candidates_router, prefix=PREFIX)
 app.include_router(composed.stats_router, prefix=PREFIX)
+
+# /api/v2: a sub-application with its own OpenAPI document (/api/v2/openapi.json) and RFC 9457
+# error handlers, so the v1 routes, errors and /openapi.json above stay exactly as they were
+# (see app/v2.py).
+app.mount(settings.API_V2_PREFIX, v2_app)
 
 
 # ── Health endpoints ──────────────────────────────────────────

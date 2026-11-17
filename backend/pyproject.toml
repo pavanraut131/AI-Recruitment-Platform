@@ -172,6 +172,7 @@ type = "forbidden"
 # the rest; a new top-level package under app/ must be added here.)
 source_modules = [
     "app.main",
+    "app.v2",
     "app.api",
     "app.platform",
     "app.devtools",
@@ -199,11 +200,13 @@ source_modules = ["app.api"]
 forbidden_modules = ["app.modules.*"]
 # Same allowlist idea as "public-interfaces" below: a module's service/schemas are its public
 # interface, so app.api -> <module>.service is fine (and chains through it are not reported).
+# schemas_v2 holds a module's /api/v2 resources (E1-02), public like schemas.
 ignore_imports = [
     "app.api.** -> app.modules.*.service",
     "app.api.** -> app.modules.*.schemas",
+    "app.api.** -> app.modules.*.schemas_v2",
 ]
-broken_contract_guidance = "The composition layer (app.api) may call a module only through app.modules.<name>.service and the schemas in app.modules.<name>.schemas."
+broken_contract_guidance = "The composition layer (app.api) may call a module only through app.modules.<name>.service and the schemas in app.modules.<name>.schemas (or schemas_v2)."
 
 [[tool.importlinter.contracts]]
 id = "public-interfaces"
@@ -213,16 +216,37 @@ source_modules = ["app.modules.*"]
 # Every module is forbidden to every other module (a module's own internals are skipped as an
 # overlapping pair) ...
 forbidden_modules = ["app.modules.*"]
-# ... except for these two public submodules. Ignored imports are dropped from this contract's
-# copy of the graph, so a chain through another module's service (service -> its own models)
-# isn't reported as an indirect import either.
+# ... except for these public submodules (schemas_v2: a module's /api/v2 resources, E1-02).
+# Ignored imports are dropped from this contract's copy of the graph, so a chain through another
+# module's service (service -> its own models) isn't reported as an indirect import either.
 ignore_imports = [
     "app.modules.** -> app.modules.*.service",
     "app.modules.** -> app.modules.*.schemas",
+    "app.modules.** -> app.modules.*.schemas_v2",
 ]
 # The allowlist above matches nothing until the first cross-module import exists.
 unmatched_ignore_imports_alerting = "none"
-broken_contract_guidance = "Import another module only through its public interface: app.modules.<name>.service, or the schemas it exposes in app.modules.<name>.schemas. Never its models, repository, router, tasks or other internals."
+broken_contract_guidance = "Import another module only through its public interface: app.modules.<name>.service, or the schemas it exposes in app.modules.<name>.schemas (or schemas_v2). Never its models, repository, router, tasks or other internals."
+
+[[tool.importlinter.contracts]]
+id = "v2-independent-of-v1"
+name = "/api/v2 code does not import /api/v1 HTTP code"
+type = "forbidden"
+# The v2 application, its composed routers and the modules' v2 routers. v1 is removed after E2
+# (backlog); with this contract that removal is a deletion that cannot break v2.
+source_modules = [
+    "app.v2",
+    "app.api.v2",
+    "app.modules.hiring.router_v2",
+    "app.modules.ingestion.router_v2",
+]
+forbidden_modules = [
+    "app.main",
+    "app.api.routes",
+    "app.modules.hiring.router",
+    "app.modules.ingestion.router",
+]
+broken_contract_guidance = "v2 HTTP code must not depend on v1 routers (app.api.routes, app.modules.<name>.router) or on app.main. Share behaviour through the module services instead."
 
 # ── mypy ─────────────────────────────────────────────────────
 [tool.mypy]
