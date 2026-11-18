@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 import { useCampaigns, type Campaign } from "../api"
 import { CampaignStatusBadge } from "../components/campaign-status-badge"
-import { EmptyState, ErrorState } from "../components/data-states"
+import { EmptyState, ErrorState } from "@/components/data-states"
 import { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUSES } from "../schema"
 import { useCampaignListParams } from "./use-campaign-list-params"
 

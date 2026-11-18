@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 import { useCampaign, type Campaign } from "../api"
 import { CampaignStatusBadge } from "../components/campaign-status-badge"
-import { EmptyState, ErrorState } from "../components/data-states"
+import { EmptyState, ErrorState } from "@/components/data-states"
 import { KpiStrip } from "./kpi-strip"
 import { InsightsPlaceholder } from "./placeholders"
 import { SettingsTab } from "./settings-tab"

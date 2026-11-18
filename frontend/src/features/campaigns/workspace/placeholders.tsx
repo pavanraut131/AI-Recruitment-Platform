@@ -2,7 +2,7 @@ import { ChartColumnIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 
-import { EmptyState } from "../components/data-states"
+import { EmptyState } from "@/components/data-states"
 
 /*
  * Designed placeholder for the workspace tab whose screen lands later:
