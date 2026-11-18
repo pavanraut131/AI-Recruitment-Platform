@@ -1,6 +1,6 @@
 # Sprint 5 · HireFlow AI foundation
 
-**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-11-17 → 2026-11-23  ·  **Status:** in progress
+**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-11-17 → 2026-11-23  ·  **Status:** done (closed 2026-11-18)
 
 ## Sprint goal
 
@@ -18,7 +18,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 | E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)) |
 | E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | done ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37)) |
 | E1-04 | Campaign list and new campaign (JD extraction) | M | done ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39)) |
-| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | review |
+| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | done ([#40](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/40)) |
 
 **Order** (stacks no more than two deep, as agreed in the Sprint 4 retro):
 - **Wave 1:** B4, E1-01 and E1-02, all independent and branched from `master`.
@@ -131,7 +131,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-05 · Candidates table
-**Status:** review  ·  **Size:** L  ·  **Branch:** `e1-05-candidates-table`
+**Status:** done ([#40](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/40))  ·  **Size:** L  ·  **Branch:** `e1-05-candidates-table`
 
 **Goal:** The hero table from spec §5.1.
 
@@ -158,15 +158,44 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 
 ---
 
-## Sprint 6 (rough backlog)
-
-E1-06 Uploads tab · E1-07 Review panel and Person profile · E1-08 Home, Insights and Talent · E1-09 Playwright E2E + axe in CI, polish, screenshots, removal of the old UI.
-
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+**Goal met:** yes. Seven PRs merged in three waves: #34, #35, #36, then #37 and #38, then #39 and #40. CI is green on `master` (`5089372`). The local Compose stack was rebuilt on `master`. A recruiter can open HireFlow AI, create a campaign with AI extraction from a job description, and review its candidates in the ranked table, all through `/api/v2` and the generated client.
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+### Demo
+
+- **HireFlow AI shell:**
+  - design tokens with light and dark themes, both checked for contrast in CI;
+  - shadcn/ui primitives, the sidebar and the ⌘K palette;
+  - the `/dev/ui` gallery ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34)).
+- **`/api/v2`** ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)):
+  - its own OpenAPI document, problem+json errors and stable operation ids;
+  - 110 contract snapshots, with the v1 snapshots unchanged;
+  - query counts asserted in tests.
+- **Contract-first client** ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37)): the TypeScript client is generated from OpenAPI, and CI fails when it is stale. The check caught S1's contract change on its first real use.
+- **Security:** python-multipart ([#35](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/35)), and FastAPI 0.163 with Starlette 1.10, which closes 7 advisories and adds explicit upload limits ([#38](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/38)).
+- **Campaigns** ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39)): the list, the new-campaign form with "Extract with AI", and the workspace with its KPI strip, tabs and Settings.
+- **Candidates table** ([#40](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/40)):
+  - filters, sort and page kept in the URL;
+  - optimistic bulk actions with rollback;
+  - J/K navigation.
+
+  With 500 rows, J/K takes about 20 ms per press and select-all 33–54 ms (measured in Chrome).
+
+### Keep
+
+- **Parallel tickets in separate feature folders, joined through slots at the route** (the workspace's `candidatesTab`). The second PR to merge takes the one-line wiring.
+- **The drift check and `mergecheck`.** The drift check turned the S1/E1-03 ordering into a visible, mechanical step. `mergecheck` confirmed that every merge dropped nothing.
+- **Measuring before optimising.** Chrome traces showed what made the 500-row table slow (Radix checkboxes and style recalculation), and a jsdom benchmark now keeps it from regressing.
+
+### Drop
+
+- **Visual checks skipped because the API was "unreachable".** The real cause was the backend crashing after S1. The container runs the bind-mounted new code with the old packages baked into its image. Nobody saw that until wave 3.
+
+### Try
+
+- **Rebuild the Compose stack after every merge that changes dependencies**, and check it is healthy before the next wave starts.
+- **Allow the agents' dev-server ports in the local CORS setting**, so every UI ticket gets a browser check against the real API.
+- **Run timing tests with headroom.** The 500-row benchmark hit Vitest's 5 s default once more test files ran in parallel, so it now has its own timeout. Any new performance test should set one too.
+
+Next: [Sprint 6](sprint-06.md).
