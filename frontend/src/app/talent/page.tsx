@@ -1,16 +1,16 @@
 import type { Metadata } from "next"
-import { UsersIcon } from "lucide-react"
+import { Suspense } from "react"
 
-import { ComingSoon } from "@/components/coming-soon"
+import { TalentList } from "@/features/people"
 
 export const metadata: Metadata = { title: "Talent" }
 
+// The list reads its search and page from the URL (nuqs → useSearchParams), so
+// it renders inside a Suspense boundary.
 export default function TalentPage() {
   return (
-    <ComingSoon
-      title="Talent"
-      icon={UsersIcon}
-      description="Everyone who has applied to any campaign, as one list of people. Arrives with E1-08."
-    />
+    <Suspense>
+      <TalentList />
+    </Suspense>
   )
 }
