@@ -1,19 +1,10 @@
 import { z } from "zod"
 
-import type { Schema } from "@/lib/api/client"
+import { CAMPAIGN_STATUSES, type CampaignStatus } from "@/lib/campaigns"
 
 import type { Campaign, CampaignCreate, CampaignUpdate } from "./api"
 
-export type CampaignStatus = Schema<"CampaignStatus">
-
-/** In the order the UI lists them (the API's `CampaignStatus` enum). */
-export const CAMPAIGN_STATUSES = ["active", "closed", "archived"] as const satisfies readonly CampaignStatus[]
-
-export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
-  active: "Active",
-  closed: "Closed",
-  archived: "Archived",
-}
+export { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUSES, type CampaignStatus } from "@/lib/campaigns"
 
 export const CAMPAIGN_STATUS_DESCRIPTIONS: Record<CampaignStatus, string> = {
   active: "Open: accepting uploads and reviewing candidates.",

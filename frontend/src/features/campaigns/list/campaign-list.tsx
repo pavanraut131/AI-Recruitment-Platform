@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import { BriefcaseIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, SearchXIcon } from "lucide-react"
 
+import { CampaignStatusBadge } from "@/components/campaign/status-badge"
 import { Button } from "@/components/ui/button"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -12,7 +13,6 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { cn } from "@/lib/utils"
 
 import { useCampaigns, type Campaign } from "../api"
-import { CampaignStatusBadge } from "../components/campaign-status-badge"
 import { EmptyState, ErrorState } from "@/components/data-states"
 import { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUSES } from "../schema"
 import { useCampaignListParams } from "./use-campaign-list-params"

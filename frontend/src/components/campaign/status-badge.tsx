@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
-import { CAMPAIGN_STATUS_LABELS, type CampaignStatus } from "../schema"
+import { CAMPAIGN_STATUS_LABELS, type CampaignStatus } from "@/lib/campaigns"
 
 const DOT: Record<CampaignStatus, string> = {
   active: "bg-primary",

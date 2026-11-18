@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useQueryState } from "nuqs"
 import { ArrowLeftIcon, PencilIcon, SearchXIcon, UploadIcon } from "lucide-react"
 
+import { CampaignStatusBadge } from "@/components/campaign/status-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,7 +13,6 @@ import { useCampaignEvents, type CampaignEventsStatus } from "@/lib/query/use-ca
 import { cn } from "@/lib/utils"
 
 import { useCampaign, type Campaign } from "../api"
-import { CampaignStatusBadge } from "../components/campaign-status-badge"
 import { EmptyState, ErrorState } from "@/components/data-states"
 import { KpiStrip } from "./kpi-strip"
 import { InsightsPlaceholder } from "./placeholders"
