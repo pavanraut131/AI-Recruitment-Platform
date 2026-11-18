@@ -99,7 +99,7 @@
           'properties': dict({
             'files': dict({
               'items': dict({
-                'format': 'binary',
+                'contentMediaType': 'application/octet-stream',
                 'type': 'string',
               }),
               'title': 'Files',
@@ -1036,6 +1036,13 @@
         }),
         'ValidationError': dict({
           'properties': dict({
+            'ctx': dict({
+              'title': 'Context',
+              'type': 'object',
+            }),
+            'input': dict({
+              'title': 'Input',
+            }),
             'loc': dict({
               'items': dict({
                 'anyOf': list([

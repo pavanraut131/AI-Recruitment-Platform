@@ -18,8 +18,10 @@ from app.modules.ingestion import events, service
 from app.modules.ingestion.models import Resume
 from app.modules.ingestion.schemas import ResumeResponse, UploadBatchResponse
 from app.platform.database import get_db
+from app.platform.uploads import UploadRoute
 
-router = APIRouter(tags=["resumes"])
+# UploadRoute: the upload body is parsed with explicit limits (app.platform.uploads, S1).
+router = APIRouter(tags=["resumes"], route_class=UploadRoute)
 
 _STATUS_CODES: dict[type[service.IngestionError], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,

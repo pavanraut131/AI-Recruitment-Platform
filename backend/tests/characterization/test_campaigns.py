@@ -89,6 +89,17 @@ async def test_create_campaign_validation_error(
     assert response_data(resp) == snapshot
 
 
+async def test_create_campaign_json_without_content_type(
+    client: AsyncClient, snapshot: SnapshotAssertion
+) -> None:
+    # A JSON body without a Content-Type header is parsed as JSON (FastAPI's strict default,
+    # since 0.132, is turned off for v1 in app.main to keep this; S1).
+    body = json.dumps({"title": "No content type", "role": "Dev"}).encode()
+    resp = await client.post(f"{API}/campaigns", content=body)
+    assert "content-type" not in resp.request.headers
+    assert response_data(resp) == snapshot
+
+
 async def test_create_campaign_title_too_long_is_a_500(
     raw_client: AsyncClient, snapshot: SnapshotAssertion
 ) -> None:

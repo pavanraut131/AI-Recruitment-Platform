@@ -5,7 +5,7 @@ description = "AI Recruitment Platform backend: FastAPI API, Celery workers, Ale
 requires-python = ">=3.11,<3.12"
 dependencies = [
     # Web
-    "fastapi==0.111.0",
+    "fastapi==0.163.1",  # S1: 0.111 pinned starlette<0.38 (multipart/Host/form-limit advisories)
     "uvicorn[standard]==0.30.1",
     "python-multipart==0.0.34",  # B4: 0.0.9 parsed boundary-like file data byte by byte (DoS)
     # Database
@@ -15,7 +15,7 @@ dependencies = [
     "psycopg2-binary==2.9.9",
     # Settings
     "pydantic-settings==2.3.0",
-    "pydantic==2.7.3",
+    "pydantic==2.9.2",  # S1: fastapi 0.163 requires pydantic>=2.9
     # Celery (flower is used by the flower container)
     "celery[redis]==5.4.0",
     "redis==5.0.5",  # redis 5 has no "asyncio" extra; redis.asyncio is built in

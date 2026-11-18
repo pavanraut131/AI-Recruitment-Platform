@@ -186,6 +186,26 @@
     'status_code': 201,
   })
 # ---
+# name: test_create_campaign_json_without_content_type
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'description': None,
+      'id': '<uuid:1>',
+      'required_skills': list([
+      ]),
+      'role': 'Dev',
+      'stats': None,
+      'status': 'active',
+      'title': 'No content type',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 201,
+  })
+# ---
 # name: test_create_campaign_minimal_payload
   dict({
     'body': dict({

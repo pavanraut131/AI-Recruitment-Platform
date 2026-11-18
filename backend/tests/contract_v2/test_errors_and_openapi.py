@@ -42,6 +42,16 @@ async def test_malformed_json_body(client: AsyncClient, snapshot: SnapshotAssert
     assert data == snapshot
 
 
+async def test_json_body_without_content_type(
+    client: AsyncClient, snapshot: SnapshotAssertion
+) -> None:
+    # v2 keeps FastAPI's strict_content_type default (v1 turns it off): a body without a JSON
+    # Content-Type is not parsed as JSON, so the campaign body is invalid.
+    resp = await client.post(f"{V2}/campaigns", content=b'{"title": "T", "role": "Dev"}')
+    assert "content-type" not in resp.request.headers
+    assert response_data(resp) == snapshot
+
+
 async def test_unhandled_error_is_a_problem_without_internals(
     raw_client: AsyncClient, monkeypatch: pytest.MonkeyPatch, snapshot: SnapshotAssertion
 ) -> None:
@@ -118,7 +128,7 @@ def test_every_operation_follows_the_client_conventions() -> None:
 
 
 def test_a_v2_route_without_an_operation_id_is_refused() -> None:
-    from app.v2 import _operation_id
+    from app.v2 import _check_operation_ids, _operation_id
 
     router = APIRouter()
 
@@ -126,5 +136,7 @@ def test_a_v2_route_without_an_operation_id_is_refused() -> None:
     async def x() -> None: ...
 
     app = FastAPI(generate_unique_id_function=_operation_id)
+    app.include_router(router)
+    # FastAPI >= 0.137 resolves included routes lazily: create_v2_app checks them explicitly.
     with pytest.raises(RuntimeError, match="no explicit operation_id"):
-        app.include_router(router)
+        _check_operation_ids(app)

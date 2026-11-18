@@ -28,7 +28,7 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 STATUS_CODES: dict[type[Exception], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,
-    service.InvalidInputError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    service.InvalidInputError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     service.JDParseError: status.HTTP_502_BAD_GATEWAY,
 }
 

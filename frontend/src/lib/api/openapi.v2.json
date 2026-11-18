@@ -186,11 +186,7 @@
       "ApplicationCounts": {
         "properties": {
           "by_category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CategoryCounts"
-              }
-            ],
+            "$ref": "#/components/schemas/CategoryCounts",
             "default": {
               "moderate_match": 0,
               "rejected": 0,
@@ -199,11 +195,7 @@
             }
           },
           "by_stage": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/StageCounts"
-              }
-            ],
+            "$ref": "#/components/schemas/StageCounts",
             "default": {
               "hired": 0,
               "offer": 0,
@@ -274,11 +266,7 @@
         "description": "Only the fields sent are changed. ``pipeline_stage`` and ``notes`` may be ``null``\n(cleared); ``category`` (the recruiter's override of the AI's) may not.",
         "properties": {
           "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ApplicationCategory"
-              }
-            ]
+            "$ref": "#/components/schemas/ApplicationCategory"
           },
           "notes": {
             "anyOf": [
@@ -311,7 +299,7 @@
           "files": {
             "description": "PDF resumes (multipart field files).",
             "items": {
-              "format": "binary",
+              "contentMediaType": "application/octet-stream",
               "type": "string"
             },
             "title": "Files",
@@ -627,11 +615,7 @@
             "type": "string"
           },
           "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CampaignStatus"
-              }
-            ],
+            "$ref": "#/components/schemas/CampaignStatus",
             "default": "active"
           },
           "title": {
@@ -820,11 +804,7 @@
             "type": "string"
           },
           "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CampaignStatus"
-              }
-            ]
+            "$ref": "#/components/schemas/CampaignStatus"
           },
           "title": {
             "maxLength": 255,
@@ -2888,14 +2868,9 @@
             "name": "sort",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/ApplicationSort"
-                }
-              ],
+              "$ref": "#/components/schemas/ApplicationSort",
               "default": "-score",
-              "description": "Order; scores sort unscored last; ties by id.",
-              "title": "Sort"
+              "description": "Order; scores sort unscored last; ties by id."
             }
           },
           {
@@ -3207,14 +3182,9 @@
             "name": "sort",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/ApplicationSort"
-                }
-              ],
+              "$ref": "#/components/schemas/ApplicationSort",
               "default": "-score",
-              "description": "Order; scores sort unscored last; ties by id.",
-              "title": "Sort"
+              "description": "Order; scores sort unscored last; ties by id."
             }
           }
         ],
@@ -3522,7 +3492,7 @@
     },
     "/campaigns/{campaign_id}/uploads": {
       "post": {
-        "description": "Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a\nfile that is not a PDF, too large, or a duplicate of one already processed or in progress\nis listed in ``rejected`` with the reason. Too many files is a 422.",
+        "description": "Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a\nfile that is not a PDF, too large, or a duplicate of one already processed or in progress\nis listed in ``rejected`` with the reason. Too many files is a 422. A body that is not\nparsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than\n10 non-file fields, more files than the batch limit plus one).",
         "operationId": "uploadResumes",
         "parameters": [
           {
@@ -3556,6 +3526,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "404": {
             "content": {

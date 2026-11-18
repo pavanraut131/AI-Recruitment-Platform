@@ -1,4 +1,26 @@
 # serializer version: 1
+# name: test_json_body_without_content_type
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+          ]),
+          'msg': 'Input should be a valid dictionary or object to extract fields from',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
 # name: test_malformed_json_body
   dict({
     'body': dict({
@@ -226,11 +248,7 @@
         'ApplicationCounts': dict({
           'properties': dict({
             'by_category': dict({
-              'allOf': list([
-                dict({
-                  '$ref': '#/components/schemas/CategoryCounts',
-                }),
-              ]),
+              '$ref': '#/components/schemas/CategoryCounts',
               'default': dict({
                 'moderate_match': 0,
                 'rejected': 0,
@@ -239,11 +257,7 @@
               }),
             }),
             'by_stage': dict({
-              'allOf': list([
-                dict({
-                  '$ref': '#/components/schemas/StageCounts',
-                }),
-              ]),
+              '$ref': '#/components/schemas/StageCounts',
               'default': dict({
                 'hired': 0,
                 'offer': 0,
@@ -317,11 +331,7 @@
           ''',
           'properties': dict({
             'category': dict({
-              'allOf': list([
-                dict({
-                  '$ref': '#/components/schemas/ApplicationCategory',
-                }),
-              ]),
+              '$ref': '#/components/schemas/ApplicationCategory',
             }),
             'notes': dict({
               'anyOf': list([
@@ -354,7 +364,7 @@
             'files': dict({
               'description': 'PDF resumes (multipart field files).',
               'items': dict({
-                'format': 'binary',
+                'contentMediaType': 'application/octet-stream',
                 'type': 'string',
               }),
               'title': 'Files',
@@ -675,11 +685,7 @@
               'type': 'string',
             }),
             'status': dict({
-              'allOf': list([
-                dict({
-                  '$ref': '#/components/schemas/CampaignStatus',
-                }),
-              ]),
+              '$ref': '#/components/schemas/CampaignStatus',
               'default': 'active',
             }),
             'title': dict({
@@ -871,11 +877,7 @@
               'type': 'string',
             }),
             'status': dict({
-              'allOf': list([
-                dict({
-                  '$ref': '#/components/schemas/CampaignStatus',
-                }),
-              ]),
+              '$ref': '#/components/schemas/CampaignStatus',
             }),
             'title': dict({
               'maxLength': 255,
@@ -2953,14 +2955,9 @@
               'name': 'sort',
               'required': False,
               'schema': dict({
-                'allOf': list([
-                  dict({
-                    '$ref': '#/components/schemas/ApplicationSort',
-                  }),
-                ]),
+                '$ref': '#/components/schemas/ApplicationSort',
                 'default': '-score',
                 'description': 'Order; scores sort unscored last; ties by id.',
-                'title': 'Sort',
               }),
             }),
             dict({
@@ -3276,14 +3273,9 @@
               'name': 'sort',
               'required': False,
               'schema': dict({
-                'allOf': list([
-                  dict({
-                    '$ref': '#/components/schemas/ApplicationSort',
-                  }),
-                ]),
+                '$ref': '#/components/schemas/ApplicationSort',
                 'default': '-score',
                 'description': 'Order; scores sort unscored last; ties by id.',
-                'title': 'Sort',
               }),
             }),
           ]),
@@ -3600,7 +3592,9 @@
           'description': '''
             Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a
             file that is not a PDF, too large, or a duplicate of one already processed or in progress
-            is listed in ``rejected`` with the reason. Too many files is a 422.
+            is listed in ``rejected`` with the reason. Too many files is a 422. A body that is not
+            parsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than
+            10 non-file fields, more files than the batch limit plus one).
           ''',
           'operationId': 'uploadResumes',
           'parameters': list([
@@ -3635,6 +3629,16 @@
                 }),
               }),
               'description': 'Successful Response',
+            }),
+            '400': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Bad Request',
             }),
             '404': dict({
               'content': dict({

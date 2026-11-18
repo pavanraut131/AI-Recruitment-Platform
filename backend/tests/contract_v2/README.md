@@ -19,7 +19,7 @@ The difference: v1's snapshots record **current** behaviour (bugs included); the
 |---|---|
 | `test_campaigns.py` | list (filters, paging, 422s), create (validation), detail, update, delete, stats, parse-jd |
 | `test_applications.py` | campaign list (every filter and sort, ties, 422s), CSV export (filters, selection), detail, update, delete, bulk stage / reject / delete (partial not-found, 422s) |
-| `test_uploads.py` | upload (accepted / rejected, 404, too many files), resume list, retry-failed, the typed SSE stream (campaign-filtered, no DB transaction held while streaming) |
+| `test_uploads.py` | upload (accepted / rejected, 404, too many files, bodies over the parsing limits), resume list, retry-failed, the typed SSE stream (campaign-filtered, no DB transaction held while streaming) |
 | `test_people.py` | talent list and search (name / email), Person profile with applications and identity-conflict flags |
 | `test_dashboard.py` | `/stats`, `/home` (and its bounds) |
 | `test_errors_and_openapi.py` | problem details for framework errors (404 route, 405, malformed JSON, 500), v1 errors unchanged, the OpenAPI document and its conventions (operation ids, tags, problem responses, enums) |
