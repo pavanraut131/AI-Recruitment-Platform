@@ -1,14 +1,6 @@
 import { useEffect, useRef } from "react"
 
-/**
- * Whether a key press belongs to whatever has focus rather than to the page's
- * shortcuts: typing in a field, or moving inside a menu, listbox or popover.
- */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false
-  if (target.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return true
-  return target.closest("[role='menu'], [role='listbox'], [role='combobox'], [data-slot='popover-content']") !== null
-}
+import { hasModifier, isTypingTarget } from "@/lib/keyboard"
 
 /** The id after (`step` 1) or before (`step` -1) `current`, clamped to the list; the first id when none is active. */
 export function adjacentId(ids: readonly string[], current: string | null, step: 1 | -1): string | null {
@@ -44,7 +36,7 @@ export function useRowShortcuts({
     if (!enabled) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (hasModifier(event)) return
       const key = event.key.toLowerCase()
       if (key !== "j" && key !== "k") return
       if (isTypingTarget(event.target)) return

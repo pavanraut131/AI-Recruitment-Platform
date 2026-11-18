@@ -27,6 +27,9 @@ const LABELS: Record<string, string> = {
 /** Segments with an index page; others render as plain text, not links. */
 const LINKABLE = new Set(["/campaigns", "/people", "/talent", "/settings"])
 
+/** Segments whose index lives elsewhere: people are listed on the Talent page. */
+const INDEX_HREF: Record<string, string> = { "/people": "/talent" }
+
 function label(segment: string) {
   const decoded = decodeURIComponent(segment)
   if (LABELS[decoded]) return LABELS[decoded]
@@ -63,7 +66,7 @@ export function Breadcrumbs() {
                   <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                 ) : linkable ? (
                   <BreadcrumbLink asChild>
-                    <Link href={crumb.href}>{crumb.label}</Link>
+                    <Link href={INDEX_HREF[crumb.href] ?? crumb.href}>{crumb.label}</Link>
                   </BreadcrumbLink>
                 ) : (
                   <span>{crumb.label}</span>

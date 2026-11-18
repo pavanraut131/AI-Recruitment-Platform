@@ -1,78 +1,56 @@
-import { QueryClientProvider, type QueryClient } from "@tanstack/react-query"
-import { render } from "@testing-library/react"
-import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
-import type { ReactElement } from "react"
 import { vi } from "vitest"
 
-import { makeQueryClient } from "@/lib/query/query-client"
+import type { Schema } from "@/lib/api/client"
+import { json, problem, toApiCall, type ApiCall } from "@/test/helpers"
 
 import { makeApplication } from "./fixtures"
 import type { Application, BulkResult } from "./model"
 
 /**
- * Test helpers for the applications feature: DOM APIs that jsdom lacks (Radix
- * needs them), a fake `/api/v2` behind `fetch`, and a render with Query and
- * nuqs providers.
+ * Test helpers for the applications feature: a fake `/api/v2` behind `fetch`
+ * (the shared helpers in `@/test/helpers` do the rest).
  */
 
-export function installDomPolyfills(): void {
-  if (!("ResizeObserver" in globalThis)) {
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    )
-  }
-  const proto = Element.prototype as unknown as Record<string, unknown>
-  proto.scrollIntoView ??= function scrollIntoView() {}
-  proto.hasPointerCapture ??= () => false
-  proto.setPointerCapture ??= () => {}
-  proto.releasePointerCapture ??= () => {}
-}
+export {
+  deferred,
+  installDomPolyfills,
+  json,
+  problem,
+  renderWithProviders,
+  type ApiCall,
+} from "@/test/helpers"
 
 export const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111"
 
-export type ApiCall = { method: string; path: string; url: URL; body: unknown }
-
+type Person = Schema<"Person">
 type Override = (call: ApiCall) => Response | Promise<Response> | undefined
-
-export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": status >= 400 ? "application/problem+json" : "application/json" },
-  })
-}
-
-export function problem(status: number, title: string, detail?: string): Response {
-  return json({ type: "about:blank", title, status, ...(detail ? { detail } : {}) }, status)
-}
 
 /**
  * A fake `/api/v2` on `fetch`: lists `applications` (paged by `page` and
  * `page_size`; filters are asserted from the recorded calls, not applied),
- * answers the campaign, one application, bulk actions and the CSV export.
+ * answers the campaign, one application, its PATCH (applied to the fake's
+ * copy, so a refetch shows it), bulk actions, the CSV export and `people`.
  * `override` answers a call first when it returns a response.
  */
 export function installFakeApi({
   applications = Array.from({ length: 3 }, (_, index) => makeApplication(index)),
   total,
   requiredSkills = ["React", "PostgreSQL"],
+  people = [],
   override,
 }: {
   applications?: Application[]
   total?: number
   requiredSkills?: string[]
+  people?: Person[]
   override?: Override
 } = {}) {
   const calls: ApiCall[] = []
+  // The server's copy: PATCHes change it.
+  const store = applications.map((application) => ({ ...application }))
   const fetchMock = vi.fn(async (request: Request) => {
-    const url = new URL(request.url)
-    const path = url.pathname.replace(/^\/api\/v2/, "")
-    const body = request.method === "GET" ? undefined : await request.clone().json().catch(() => undefined)
-    const call = { method: request.method, path, url, body }
+    const call = await toApiCall(request)
+    const { path, url, body } = call
     calls.push(call)
     const custom = await override?.(call)
     if (custom) return custom
@@ -80,15 +58,15 @@ export function installFakeApi({
     if (request.method === "GET" && /^\/campaigns\/[^/]+\/applications$/.test(path)) {
       const page = Number(url.searchParams.get("page") ?? 1)
       const size = Number(url.searchParams.get("page_size") ?? 20)
-      const items = applications.slice((page - 1) * size, page * size)
-      return json({ items, total: total ?? applications.length, page, page_size: size })
+      const items = store.slice((page - 1) * size, page * size)
+      return json({ items, total: total ?? store.length, page, page_size: size })
     }
     if (request.method === "GET" && /^\/campaigns\/[^/]+\/applications\/export$/.test(path)) {
       return new Response("name,email\n", { headers: { "Content-Type": "text/csv" } })
     }
     if (request.method === "POST" && /^\/campaigns\/[^/]+\/applications\/bulk$/.test(path)) {
       const { action, ids } = body as { action: BulkResult["action"]; ids: string[] }
-      const known = new Set(applications.map((application) => application.id))
+      const known = new Set(store.map((application) => application.id))
       return json({
         action,
         affected: ids.filter((id) => known.has(id)),
@@ -110,9 +88,18 @@ export function installFakeApi({
       })
     }
     const detail = /^\/applications\/([^/]+)$/.exec(path)
-    if (request.method === "GET" && detail) {
-      const found = applications.find((application) => application.id === detail[1])
-      return found ? json(found) : problem(404, "Not Found", "Application not found")
+    if (detail) {
+      const index = store.findIndex((application) => application.id === detail[1])
+      if (index === -1) return problem(404, "Not Found", "Application not found")
+      if (request.method === "PATCH") {
+        store[index] = { ...store[index], ...(body as Partial<Application>), updated_at: "2026-11-18T12:00:00Z" }
+      }
+      if (request.method === "GET" || request.method === "PATCH") return json(store[index])
+    }
+    const person = /^\/people\/([^/]+)$/.exec(path)
+    if (request.method === "GET" && person) {
+      const found = people.find((candidate) => candidate.id === person[1])
+      return found ? json(found) : problem(404, "Not Found", "Person not found")
     }
     return problem(404, "Not Found")
   })
@@ -121,34 +108,7 @@ export function installFakeApi({
   /** The calls to one endpoint, e.g. `callsTo("GET", /\/applications$/)`. */
   const callsTo = (method: string, pattern: RegExp) =>
     calls.filter((call) => call.method === method && pattern.test(call.path))
-  return { calls, callsTo, fetchMock }
+  return { calls, callsTo, fetchMock, store }
 }
 
 export const LIST_PATH = /^\/campaigns\/[^/]+\/applications$/
-
-export function renderWithProviders(
-  ui: ReactElement,
-  {
-    searchParams = "",
-    onUrlUpdate,
-    queryClient = makeQueryClient(),
-  }: { searchParams?: string; onUrlUpdate?: (event: UrlUpdateEvent) => void; queryClient?: QueryClient } = {},
-) {
-  const result = render(
-    <QueryClientProvider client={queryClient}>
-      <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={onUrlUpdate} hasMemory>
-        {ui}
-      </NuqsTestingAdapter>
-    </QueryClientProvider>,
-  )
-  return { ...result, queryClient }
-}
-
-/** A promise with its resolve exposed (to hold a request open). */
-export function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
-    resolve = res
-  })
-  return { promise, resolve }
-}
