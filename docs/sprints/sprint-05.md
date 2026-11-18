@@ -13,10 +13,11 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 | Ticket | Title | Size | Status |
 |---|---|---|---|
 | B4 | Upgrade python-multipart (upload parsing DoS) | S | done ([#35](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/35)) |
+| S1 | Upgrade FastAPI and Starlette (security) | M | done ([#38](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/38)) |
 | E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | done ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34)) |
 | E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)) |
-| E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | review |
-| E1-04 | Campaign list and new campaign (JD extraction) | M | todo |
+| E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | done ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37)) |
+| E1-04 | Campaign list and new campaign (JD extraction) | M | review |
 | E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | todo |
 
 **Order** (stacks no more than two deep, as agreed in the Sprint 4 retro):
@@ -81,7 +82,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-03 · API client and data layer
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-03-data-layer`
+**Status:** done ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37))  ·  **Size:** M  ·  **Branch:** `e1-03-data-layer`
 
 **Goal:** A typed, contract-first data layer for every feature (spec §7).
 
@@ -106,15 +107,26 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-04 · Campaigns: list and new campaign
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
 
 **Goal:** `/campaigns` and `/campaigns/new` on the new foundation (spec §4).
 
 **Acceptance criteria**
-- [ ] The list table shows title, role, status, applications, strong matches, processing and last activity, with a status filter and search. Both are kept in the URL.
-- [ ] The new-campaign form uses react-hook-form + zod: title, role, description and required-skills chips. **"Extract with AI"** pastes a JD into `POST /api/v2/campaigns/parse-jd`, fills role and skills, and has loading and error states.
-- [ ] The campaign workspace shell `/campaigns/[id]` has a header, a KPI strip and tabs (Candidates, Uploads, Insights, Settings). Uploads and Insights are placeholders until Sprint 6. Settings has edit, status and delete with confirmation.
-- [ ] Empty, loading and error states for every view. Vitest tests for the form and the URL state.
+- [x] The list table shows title, role, status, applications, strong matches, processing and last activity, with a status filter and search. Both are kept in the URL.
+- [x] The new-campaign form uses react-hook-form + zod: title, role, description and required-skills chips. **"Extract with AI"** pastes a JD into `POST /api/v2/campaigns/parse-jd`, fills role and skills, and has loading and error states.
+- [x] The campaign workspace shell `/campaigns/[id]` has a header, a KPI strip and tabs (Candidates, Uploads, Insights, Settings). Uploads and Insights are placeholders until Sprint 6. Settings has edit, status and delete with confirmation.
+- [x] Empty, loading and error states for every view. Vitest tests for the form and the URL state.
+
+**Notes:**
+- **Where it lives.** `src/features/campaigns/`: `list/`, `new/`, `workspace/`, shared `components/`, query hooks in `api.ts`, the zod schema in `schema.ts`. Routes import only from its `index.ts`. Routes: `src/app/campaigns/{page,new/page,[id]/page}.tsx`, all thin. The old `(legacy)/campaigns/**` pages, `CandidateTable`, `StatsPanel`, `UploadZone` and their `legacy.css` rules are deleted. The legacy home and candidate pages still link to `/campaigns…`, which now opens the new screens.
+- **URL state (nuqs).** List: `?status=active,closed&q=…&page=2`. Defaults are left out; statuses are kept in enum order, so one filter is one query key; the search writes the URL debounced (300 ms) and fetches with the debounced value; any filter change goes back to page 1. Workspace: `?tab=uploads|insights|settings`, with candidates the default (left out); a tab change is a history entry. E1-05 must not use `tab`.
+- **Candidates slot.** The workspace takes `candidatesTab: ReactNode`; `src/app/campaigns/[id]/page.tsx` passes `<CandidatesPlaceholder />`. Wiring E1-05 in is one line there (`candidatesTab={<CandidatesTab campaignId={id} />}`), so `features/campaigns` never imports `features/applications`.
+- **Live updates.** The workspace mounts `useCampaignEvents(campaignId)` once, enabled only after the campaign has loaded (no reconnect loop for an unknown id), and shows Live / Reconnecting in the header. The KPI strip reads the campaign's counts plus `avg_score` from `getCampaignStats`; both refresh from the hook's invalidations.
+- **Form.** The fields are shared by create and Settings; the zod limits mirror `CampaignCreate` / `CampaignUpdate`. "Extract with AI" fills the role, merges the skills (case-insensitively, no duplicates), copies the JD into an empty description when it fits (≤ 5,000 characters) and shows the seniority it found. A 422 is mapped with `ApiProblem.fieldErrors()` onto the fields (`required_skills.N` goes on the skills field as "Skill N+1: …"); any other failure is one form-level alert. These mutations set `meta.errorToast: false`, so an error is not shown twice. `status` and `required_skills` are always sent (ADR 0006).
+- **Mutations and cache.** Create and update write the returned campaign into `campaigns.detail(id)` and invalidate the campaign lists, `home` and `stats`. Delete marks the campaign's detail, applications and resumes stale without refetching (the workspace is still mounted while it navigates away), invalidates lists, home, stats and people, toasts and goes to `/campaigns`. The confirmation is the new shadcn `alert-dialog` primitive (also in `/dev/ui`); it stays open until the request settles.
+- **Header actions.** Edit and Upload resumes switch tabs. Export is left to the Candidates toolbar (E1-05).
+- **Tests.** 25 new Vitest tests (64 in total), with a stubbed `fetch` and nuqs's testing adapter: form validation, skill chips, Extract with AI (loading, success, validation and API error), 422 mapping, the form-level error, submit → navigate; the list's loading, empty, filtered-empty and error + retry states, filters and page read from and written to the URL, debounced search; the workspace's default and URL tabs, tab changes in the URL, 404 and error + retry, the stream enabled only for a loaded campaign; Settings PATCH and the delete confirmation (cancel, confirm → `/campaigns`, a failure keeps the dialog open).
+- **Follow-ups** ([backlog](../backlog.md#platform-and-tooling)): sort the campaign list by last activity (the API sorts newest first only); the campaign's title instead of `#id` in the breadcrumbs; move `EmptyState` / `ErrorState` to `src/components` once E1-05 has merged.
 
 ---
 
