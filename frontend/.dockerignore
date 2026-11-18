@@ -1,0 +1,11 @@
+# Host build artefacts and dependencies: the image installs its own with
+# `npm ci` (Linux binaries), and `COPY . .` must not overwrite them with the
+# host's (e.g. Windows) node_modules or a stale .next.
+node_modules
+.next
+coverage
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+.env*
+.git
