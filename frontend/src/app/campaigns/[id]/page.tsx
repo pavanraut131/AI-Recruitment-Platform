@@ -1,13 +1,15 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 
-import { CampaignWorkspace, CandidatesPlaceholder } from "@/features/campaigns"
+import { CandidatesTab } from "@/features/applications"
+import { CampaignWorkspace } from "@/features/campaigns"
 
 export const metadata: Metadata = { title: "Campaign" }
 
 /**
- * The campaign workspace. The Candidates tab is a slot: until E1-05's table
- * (`features/applications`) is wired in, it shows a placeholder.
+ * The campaign workspace. The route composes the two features: the workspace
+ * (`features/campaigns`) takes the Candidates tab (`features/applications`)
+ * as a slot, so neither feature imports the other.
  */
 // Typed by hand rather than with Next's generated `PageProps`: CI runs `tsc`
 // before `next build`, when the generated route types do not exist yet.
@@ -15,7 +17,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   return (
     <Suspense>
-      <CampaignWorkspace campaignId={id} candidatesTab={<CandidatesPlaceholder />} />
+      <CampaignWorkspace campaignId={id} candidatesTab={<CandidatesTab campaignId={id} />} />
     </Suspense>
   )
 }

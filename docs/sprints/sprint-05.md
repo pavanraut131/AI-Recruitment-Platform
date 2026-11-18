@@ -17,8 +17,8 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 | E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | done ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34)) |
 | E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)) |
 | E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | done ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37)) |
-| E1-04 | Campaign list and new campaign (JD extraction) | M | review |
-| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | todo |
+| E1-04 | Campaign list and new campaign (JD extraction) | M | done ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39)) |
+| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | review |
 
 **Order** (stacks no more than two deep, as agreed in the Sprint 4 retro):
 - **Wave 1:** B4, E1-01 and E1-02, all independent and branched from `master`.
@@ -107,7 +107,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-04 · Campaigns: list and new campaign
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
+**Status:** done ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39))  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
 
 **Goal:** `/campaigns` and `/campaigns/new` on the new foundation (spec §4).
 
@@ -131,18 +131,30 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-05 · Candidates table
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e1-05-candidates-table`
+**Status:** review  ·  **Size:** L  ·  **Branch:** `e1-05-candidates-table`
 
 **Goal:** The hero table from spec §5.1.
 
 **Acceptance criteria**
-- [ ] TanStack Table columns: select, name/email, score (number plus a bar in the category colour), category badge, top 3 skills (required skills highlighted), experience, stage, updated.
-- [ ] Default sort by score descending, nulls last. Server-side sort and pagination through `/api/v2`.
-- [ ] Toolbar: search, category multi-select, score range, skill, stage. **All kept in the URL with nuqs**, and they survive a reload.
-- [ ] Selection with bulk actions: move stage, reject and export CSV, applied optimistically with rollback on error.
-- [ ] Clicking a row opens a placeholder panel (the full review panel is E1-07). **J/K** keyboard navigation between rows.
-- [ ] Smooth with **500 rows** on a page (measured and noted in the PR). Empty, loading and error states.
-- [ ] Vitest tests for columns, filters ↔ URL and bulk actions.
+- [x] TanStack Table columns: select, name/email, score (number plus a bar in the category colour), category badge, top 3 skills (required skills highlighted), experience, stage, updated.
+- [x] Default sort by score descending, nulls last. Server-side sort and pagination through `/api/v2`.
+- [x] Toolbar: search, category multi-select, score range, skill, stage. **All kept in the URL with nuqs**, and they survive a reload.
+- [x] Selection with bulk actions: move stage, reject and export CSV, applied optimistically with rollback on error.
+- [x] Clicking a row opens a placeholder panel (the full review panel is E1-07). **J/K** keyboard navigation between rows.
+- [x] Smooth with **500 rows** on a page (measured and noted in the PR). Empty, loading and error states.
+- [x] Vitest tests for columns, filters ↔ URL and bulk actions.
+
+**Notes:**
+- **Where.** `src/features/applications`, public entry `CandidatesTab({ campaignId, uploadHref? })` (plus the presentational `CandidatesTable`). TanStack Table 8.21.3 (pinned). It is mounted as the Candidates tab of `/campaigns/[id]`: the route passes it into the workspace's `candidatesTab` slot, so neither feature imports the other (the placeholder from E1-04 is gone). The temporary dev route that mounted the tab on its own was removed when the tab was wired in; only its fixture mode stays, as `/dev/candidates?rows=500` (404 in production builds, like `/dev/ui`), to re-run the 500-row check.
+- **URL state (nuqs).** `q`, `cat` (`strong,moderate,weak,rejected`), `min`, `max` (score 0–100), `skill`, `stage` (API values), `sort` (API values; the default `-score` is left out), `page`, `size` (25 / 50 / 100, default 50; the API caps pages at 100) and `open` (the panel's application). `tab` is left to the workspace. History entries are replaced. A filter, sort or page-size change goes back to page 1; "Clear filters" keeps the sort and page size. Unknown values fall back to defaults and scores are clamped, so a hand-edited URL never causes a 422. Search and skill commit after a 300 ms pause (Enter commits at once): one request per pause, not per key.
+- **Sorting.** Score and updated toggle descending → ascending (`-score`/`score`, `-updated_at`/`updated_at`; the API keeps unscored last both ways). Name sorts A→Z only (the API has no descending name sort), so a second click returns to the default. Other columns are not sortable server-side.
+- **Bulk actions.** Selection is local and per view (it resets when filters, sort or page change; per page, so ≤ 100 ids). Move to stage and reject patch every cached page of the campaign (`setQueriesData` on `applications.campaignLists`), roll back on error (the global mutation toast shows the problem; the selection stays for a retry) and invalidate the lists, application details and the campaign on settle. The success toast reports `not_found` ids. Export downloads the selection (`ids` + sort) or everything matching the filters (filters + sort) as a blob; the file name is built client-side because CORS does not expose `Content-Disposition`.
+- **Panel and keyboard.** A non-modal right sheet (480 px) with name, email, score, category, stage, experience and summary. Row click or Enter opens it; focus stays on the table. J/K move the active row (roving tabindex, the panel follows), but not while typing in a field, inside a menu or with a modifier; Esc closes. A shared link with `open=` for a row on another page loads it with `getApplication`.
+- **States.** Skeleton rows while loading, "No candidates yet" with an Upload resumes link (`?tab=uploads`), "No candidates match these filters" with Clear filters, an empty page past the end, and the problem's title and detail with Retry. Rows stay on screen (dimmed, `aria-busy`) while the next page or filter loads.
+- **500 rows, measured.** Headless Chrome over CDP, production build (the fixture route enabled locally for the run only), 500 rows, after a warm-up: input → next frame for J/K **~20–23 ms median** (about 6 ms of script), J/K with the panel open **~26–30 ms**, select all / deselect all **33–54 ms**, DOMContentLoaded 0.5–0.6 s. The first version was much slower: select all **300–800 ms**, J/K p95 up to 690 ms. Chrome traces showed React re-rendering 500 Radix checkboxes and long style recalculation. Fixes: rows are `React.memo`, the data cells are memoised apart from the checkbox (selecting or activating re-renders the checkbox only), rows are a plain `<tr>` (no colour transition and no `:has()` variant on 500 rows), and the select column uses a native checkbox in the accent colour. Virtualisation and `content-visibility` were not needed (and `content-visibility` does not apply to table rows). A Vitest benchmark (`candidates-table.perf.test.tsx`, jsdom, React Profiler) runs in CI: mount ~1.1 s, J/K median ~6–10 ms, select all ~170–230 ms. Without row memoisation J/K was 400–500 ms there, which fails its bound.
+- **Styling.** Tokens only. The one inline `style` is the score bar's width, set as a CSS variable (`--score`) and used by a `w-(--score)` class; the colour is a `bg-category-*` class.
+- **Tests.** 47 new tests in 4 files (URL state and sort mapping, columns, the tab against a fake `/api/v2` on `fetch` covering filters ↔ URL, reload, pagination, bulk actions with the optimistic update and rollback, export, panel and keyboard, states, and the 500-row benchmark); 86 in total.
+- **API gaps** (for the backlog): no descending name sort and no sort by experience, category or stage; no stage filter value for "unreviewed" (`null`); CORS does not expose `Content-Disposition`; bulk actions and export take ids only (≤ 500), so "select all matching" across pages would need a filter-based variant; the spec's "only processing / failed" toggle needs a resume-status filter on the applications list (not in this ticket's criteria).
 
 ---
 
