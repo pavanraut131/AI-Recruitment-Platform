@@ -3,10 +3,10 @@
 import type { RowSelectionState } from "@tanstack/react-table"
 import { Profiler, useCallback, useMemo, useRef, useState, type ProfilerOnRenderCallback } from "react"
 
-import { CandidatePreviewSheet } from "./candidate-preview-sheet"
 import { CandidatesTable, rowDomId } from "./candidates-table"
 import { makeApplications } from "./fixtures"
 import { DEFAULT_SORT, type ApplicationSort } from "./model"
+import { ReviewPanel } from "./review-panel"
 import { useRowShortcuts } from "./use-row-shortcuts"
 
 export type FixtureViewProps = {
@@ -17,10 +17,12 @@ export type FixtureViewProps = {
 }
 
 /**
- * The table over synthetic rows, with selection, J/K and the preview panel
- * wired like the real tab but no API: the 500-row benchmark (Vitest) and the
- * dev route (`/dev/candidates?rows=500`). Sorting is a
- * no-op here (it is server-side in the product).
+ * The table over synthetic rows, with selection, J/K and the review panel
+ * wired like the real tab: the 500-row benchmark (Vitest) and the dev route
+ * (`/dev/candidates?rows=500`). Sorting is a no-op here (it is server-side in
+ * the product). The rows are not in the API, so the panel's "Also applied to"
+ * and saves (stage, notes) fail against a real backend; the table is what this
+ * view measures.
  */
 export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) {
   const rows = useMemo(() => makeApplications(rowCount), [rowCount])
@@ -78,11 +80,12 @@ export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) 
           />
         </Profiler>
       </div>
-      <CandidatePreviewSheet
+      <ReviewPanel
         open={openId !== null}
         application={rows.find((row) => row.id === openId)}
         loading={false}
         onClose={() => setOpenId(null)}
+        requiredSkills={requiredSkills}
       />
     </div>
   )

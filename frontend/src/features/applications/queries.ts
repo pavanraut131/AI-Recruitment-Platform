@@ -3,6 +3,7 @@ import { toast } from "sonner"
 
 import { api, unwrap, type QueryParams } from "@/lib/api/client"
 import { queryKeys, type ApplicationListParams } from "@/lib/api/query-keys"
+import { applicationQueryOptions } from "@/lib/query/applications"
 
 import {
   REJECTED_STAGE,
@@ -46,14 +47,7 @@ export function useCampaign(campaignId: string) {
 /** One application, for a panel opened from a link whose row is not on the current page. */
 export function useApplication(applicationId: string | null, enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.applications.detail(applicationId ?? ""),
-    queryFn: ({ signal }) =>
-      api
-        .GET("/applications/{application_id}", {
-          params: { path: { application_id: applicationId ?? "" } },
-          signal,
-        })
-        .then(unwrap),
+    ...applicationQueryOptions(applicationId ?? ""),
     enabled: enabled && applicationId !== null,
   })
 }

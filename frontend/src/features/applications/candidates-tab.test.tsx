@@ -317,13 +317,13 @@ describe("CandidatesTab: panel and keyboard", () => {
   const press = (key: string, target: Element = document.body) => fireEvent.keyDown(target, { key })
   const panel = () => screen.queryByRole("dialog")
 
-  it("opens the placeholder panel on row click and follows J/K", async () => {
+  it("opens the review panel on row click and follows J/K", async () => {
     const { lastQuery } = (installFakeApi({ applications: people }), renderTab())
     await screen.findByText("Ada Lovelace")
     fireEvent.click(screen.getByText("Grace Hopper"))
     await waitFor(() => expect(panel()).not.toBeNull())
     expect(within(panel()!).getByRole("heading", { name: "Grace Hopper" })).toBeTruthy()
-    expect(within(panel()!).getByText(/arrives in E1-07/)).toBeTruthy()
+    expect(within(panel()!).getByRole("combobox", { name: "Stage" })).toBeTruthy()
     expect(lastQuery()).toBe(`?open=${people[1].id}`)
 
     press("j")
@@ -366,7 +366,10 @@ describe("CandidatesTab: panel and keyboard", () => {
   })
 
   it("opens a shared link to a candidate that is not on this page", async () => {
-    const elsewhere = makeApplication(42, { person: { id: "p42", name: "Radia Perlman", email: "radia@example.com" } })
+    const elsewhere = makeApplication(42, {
+      campaign_id: CAMPAIGN_ID,
+      person: { id: "p42", name: "Radia Perlman", email: "radia@example.com" },
+    })
     const api = installFakeApi({
       applications: people,
       override: ({ method, path }) => (method === "GET" && path === `/applications/${elsewhere.id}` ? json(elsewhere) : undefined),

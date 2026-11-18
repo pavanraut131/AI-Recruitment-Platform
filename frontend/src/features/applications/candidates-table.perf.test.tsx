@@ -1,8 +1,15 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
-import { beforeEach, describe, expect, it } from "vitest"
+import { QueryClientProvider } from "@tanstack/react-query"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { Profiler, type ProfilerOnRenderCallback } from "react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { makeQueryClient } from "@/lib/query/query-client"
+
+import { CandidatesTable } from "./candidates-table"
 import { CandidatesFixtureView } from "./fixture-view"
-import { installDomPolyfills } from "./test-utils"
+import { makeApplications } from "./fixtures"
+import { DEFAULT_SORT } from "./model"
+import { installDomPolyfills, problem } from "./test-utils"
 
 /**
  * The 500-row bar (EPIC-01 §8): the table renders 500 rows and stays responsive
@@ -36,7 +43,11 @@ function log(label: string, ms: number) {
 
 beforeEach(() => {
   installDomPolyfills()
+  // The review panel asks for the Person's other applications; the fixture rows have none.
+  vi.stubGlobal("fetch", vi.fn(async () => problem(404, "Not Found")))
 })
+
+const noop = () => {}
 
 describe(`candidates table with ${ROWS} rows`, () => {
   it("mounts, moves with J/K and selects all within budget", () => {
@@ -44,7 +55,11 @@ describe(`candidates table with ${ROWS} rows`, () => {
     const onCommit = (phase: string, ms: number) => commits.push({ phase, ms })
 
     let start = performance.now()
-    render(<CandidatesFixtureView rowCount={ROWS} onCommit={onCommit} />)
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <CandidatesFixtureView rowCount={ROWS} onCommit={onCommit} />
+      </QueryClientProvider>,
+    )
     const mountWall = performance.now() - start
     const mountRender = commits.filter((commit) => commit.phase === "mount").reduce((sum, c) => sum + c.ms, 0)
     expect(document.querySelectorAll("tbody tr")).toHaveLength(ROWS)
@@ -79,9 +94,71 @@ describe(`candidates table with ${ROWS} rows`, () => {
     log("select all (wall)", selectWall)
     log("select all (React render)", selectRender)
 
+    // Typing notes in the open review panel: the draft lives in the notes
+    // field, so the table does not render at all (EPIC-01 §8, E1-07).
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: "Enter" })
+    })
+    const notes = within(screen.getByRole("dialog")).getByRole("textbox", { name: "Notes" })
+    commits.length = 0
+    const typeWall: number[] = []
+    let text = ""
+    for (const letter of "Strong candidate, call back") {
+      text += letter
+      start = performance.now()
+      act(() => {
+        fireEvent.change(notes, { target: { value: text } })
+      })
+      typeWall.push(performance.now() - start)
+    }
+    const tableCommitsWhileTyping = commits.length
+    log("notes key press, median (wall)", median(typeWall))
+    if (process.env.PERF_LOG) console.info(`[perf] table commits while typing notes: ${tableCommitsWhileTyping}`)
+
     // Loose bounds for jsdom on a CI runner (see the note above).
     expect(mountWall).toBeLessThan(10_000)
     expect(median(pressWall)).toBeLessThan(100)
     expect(selectWall).toBeLessThan(5_000)
+    expect(tableCommitsWhileTyping).toBe(0)
+    expect(median(typeWall)).toBeLessThan(100)
+  }, TEST_TIMEOUT_MS)
+
+  it("re-renders only the changed row when one application changes", () => {
+    // A stage change or a saved note patches one application in the cached
+    // page: TanStack Table rebuilds every Row, but rows compare their
+    // application, so only that row renders again.
+    const rows = makeApplications(ROWS)
+    const commits: number[] = []
+    const onRender: ProfilerOnRenderCallback = (_id, _phase, actualDuration) => commits.push(actualDuration)
+    const requiredSkills = new Set(["react"])
+    const stable = (data: typeof rows) => (
+      <Profiler id="candidates-table" onRender={onRender}>
+        <CandidatesTable
+          rows={data}
+          requiredSkills={requiredSkills}
+          sort={DEFAULT_SORT}
+          onSortChange={noop}
+          rowSelection={{}}
+          onRowSelectionChange={noop}
+          activeId={null}
+          onActiveChange={noop}
+          onOpen={noop}
+        />
+      </Profiler>
+    )
+    const { rerender } = render(stable(rows))
+    const mountRender = commits.reduce((sum, ms) => sum + ms, 0)
+
+    const patched = rows.map((row, index) => (index === 7 ? { ...row, pipeline_stage: "offer" as const } : row))
+    commits.length = 0
+    const start = performance.now()
+    rerender(stable(patched))
+    const patchWall = performance.now() - start
+    const patchRender = commits.reduce((sum, ms) => sum + ms, 0)
+    log("one-row update (wall)", patchWall)
+    log("one-row update (React render)", patchRender)
+    expect(document.querySelectorAll("tbody tr")[7].querySelector("td[data-column='stage']")?.textContent).toBe("Offer")
+    // Re-rendering every row costs about as much as the mount; one row is a small fraction of it.
+    expect(patchRender).toBeLessThan(mountRender / 5)
   }, TEST_TIMEOUT_MS)
 })

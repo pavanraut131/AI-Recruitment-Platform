@@ -5,11 +5,11 @@ import { hashKey } from "@tanstack/react-query"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 
 import { BulkActionsBar, ExportButton } from "./bulk-actions"
-import { CandidatePreviewSheet } from "./candidate-preview-sheet"
 import { CandidatesTable, CandidatesTableSkeleton, rowDomId } from "./candidates-table"
 import type { Application, Stage } from "./model"
 import { CandidatesPagination } from "./pagination"
 import { useApplication, useApplicationsList, useBulkAction, useCampaign, useExportApplications } from "./queries"
+import { ReviewPanel } from "./review-panel"
 import { EmptyPage, LoadError, NoCandidates, NoMatches } from "./states"
 import { CandidatesToolbar } from "./toolbar"
 import { hasActiveFilters, toFilterParams, useCandidatesUrlState } from "./url-state"
@@ -109,7 +109,9 @@ export function CandidatesTab({
   const openRow = openId === null ? undefined : rows.find((row) => row.id === openId)
   // A shared link can open a candidate that is not on this page.
   const openDetail = useApplication(openId, openRow === undefined && !list.isPending)
-  const openApplication = openRow ?? openDetail.data
+  // Only this campaign's applications: an `open=` id from another campaign reads as not found.
+  const openFromLink = openDetail.data?.campaign_id === campaignId ? openDetail.data : undefined
+  const openApplication = openRow ?? openFromLink
 
   const bulk = useBulkAction(campaignId, { onSuccess: clearSelection })
   const exporter = useExportApplications(campaignId)
@@ -193,11 +195,14 @@ export function CandidatesTab({
         />
       )}
       {body}
-      <CandidatePreviewSheet
+      <ReviewPanel
         open={openId !== null}
         application={openApplication}
         loading={openApplication === undefined && (list.isPending || openDetail.isPending)}
+        error={openDetail.isError ? openDetail.error : undefined}
+        onRetry={() => void openDetail.refetch()}
         onClose={onClosePanel}
+        requiredSkills={requiredSkills}
       />
     </section>
   )
