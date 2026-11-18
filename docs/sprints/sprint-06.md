@@ -17,18 +17,23 @@
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| S2 | Upgrade Next.js (security) | S | todo |
-| E1-06 | Uploads tab: dropzone, live processing list, retry, quota state | M | todo |
-| E1-07 | Review side panel and Person profile | L | todo |
-| E1-08 | Home dashboard, Insights tab and Talent list | M | todo |
-| E1-09 | Playwright E2E + axe in CI, polish, screenshots; remove the old UI | M | todo |
+| S2 | Upgrade Next.js (security) | S | done ([#42](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/42)) |
+| E1-06 | Uploads tab: dropzone, live processing list, retry, quota state | M | done ([#43](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/43)) |
+| E1-07 | Review side panel and Person profile | L | done ([#44](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/44)) |
+| E1-08 | Home dashboard, Insights tab and Talent list | M | doing |
+| E1-09 | Playwright E2E + axe in CI (`e2e` job), screenshots artifact | M | doing |
+| E1-10 | Remove the old UI, README product tour, close E1 | S | todo |
 
 **Order** (stacks no more than two deep):
 - **Wave 1:** S2, E1-06 and E1-07 in parallel, branched from `master`.
   - Only S2 changes `package.json` / `package-lock.json`. E1-06 and E1-07 add no npm dependencies, so the lockfile can't conflict.
   - E1-06 works in `features/uploads` and the workspace's Uploads slot. E1-07 works in `features/applications` (the panel) and `features/people` (the profile).
 - **Wave 2:** E1-08, after E1-06 and E1-07 merge. It touches the workspace (Insights), `features/people` (Talent) and `/` (Home).
-- **Wave 3:** E1-09, last. It deletes the old UI and its dependencies, and adds the `e2e` CI job.
+- **Wave 2 (revised):** E1-08 and E1-09 in parallel, after wave 1 merged (2026-11-18).
+  - E1-09 was split. The E2E suite and the `e2e` CI job don't depend on E1-08, but deleting the old UI does, because `/` is the legacy home page until E1-08 replaces it.
+  - E1-09 keeps the E2E work. The deletion and the close-out move to **E1-10**.
+  - Only E1-09 changes `package.json` / `package-lock.json` (Playwright and axe). E1-08 adds no npm dependencies.
+- **Wave 3:** E1-10, after E1-08 and E1-09 merge.
 
 **Working agreements** (from the [Sprint 5 retro](sprint-05.md#sprint-review--retro)):
 - **Rebuild the local Compose stack** after any merge that changes dependencies.
@@ -125,33 +130,45 @@
 
 ---
 
-### E1-09 · E2E, polish, and removal of the old UI
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-09-e2e-polish`
+### E1-09 · Playwright E2E and axe in CI
+**Status:** doing  ·  **Size:** M  ·  **Branch:** `e1-09-e2e`
 
-**Goal:** Spec §9 and §11: prove the hero flow end to end in CI, then close E1.
+**Goal:** Spec §9: prove the hero flow end to end in CI, with automated accessibility checks.
 
 **Acceptance criteria**
 - [ ] **Playwright** runs against the Compose stack with `AI_PROVIDER=fake` and a deterministic seed. It covers the hero flow:
   1. create a campaign with JD extraction;
   2. upload 3 PDFs and see them process;
   3. use the ranked table, filtering it;
-  4. open the panel and change the stage;
+  4. open the review panel and change the stage;
   5. open the Person profile;
   6. export CSV.
 
   It has no fixed sleeps and retries once in CI only.
 - [ ] `@axe-core/playwright` runs on every E2E page, with no serious or critical violations.
-- [ ] Screenshots of the key screens in light and dark are uploaded as a CI artifact. Several go into the README with a short **product tour** for pitching.
-- [ ] A new **`e2e`** CI job, made a required check.
+- [ ] Screenshots of the key screens, in light and dark, are uploaded as a CI artifact.
+- [ ] A new **`e2e`** CI job, to be made a required check once it is green on `master`.
+- [ ] **Locally:** one command runs the suite against its own Compose project and ports, without touching the dev stack. The container names stay `resumeai_*` by default.
+
+**Concept to learn:** reliable E2E tests in CI (seeded data, auto-waiting, health checks) and automated accessibility checks.
+
+---
+
+### E1-10 · Remove the old UI, product tour, close E1
+**Status:** todo  ·  **Size:** S  ·  **Branch:** `e1-10-close-e1`
+
+**Goal:** Spec §11: no old UI left, a README ready for pitching, and E1 closed.
+
+**Acceptance criteria**
 - [ ] **The old UI is deleted:**
-  - `src/app/(legacy)`, `legacy.css` and the old components;
+  - `src/app/(legacy)` (the legacy candidate page and layout), `legacy.css` and the old components;
   - the legacy client `src/lib/api.ts`;
   - `axios` and `react-toastify`.
 
   The frontend calls only `/api/v2`.
+- [ ] The E2E suite also visits Home, Insights and Talent, and the axe checks pass on them.
+- [ ] The README has screenshots (light and dark, from the E2E run) and a short **product tour** for pitching.
 - [ ] **The E1 definition of done** (spec §11) is checked off, the roadmap marks E1 done, and the remaining E1 follow-ups are in the backlog.
-
-**Concept to learn:** reliable E2E tests in CI (seeded data, auto-waiting, health checks) and automated accessibility checks.
 
 ---
 
