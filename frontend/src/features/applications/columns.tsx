@@ -1,9 +1,7 @@
 import { createColumnHelper, type RowData } from "@tanstack/react-table"
 import { format, formatDistanceToNowStrict } from "date-fns"
 
-import { Checkbox } from "@/components/ui/checkbox"
-
-import { CategoryBadge, ScoreCell, SkillsCell, StageCell } from "./cells"
+import { CategoryBadge, RowCheckbox, ScoreCell, SkillsCell, StageCell } from "./cells"
 import { formatYears, personName, type Application } from "./model"
 import type { SortableColumn } from "./url-state"
 
@@ -36,17 +34,18 @@ export const candidateColumns = [
     id: "select",
     meta: { className: "w-8", label: "Select" },
     header: ({ table }) => (
-      <Checkbox
+      <RowCheckbox
         aria-label="Select all candidates on this page"
-        checked={table.getIsAllRowsSelected() ? true : table.getIsSomeRowsSelected() ? "indeterminate" : false}
-        onCheckedChange={(checked) => table.toggleAllRowsSelected(checked === true)}
+        checked={table.getIsAllRowsSelected()}
+        indeterminate={table.getIsSomeRowsSelected()}
+        onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
       />
     ),
     cell: ({ row }) => (
-      <Checkbox
+      <RowCheckbox
         aria-label={`Select ${personName(row.original)}`}
         checked={row.getIsSelected()}
-        onCheckedChange={(checked) => row.toggleSelected(checked === true)}
+        onCheckedChange={(checked) => row.toggleSelected(checked)}
       />
     ),
   }),

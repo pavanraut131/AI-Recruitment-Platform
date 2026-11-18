@@ -158,9 +158,9 @@ describe("CandidatesTable rows", () => {
   it("shows the selection and an indeterminate header", () => {
     renderTable({ rowSelection: { [strong.id]: true } })
     expect(rowOf("Ada Lovelace").getAttribute("data-state")).toBe("selected")
-    expect(
-      screen.getByRole("checkbox", { name: "Select all candidates on this page" }).getAttribute("aria-checked"),
-    ).toBe("mixed")
+    const all = screen.getByRole("checkbox", { name: "Select all candidates on this page" }) as HTMLInputElement
+    expect(all.indeterminate).toBe(true)
+    expect(all.checked).toBe(false)
   })
 
   it("opens a row on click and on Enter", () => {

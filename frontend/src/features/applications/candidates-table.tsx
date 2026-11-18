@@ -166,6 +166,7 @@ const CandidateRow = memo(function CandidateRow({
   selected,
   active,
   focusable,
+  requiredSkills,
   onActiveChange,
   onOpen,
 }: CandidateRowProps) {
@@ -186,7 +187,9 @@ const CandidateRow = memo(function CandidateRow({
     }
   }
   return (
-    <TableRow
+    // A plain <tr> rather than TableRow: no colour transition or :has() selector on 500 rows
+    // (both showed up as style-recalc time when selecting all, see the PR's measurements).
+    <tr
       id={rowDomId(id)}
       data-row-id={id}
       data-state={selected ? "selected" : undefined}
@@ -199,19 +202,42 @@ const CandidateRow = memo(function CandidateRow({
       onFocus={(event) => {
         if (event.target === event.currentTarget && !active) onActiveChange(id)
       }}
-      className="cursor-pointer outline-none focus-visible:bg-muted/50 focus-visible:shadow-[inset_2px_0_0_var(--ring)] data-active:bg-muted/60 data-active:shadow-[inset_2px_0_0_var(--primary)]"
+      data-slot="table-row"
+      className="cursor-pointer border-b outline-none hover:bg-muted/50 data-[state=selected]:bg-muted focus-visible:bg-muted/50 focus-visible:shadow-[inset_2px_0_0_var(--ring)] data-active:bg-muted/60 data-active:shadow-[inset_2px_0_0_var(--primary)]"
     >
-      {row.getVisibleCells().map((cell) => (
-        <TableCell
-          key={cell.id}
-          data-column={cell.column.id}
-          className={cn("py-1.5", cell.column.columnDef.meta?.className)}
-        >
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </TableCell>
-      ))}
-    </TableRow>
+      {row.getVisibleCells().map((cell) =>
+        cell.column.id === SELECT_COLUMN ? (
+          <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-1.5", cell.column.columnDef.meta?.className)}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ) : null,
+      )}
+      <DataCells row={row} requiredSkills={requiredSkills} />
+    </tr>
   )
+})
+
+const SELECT_COLUMN = "select"
+
+/**
+ * Every cell but the checkbox. Memoised on the application (and the required
+ * skills), so selecting or activating a row re-renders its checkbox and
+ * attributes only, not its score bar, badges, skills and dates.
+ */
+const DataCells = memo(function DataCells({
+  row,
+}: {
+  row: Row<Application>
+  requiredSkills: ReadonlySet<string>
+}) {
+  return row
+    .getVisibleCells()
+    .filter((cell) => cell.column.id !== SELECT_COLUMN)
+    .map((cell) => (
+      <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-1.5", cell.column.columnDef.meta?.className)}>
+        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+      </TableCell>
+    ))
 })
 
 /** Skeleton rows while the first page loads (spec §5.1: designed, not blank). */
