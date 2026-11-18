@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { ExternalLinkIcon, MailIcon, SearchXIcon, UserRoundIcon } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react"
+import { useId, useRef, type ReactNode, type RefObject } from "react"
 
 import { ApplicationEvaluation, EvaluationBlock, SkillChips } from "@/components/application/evaluation"
 import { ApplicationNotes, ApplicationStageSelect } from "@/components/application/review-controls"
@@ -15,25 +15,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton"
 import { errorMessage, isApiProblem } from "@/lib/api/client"
 import { formatDate, formatYears, stageLabel } from "@/lib/applications"
-import { isLetterShortcut } from "@/lib/keyboard"
+import { useFocusShortcut } from "@/lib/keyboard"
 import { personQueryOptions } from "@/lib/query/people"
 import { applicationHref, personHref } from "@/lib/routes"
 
 import { personName, type Application } from "./model"
-
-/** S focuses the stage selector while the panel shows an application (spec §5.1). */
-function useStageShortcut(enabled: boolean, trigger: RefObject<HTMLButtonElement | null>) {
-  useEffect(() => {
-    if (!enabled) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isLetterShortcut(event, "s") || !trigger.current) return
-      event.preventDefault()
-      trigger.current.focus()
-    }
-    document.addEventListener("keydown", onKeyDown)
-    return () => document.removeEventListener("keydown", onKeyDown)
-  }, [enabled, trigger])
-}
 
 export type ReviewPanelProps = {
   open: boolean
@@ -71,7 +57,8 @@ export function ReviewPanel({
   requiredSkills,
 }: ReviewPanelProps) {
   const stageTrigger = useRef<HTMLButtonElement>(null)
-  useStageShortcut(open && application !== undefined, stageTrigger)
+  // S focuses the stage selector while the panel shows an application (spec §5.1).
+  useFocusShortcut("s", stageTrigger, open && application !== undefined)
 
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()} modal={false}>

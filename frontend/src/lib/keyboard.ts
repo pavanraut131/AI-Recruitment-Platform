@@ -1,3 +1,5 @@
+import { useEffect, type RefObject } from "react"
+
 /**
  * Page-level keyboard shortcuts (the candidates table's J/K, the review
  * panel's and Person profile's S) share these checks, so a letter typed into a
@@ -27,4 +29,22 @@ export function isLetterShortcut(event: KeyboardEvent, key: string): boolean {
   if (event.defaultPrevented || hasModifier(event)) return false
   if (event.key.toLowerCase() !== key) return false
   return !isTypingTarget(event.target)
+}
+
+/**
+ * A single-letter shortcut that moves focus to `target` (S focuses the stage
+ * selector in the review panel and on the Person profile). Listens on the
+ * document while `enabled`.
+ */
+export function useFocusShortcut(key: string, target: RefObject<HTMLElement | null>, enabled = true): void {
+  useEffect(() => {
+    if (!enabled) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isLetterShortcut(event, key) || !target.current) return
+      event.preventDefault()
+      target.current.focus()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [key, target, enabled])
 }
