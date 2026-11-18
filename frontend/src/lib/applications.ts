@@ -37,6 +37,9 @@ export const STAGE_LABELS = {
 /** Pipeline order. */
 export const STAGES = Object.keys(STAGE_LABELS) as Stage[]
 
+/** `ApplicationUpdate.notes` is at most this long (the API answers 422 beyond it). */
+export const NOTES_MAX_LENGTH = 10_000
+
 /** The label of an application that has no stage yet. */
 export const UNREVIEWED_LABEL = "Unreviewed"
 

@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { errorMessage } from "@/lib/api/client"
-import type { Stage } from "@/lib/applications"
+import { NOTES_MAX_LENGTH, type Stage } from "@/lib/applications"
 import { saveApplicationNotes, useUpdateApplicationStage, type ApplicationRef } from "@/lib/query/applications"
 import { useAutosave, type AutosaveStatus } from "@/lib/use-autosave"
 import { cn } from "@/lib/utils"
@@ -171,6 +171,7 @@ export function ApplicationNotes({
         onBlur={() => void flush()}
         aria-describedby={statusId}
         aria-invalid={status === "error" || undefined}
+        maxLength={NOTES_MAX_LENGTH}
         placeholder="Add notes about this candidate: calls, impressions, next steps…"
         className="min-h-24 text-sm"
       />
