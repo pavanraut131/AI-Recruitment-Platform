@@ -18,6 +18,10 @@ import { installDomPolyfills } from "./test-utils"
 
 const ROWS = 500
 const PRESSES = 40
+// The bounds below add up to well over Vitest's default 5 s timeout: a jsdom
+// mount of 500 rows takes 1–4 s depending on how many test files run in
+// parallel, so the test gets its own timeout and the bounds stay the gate.
+const TEST_TIMEOUT_MS = 30_000
 
 type Commit = { phase: string; ms: number }
 
@@ -79,5 +83,5 @@ describe(`candidates table with ${ROWS} rows`, () => {
     expect(mountWall).toBeLessThan(10_000)
     expect(median(pressWall)).toBeLessThan(100)
     expect(selectWall).toBeLessThan(5_000)
-  })
+  }, TEST_TIMEOUT_MS)
 })
