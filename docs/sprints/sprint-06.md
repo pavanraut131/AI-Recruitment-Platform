@@ -109,24 +109,43 @@
 ---
 
 ### E1-08 · Home, Insights and Talent
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-08-home-insights-talent`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-08-home-insights-talent`
 
 **Goal:** Spec §4: the dashboard screens.
 
 **Acceptance criteria**
-- [ ] **Home `/`** (from `getHome`): replaces the legacy home page. It shows:
+- [x] **Home `/`** (from `getHome`): replaces the legacy home page. It shows:
   - active campaigns (status, new uploads, strong matches);
   - uploads still processing across campaigns;
   - recent strong matches, linking to the candidate in its campaign.
-- [ ] **Insights tab** (from `getCampaignStats`), using Recharts through shadcn's chart wrapper and coloured from tokens:
+- [x] **Insights tab** (from `getCampaignStats`), using Recharts through shadcn's chart wrapper and coloured from tokens:
   - category distribution;
   - score histogram;
   - top skills against required skills;
   - the processing funnel.
-- [ ] **Talent `/talent`** (from `listPeople`): a paginated table of name, latest role, skills, number of applications and last seen, with search on name or email, all in the URL.
-- [ ] Empty, loading and error states. Charts have accessible text alternatives. Vitest tests for each screen.
+- [x] **Talent `/talent`** (from `listPeople`): a paginated table of name, latest role, skills, number of applications and last seen, with search on name or email, all in the URL.
+- [x] Empty, loading and error states. Charts have accessible text alternatives. Vitest tests for each screen.
 
 **Concept to learn:** chart accessibility and theming charts with design tokens.
+
+**Notes:**
+- **Home** (`features/home`, route `src/app/page.tsx`; the legacy `(legacy)/page.tsx` and its two home-only rules in `legacy.css` are gone, the legacy candidate page still builds). Three sections from `GET /home`:
+  - **Active campaigns** as cards: status, new uploads in 24 h, strong matches, processing (plus failed) and last activity; the title link covers the card and opens the workspace.
+  - **Recent strong matches** as a table (candidate, campaign, score bar, stage, when scored); the name links to `/campaigns/<id>?open=<application id>`, the review panel's URL (`applicationHref`).
+  - **Processing**: the newest in-progress resumes with their step (Queued / Extracting / Analysing), each linking to its campaign's Uploads tab (`campaignHref(id, "uploads")`), and "Showing the 10 newest of N".
+  - **First run:** when all three are empty, Home asks `GET /stats` once; with no campaigns at all it shows "Create your first campaign", otherwise the sections with quiet one-line empties ("No active campaigns…"). Home has no event stream, so it **refetches every 5 s only while something is processing** (`refetchInterval`), and mutations and the workspace's live events already invalidate `home`.
+- **Insights** (`features/campaigns/insights`, replacing E1-04's placeholder; the empty state's "Upload resumes" switches to the Uploads tab). Four charts from `GET /campaigns/{id}/stats` (the query the KPI strip already uses, so the workspace's events keep both fresh):
+  - **category distribution**: horizontal bars in the `--category-*` tokens, plus "Not scored" when some applications have no category;
+  - **score histogram**: ten buckets, "0–9" … "90–100", in `--chart-1`;
+  - **top skills**: required skills in teal (`--chart-1`), the others neutral (`--chart-4`), with a legend, and the required skills that are not among the top ones listed under the chart;
+  - **processing funnel**: uploaded → processed → scored → reviewed (moved to a stage), each with its share of the uploads, and the unfinished resumes by status (queued, extracting, analysing, failed, quota limit).
+- **Chart wrapper and tokens.** `src/components/ui/chart.tsx` is shadcn's chart file, written by hand: `shadcn add chart` would also have pinned `recharts@3.8.0` in `package.json` (recharts ^3.8.1 is already there). One change: the legend swatch's colour is a CSS variable, not an inline `backgroundColor`. Series colours are `ChartConfig` entries such as `var(--category-strong)`, which the wrapper scopes to the chart as `--color-<key>`, so dark mode needs no extra code (checked in both themes).
+- **Chart accessibility.** Each chart is a labelled region with a visible one-sentence summary ("66 applications: 4 strong, 23 moderate and 36 weak matches, 3 rejected.") and a data table that is always in the accessibility tree (visually hidden). A **Table** toggle (`aria-pressed`, `aria-controls`) shows the table in place of the chart. The SVG is `aria-hidden` with Recharts' keyboard layer off, so nothing hidden is focusable. Hover tooltips are for the mouse; the table is the keyboard and screen-reader route.
+- **Talent** (`features/people/talent`, `/talent` replaces the coming-soon page). Name (and email) linking to `/people/<id>`, latest role, up to 3 skills plus "+N", applications and last seen (`last_applied_at`); a row click opens the profile too. `q` and `page` are in the URL (nuqs, defaults left out); the search is debounced (300 ms) together with its page reset, so typing a search on page 3 sends one request (`page=1&q=…`), not one for page 1 of the old search first. Empty ("No people yet"), no match ("Clear search"), past the last page ("Go to the first page"), skeleton and error-with-retry states.
+- **Shared code.** `features/campaigns` now uses `src/components/data-states.tsx` (its copy is deleted, backlog item). The campaign status badge moved to `src/components/campaign/status-badge.tsx` and the status vocabulary to `src/lib/campaigns.ts` (Home shows the badge), the search debounce hook to `src/lib/use-debounced-value.ts` (campaign list and Talent), and `campaignHref(id, tab?)` in `src/lib/routes.ts` takes a tab.
+- **Browser check** (`next dev -p 3101` against the local API, headless Chrome): Home (10 active campaigns, 10 strong matches, nothing processing) in light and dark; the ML Engineer campaign's Insights in light and dark (26 bars, every fill a `var(--color-…)` that resolves to the theme's token), with the Top skills table toggled; Talent with 812 people, Next → `?page=2` (21–40), search `example` → `?q=example` (4 people), kept after a reload, a row link to the profile, and an empty search in dark. No console errors or failed API calls.
+- **Tests.** 32 new tests in 4 files (Home sections, links, first run, polling and states; Insights summaries, data tables, toggle, token colours, empty and processing-only states, retry and refresh on invalidation; the Insights model; Talent rows, links, search and page ↔ URL, debouncing and states); 211 in total.
+- **API gaps** (in the [backlog](../backlog.md#platform-and-tooling)): no event stream across campaigns (Home polls while processing); `Home` does not say whether any campaign exists (Home asks `/stats` for the first run); `top_skills` has the top 10 only, so required skills outside it have no count; `listPeople` has one sort order (most recently updated).
 
 ---
 

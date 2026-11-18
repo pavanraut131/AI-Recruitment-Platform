@@ -5,11 +5,11 @@ Product code is grouped by **feature**, one folder per area of the product
 
 ```
 features/
-  campaigns/      list, new campaign, workspace tabs, hooks
+  campaigns/      list, new campaign, workspace (KPIs, Insights, Settings tabs)
   applications/   candidates table, filters, review panel, bulk actions
   uploads/        dropzone, processing list
-  people/         person profile, talent list
-  home/
+  people/         person profile, Talent list
+  home/           the dashboard at `/`
 ```
 
 Folders are created by the tickets that need them (E1-03 onwards).
@@ -38,8 +38,15 @@ the uploads feature's tab into them.
    - `src/lib/` for non-UI code: the API client and query keys (`lib/api`),
      the Query provider and shared data hooks such as `useCampaignEvents`
      (`lib/query`; the campaign workspace and the Uploads tab both use it),
+     the vocabulary several screens show (`lib/applications.ts`,
+     `lib/campaigns.ts`), links between features' screens (`lib/routes.ts`),
      utilities.
-3. **No `axios`, `react-toastify` or legacy `@/lib/api`** (the v1 client) in
+3. **Charts** use Recharts through `@/components/ui/chart` (shadcn's
+   wrapper), coloured by token variables in the chart config
+   (`var(--category-strong)`, `var(--chart-1)`), never hex. Each chart needs a
+   text alternative: the Insights tab's `ChartPanel` pairs it with a summary
+   sentence and a data table.
+4. **No `axios`, `react-toastify` or legacy `@/lib/api`** (the v1 client) in
    features. Use the generated client from `@/lib/api/client` (ADR 0006) with
    the keys in `@/lib/api/query-keys`, and `toast` from `sonner`. Server state
    lives in TanStack Query, URL state in nuqs, the rest in React (ADR 0007).
