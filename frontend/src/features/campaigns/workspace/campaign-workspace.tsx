@@ -15,7 +15,7 @@ import { useCampaign, type Campaign } from "../api"
 import { CampaignStatusBadge } from "../components/campaign-status-badge"
 import { EmptyState, ErrorState } from "../components/data-states"
 import { KpiStrip } from "./kpi-strip"
-import { InsightsPlaceholder, UploadsPlaceholder } from "./placeholders"
+import { InsightsPlaceholder } from "./placeholders"
 import { SettingsTab } from "./settings-tab"
 import { WORKSPACE_TAB_LABELS, WORKSPACE_TABS, workspaceTabParser, type WorkspaceTab } from "./workspace-tabs"
 
@@ -23,8 +23,9 @@ import { WORKSPACE_TAB_LABELS, WORKSPACE_TABS, workspaceTabParser, type Workspac
  * `/campaigns/[id]`: header, KPI strip and tabs (spec §4). The tab is in the
  * URL (`?tab=`, default candidates).
  *
- * `candidatesTab` is the Candidates tab's content, passed in by the route so
- * the applications feature (E1-05) plugs in without this feature importing it.
+ * `candidatesTab` and `uploadsTab` are the Candidates and Uploads tabs'
+ * content, passed in by the route so the applications (E1-05) and uploads
+ * (E1-06) features plug in without this feature importing them.
  *
  * The workspace mounts the campaign's live event stream once
  * (`useCampaignEvents`); its tabs only read the Query cache it keeps current.
@@ -32,9 +33,11 @@ import { WORKSPACE_TAB_LABELS, WORKSPACE_TABS, workspaceTabParser, type Workspac
 export function CampaignWorkspace({
   campaignId,
   candidatesTab,
+  uploadsTab,
 }: {
   campaignId: string
   candidatesTab: React.ReactNode
+  uploadsTab: React.ReactNode
 }) {
   const campaign = useCampaign(campaignId)
   const live = useCampaignEvents(campaignId, { enabled: campaign.data !== undefined })
@@ -79,9 +82,7 @@ export function CampaignWorkspace({
           ))}
         </TabsList>
         <TabsContent value="candidates">{candidatesTab}</TabsContent>
-        <TabsContent value="uploads">
-          <UploadsPlaceholder campaign={data} />
-        </TabsContent>
+        <TabsContent value="uploads">{uploadsTab}</TabsContent>
         <TabsContent value="insights">
           <InsightsPlaceholder />
         </TabsContent>

@@ -30,7 +30,11 @@ beforeEach(() => {
 function renderWorkspace(searchParams = "") {
   const urlUpdates: UrlUpdateEvent[] = []
   const view = renderWithProviders(
-    <CampaignWorkspace campaignId={CAMPAIGN_ID} candidatesTab={<p>Candidates slot</p>} />,
+    <CampaignWorkspace
+      campaignId={CAMPAIGN_ID}
+      candidatesTab={<p>Candidates slot</p>}
+      uploadsTab={<p>Uploads slot</p>}
+    />,
     { searchParams, onUrlUpdate: (event) => urlUpdates.push(event) },
   )
   return { ...view, lastUrl: () => urlUpdates.at(-1)?.queryString }
@@ -81,7 +85,8 @@ describe("CampaignWorkspace", () => {
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Uploads" }))
     await waitFor(() => expect(view.lastUrl()).toBe("?tab=uploads"))
-    expect(screen.getByText(/This campaign has/)).toBeTruthy()
+    expect(screen.getByText("Uploads slot")).toBeTruthy()
+    expect(screen.queryByText("Candidates slot")).toBeNull()
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Candidates" }))
     await waitFor(() => expect(view.lastUrl()).toBe(""))
