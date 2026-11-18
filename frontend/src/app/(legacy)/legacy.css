@@ -1,8 +1,7 @@
 /*
- * TODO(E1-05..08): minimal styles still needed by the prototype screens in
- * src/app/(legacy) (home and the candidate page). Scoped to
- * `.legacy-prototype` and expressed with design tokens (no hex). Remove the
- * rules a screen uses when that screen is replaced; E1-09 deletes this file.
+ * TODO(E1-10): minimal styles still needed by the last prototype screen in
+ * src/app/(legacy) (the candidate page). Scoped to `.legacy-prototype` and
+ * expressed with design tokens (no hex). E1-10 deletes this file.
  */
 
 .legacy-prototype {
@@ -13,26 +12,10 @@
     max-width: 920px;
   }
 
-  & .page-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--primary);
-  }
-
-  & .glass-card,
-  & .stat-card {
+  & .glass-card {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
-  }
-  & .stat-card {
-    padding: 20px 22px;
   }
 
   & .btn-primary {
