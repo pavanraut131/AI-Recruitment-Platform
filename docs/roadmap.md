@@ -38,7 +38,8 @@ Ordering notes:
 | [2](sprints/sprint-02.md) | 2026-10-14 → 10-15 | Modules in place: modular layout with enforced boundaries; parse-jd and skill filter fixed | done |
 | [3](sprints/sprint-03.md) | 2026-10-15 → 10-19 | People and applications side by side: expand, dual write, backfill, verify | done |
 | [4](sprints/sprint-04.md) | 2026-10-19 (closed early) | Switch reads, contract, close E0 | done |
-| [5](sprints/sprint-05.md) | 2026-11-17 → 11-23 | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | in progress |
+| [5](sprints/sprint-05.md) | 2026-11-17 (closed 11-18) | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | done |
+| [6](sprints/sprint-06.md) | 2026-11-18 → 11-25 | E1 hero flow end to end: uploads, review panel and Person profile, Home/Insights/Talent, Playwright E2E, old UI removed; close E1 | in progress |
 
 Open follow-ups (bugs, upgrades, small debts) that no sprint has taken yet: [backlog.md](backlog.md).
 
