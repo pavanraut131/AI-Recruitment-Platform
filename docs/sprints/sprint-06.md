@@ -44,7 +44,7 @@
 ---
 
 ### S2 · Upgrade Next.js (security)
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `s2-next-upgrade`
+**Status:** done ([#42](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/42))  ·  **Size:** S  ·  **Branch:** `s2-next-upgrade`
 
 **Goal:** Close the critical `next` 16.2.9 advisories ([backlog](../backlog.md#platform-and-tooling)): a middleware/proxy bypass with Turbopack, a Server Actions DoS and SSRF, plus the `postcss` and `sharp` advisories that come through it.
 
@@ -58,7 +58,7 @@
 ---
 
 ### E1-06 · Uploads tab
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e1-06-uploads`
+**Status:** done ([#43](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/43))  ·  **Size:** M  ·  **Branch:** `e1-06-uploads`
 
 **Goal:** Spec §5.3: upload PDFs to a campaign and watch them process live.
 
@@ -81,7 +81,7 @@
 ---
 
 ### E1-07 · Review side panel and Person profile
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e1-07-review-panel`
+**Status:** done ([#44](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/44))  ·  **Size:** L  ·  **Branch:** `e1-07-review-panel`
 
 **Goal:** Spec §5.2 and §5.4: review a candidate without leaving the table, then see the Person across campaigns.
 
