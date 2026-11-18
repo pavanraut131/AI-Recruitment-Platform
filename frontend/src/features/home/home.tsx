@@ -174,7 +174,7 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
     <article className="relative flex h-full flex-col gap-3 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-muted/40 motion-reduce:transition-none">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 className="truncate font-medium">
+          <h3 className="truncate font-medium" title={campaign.title}>
             <Link href={campaignHref(campaign.id)} className="outline-none after:absolute after:inset-0 after:rounded-lg">
               {campaign.title}
             </Link>
@@ -258,7 +258,9 @@ function StrongMatches({ matches, className }: { matches: RecentMatch[]; classNa
                       {displayName(match.person.name)}
                     </Link>
                   </TableCell>
-                  <TableCell className="max-w-48 truncate text-muted-foreground">{match.campaign.title}</TableCell>
+                  <TableCell className="max-w-48 truncate text-muted-foreground" title={match.campaign.title}>
+                    {match.campaign.title}
+                  </TableCell>
                   <TableCell>
                     <ScoreCell score={match.score} category={match.category} />
                   </TableCell>

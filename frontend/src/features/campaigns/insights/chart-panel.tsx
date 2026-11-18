@@ -79,9 +79,12 @@ export function ChartPanel({
         </div>
       ) : (
         <>
-          <div aria-hidden="true" className={cn(showTable && "hidden")} data-testid="chart">
-            {children}
-          </div>
+          {/* Unmounted, not hidden, while the table shows: a hidden chart measures 0 × 0. */}
+          {!showTable && (
+            <div aria-hidden="true" data-testid="chart">
+              {children}
+            </div>
+          )}
           <div id={tableId} className={cn(!showTable && "sr-only")}>
             <Table className="text-dense">
               <TableCaption className="sr-only">{title}</TableCaption>

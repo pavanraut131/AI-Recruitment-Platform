@@ -13,6 +13,7 @@ import { useCampaignStats, type Campaign, type CampaignStats } from "../api"
 import { ChartPanel } from "./chart-panel"
 import {
   categoryRows,
+  type CategoryRow,
   funnelRows,
   plural,
   requiredSkillsNotInTop,
@@ -101,11 +102,14 @@ export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUplo
 function CategoryChart({ stats }: { stats: CampaignStats }) {
   const rows = categoryRows(stats)
   const total = stats.applications.total
-  const parts = rows.map((row) => `${row.count} ${row.label.toLowerCase()}`)
+  const count = (key: CategoryRow["key"]) => rows.find((row) => row.key === key)?.count ?? 0
+  const unscored = count("uncategorised")
   const summary =
     total === 0
       ? "Applications by the AI's match category."
-      : `${plural(total, "application")}: ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}.`
+      : `${plural(total, "application")}: ${count("strong_match")} strong, ${count("moderate_match")} moderate and ` +
+        `${count("weak_match")} weak matches, ${count("rejected")} rejected` +
+        (unscored > 0 ? `, ${unscored} not scored yet.` : ".")
 
   return (
     <ChartPanel
@@ -264,7 +268,7 @@ function ProcessingFunnel({ stats }: { stats: CampaignStats }) {
       }
     >
       <ChartContainer config={FUNNEL_CONFIG} className="aspect-auto h-48 w-full">
-        <BarChart data={rows} layout="vertical" margin={{ left: 0, right: 64 }} accessibilityLayer={false}>
+        <BarChart data={rows} layout="vertical" margin={{ left: 0, right: 88 }} accessibilityLayer={false}>
           <XAxis type="number" dataKey="count" hide allowDecimals={false} domain={[0, "dataMax"]} />
           <YAxis type="category" dataKey="label" width={80} tickLine={false} axisLine={false} tick={AXIS_TICK} />
           <ChartTooltip cursor={false} content={<ChartTooltipContent hideIndicator />} />

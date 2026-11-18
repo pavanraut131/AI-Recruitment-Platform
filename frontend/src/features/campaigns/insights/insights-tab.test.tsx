@@ -76,7 +76,7 @@ describe("InsightsTab", () => {
     expect(await screen.findByRole("heading", { name: "Category distribution" })).toBeTruthy()
     expect(
       within(panel("Category distribution")).getByText(
-        "9 applications: 4 strong match, 3 moderate match, 1 weak match and 1 rejected.",
+        "9 applications: 4 strong, 3 moderate and 1 weak matches, 1 rejected.",
       ),
     ).toBeTruthy()
     expect(
@@ -137,7 +137,7 @@ describe("InsightsTab", () => {
     // The toggle controls the table's wrapper.
     const table = document.getElementById(toggle.getAttribute("aria-controls") ?? "")!
     expect(within(table).getByRole("table", { hidden: true })).toBeTruthy()
-    const chart = within(scores).getByTestId("chart")
+    expect(within(scores).getByTestId("chart").getAttribute("aria-hidden")).toBe("true")
     expect(toggle.getAttribute("aria-pressed")).toBe("false")
     expect(table.className).toContain("sr-only")
 
@@ -145,11 +145,11 @@ describe("InsightsTab", () => {
 
     expect(toggle.getAttribute("aria-pressed")).toBe("true")
     expect(table.className).not.toContain("sr-only")
-    expect(chart.className).toContain("hidden")
+    expect(within(scores).queryByTestId("chart")).toBeNull()
 
     fireEvent.click(toggle)
     expect(toggle.getAttribute("aria-pressed")).toBe("false")
-    expect(chart.className).not.toContain("hidden")
+    expect(within(scores).getByTestId("chart")).toBeTruthy()
   })
 
   it("colours the charts from design tokens", async () => {
