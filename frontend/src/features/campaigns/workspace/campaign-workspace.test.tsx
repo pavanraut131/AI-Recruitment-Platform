@@ -3,6 +3,7 @@ import type { UrlUpdateEvent } from "nuqs/adapters/testing"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { useCampaignEvents } from "@/lib/query/use-campaign-events"
+import { installDomPolyfills } from "@/test/helpers"
 
 import {
   CAMPAIGN_ID,
@@ -23,6 +24,7 @@ vi.mock("@/lib/query/use-campaign-events", () => ({ useCampaignEvents: vi.fn(() 
 const campaign = campaignFixture()
 
 beforeEach(() => {
+  installDomPolyfills()
   push.mockClear()
   vi.mocked(useCampaignEvents).mockClear()
 })
@@ -74,7 +76,7 @@ describe("CampaignWorkspace", () => {
     renderWorkspace("?tab=insights")
 
     expect(await screen.findByRole("tab", { name: "Insights", selected: true })).toBeTruthy()
-    expect(screen.getByText(/Score histogram/i)).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Score histogram" })).toBeTruthy()
     expect(screen.queryByText("Candidates slot")).toBeNull()
   })
 
