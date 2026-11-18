@@ -158,6 +158,29 @@ type CandidateRowProps = {
   onOpen: (applicationId: string) => void
 }
 
+/**
+ * TanStack Table builds new `Row` objects whenever `data` changes, even when
+ * only one application did (a stage change, a saved note, a refetch that Query
+ * shares structurally). Rows render from their application, so they compare it
+ * instead: a one-row cache update re-renders one row, not the page. (A kept
+ * `Row`'s methods still act on the same table and read its current state.)
+ */
+function sameRow(previous: Row<Application>, next: Row<Application>): boolean {
+  return previous.id === next.id && previous.original === next.original
+}
+
+function sameRowProps(previous: CandidateRowProps, next: CandidateRowProps): boolean {
+  return (
+    sameRow(previous.row, next.row) &&
+    previous.selected === next.selected &&
+    previous.active === next.active &&
+    previous.focusable === next.focusable &&
+    previous.requiredSkills === next.requiredSkills &&
+    previous.onActiveChange === next.onActiveChange &&
+    previous.onOpen === next.onOpen
+  )
+}
+
 /** Clicks on these do their own thing and do not open the panel. */
 const INTERACTIVE = "button, a, input, label, [role='checkbox'], [data-column='select']"
 
@@ -215,7 +238,7 @@ const CandidateRow = memo(function CandidateRow({
       <DataCells row={row} requiredSkills={requiredSkills} />
     </tr>
   )
-})
+}, sameRowProps)
 
 const SELECT_COLUMN = "select"
 
@@ -238,7 +261,7 @@ const DataCells = memo(function DataCells({
         {flexRender(cell.column.columnDef.cell, cell.getContext())}
       </TableCell>
     ))
-})
+}, (previous, next) => sameRow(previous.row, next.row) && previous.requiredSkills === next.requiredSkills)
 
 /** Skeleton rows while the first page loads (spec §5.1: designed, not blank). */
 export function CandidatesTableSkeleton({ rows = 8 }: { rows?: number }) {
