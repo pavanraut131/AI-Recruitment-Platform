@@ -70,7 +70,7 @@ describe("CandidatesTable columns", () => {
     expect(within(row).getByText("87")).toBeTruthy()
     const bar = row.querySelector<HTMLElement>("[data-slot='score-bar']")
     expect(bar?.className).toContain("bg-category-strong")
-    expect(bar?.style.getPropertyValue("--score")).toBe("87.4%")
+    expect(bar?.style.getPropertyValue("--bar")).toBe("87.4%")
     expect(within(row).getByText("Strong match").getAttribute("data-variant")).toBe("strong")
   })
 

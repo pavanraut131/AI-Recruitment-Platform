@@ -1,48 +1,11 @@
-import { useEffect, useRef, type CSSProperties } from "react"
+import { useEffect, useRef } from "react"
 
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
-import {
-  CATEGORY_META,
-  SCORE_BAR_CLASS,
-  formatScore,
-  stageLabel,
-  type Category,
-  type Stage,
-} from "./model"
+import { stageLabel, type Stage } from "./model"
 
-/** Score: the number plus a thin bar in the category's colour. Unscored: a dash, no bar. */
-export function ScoreCell({ score, category }: { score: number | null; category: Category | null }) {
-  if (score === null) {
-    return (
-      <span className="text-muted-foreground" aria-label="Not scored">
-        —
-      </span>
-    )
-  }
-  const percent = Math.min(100, Math.max(0, score))
-  const barClass = category ? SCORE_BAR_CLASS[CATEGORY_META[category].tone] : "bg-muted-foreground"
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-7 text-right font-medium tabular-nums">{formatScore(score)}</span>
-      <div className="h-1 w-16 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        {/* The width is the one dynamic value (a CSS variable); the colour is a token class. */}
-        <div
-          data-slot="score-bar"
-          className={cn("h-full w-(--score) rounded-full", barClass)}
-          style={{ "--score": `${percent}%` } as CSSProperties}
-        />
-      </div>
-    </div>
-  )
-}
-
-export function CategoryBadge({ category }: { category: Category | null }) {
-  if (category === null) return <span className="text-muted-foreground">—</span>
-  const { label, tone } = CATEGORY_META[category]
-  return <Badge variant={tone}>{label}</Badge>
-}
+// The score and category cells are shared with the review panel and the Person profile.
+export { CategoryBadge, ScoreCell } from "@/components/application/score"
 
 /**
  * The top skills: the campaign's required skills the candidate has come first
