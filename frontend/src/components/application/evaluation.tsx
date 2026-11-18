@@ -46,7 +46,7 @@ export function ScoreBreakdown({ application }: { application: Pick<Application,
   }
   const barClass = categoryBarClass(application.category)
   return (
-    <dl className="grid grid-cols-[minmax(7rem,auto)_1fr_auto] items-center gap-x-3 gap-y-2 text-sm">
+    <dl className="grid max-w-2xl grid-cols-[minmax(7rem,auto)_1fr_auto] items-center gap-x-3 gap-y-2 text-sm">
       {parts.map((part) => (
         <div key={part.key} className="contents" data-slot="score-part">
           <dt className="text-muted-foreground">{part.label}</dt>
