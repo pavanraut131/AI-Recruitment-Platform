@@ -37,6 +37,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Command,
@@ -852,7 +863,7 @@ function OverlaysSection() {
 
   return (
     <Section
-      title="Dialog, sheet, popover, dropdown menu, tooltip"
+      title="Dialog, alert dialog, sheet, popover, dropdown menu, tooltip"
       description="Portaled: they use the app theme, not this pane's."
     >
       <Row>
@@ -879,6 +890,25 @@ function OverlaysSection() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline">Open alert dialog</Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Confirmation for destructive actions: focus starts on Cancel and
+                clicking outside does not close it.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive">Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <Sheet>
           <SheetTrigger asChild>
