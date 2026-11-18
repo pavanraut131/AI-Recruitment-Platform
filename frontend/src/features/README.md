@@ -14,6 +14,16 @@ features/
 
 Folders are created by the tickets that need them (E1-03 onwards).
 
+Each feature exposes what routes may use from its `index.ts` (for example
+`@/features/campaigns` exports `CampaignList`, `NewCampaignForm` and
+`CampaignWorkspace`); the rest of the folder is internal.
+
+When one feature's screen hosts another feature's content, the **route**
+composes them through a slot prop, so neither feature imports the other. The
+campaign workspace takes `candidatesTab` (a React node), and
+`src/app/campaigns/[id]/page.tsx` passes the applications feature's table
+into it.
+
 ## Rules
 
 1. **Routes compose features.** Files in `src/app` stay thin: read params,
