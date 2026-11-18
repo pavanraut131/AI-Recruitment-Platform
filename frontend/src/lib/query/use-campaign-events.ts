@@ -49,9 +49,10 @@ export type UseCampaignEventsOptions = {
  * - Every `resume_update` patches the resume in the campaign's cached resume
  *   lists (`setQueryData`); a resume no list holds yet refetches them.
  * - A resume reaching `done`, `failed` or `quota_exceeded` refetches the
- *   campaign (counts, stats), the campaign list and Home; `done` also the
- *   campaign's applications, workspace stats and people (a new Person or
- *   application) and the resume lists (the resume's `application_id`).
+ *   resume lists (the failed step, the retry count, the `application_id`,
+ *   which the event does not carry), the campaign (counts, stats), the
+ *   campaign list and Home; `done` also the campaign's applications,
+ *   workspace stats and people (a new Person or application).
  *   Invalidations are debounced, so 50 resumes finishing together cause one
  *   refetch per query, not 50.
  * - When the stream drops it is closed and reopened with exponential backoff
@@ -159,11 +160,13 @@ class CacheUpdater {
     if (!found) this.invalidate(listsKey)
 
     if (!TERMINAL_RESUME_STATUSES.has(event.status)) return
+    // The event lacks what the Uploads tab shows for a finished resume: the
+    // failed `processing_step`, `retry_count`, and once done its `application_id`.
+    this.invalidate(listsKey)
     this.invalidate(queryKeys.campaigns.detail(this.campaignId))
     this.invalidate(queryKeys.campaigns.lists())
     this.invalidate(queryKeys.home.all)
     if (event.status !== "done") return
-    this.invalidate(listsKey)
     this.invalidate(queryKeys.applications.campaignLists(this.campaignId))
     this.invalidate(queryKeys.stats.all)
     this.invalidate(queryKeys.people.all)

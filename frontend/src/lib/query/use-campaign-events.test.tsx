@@ -242,21 +242,27 @@ describe("useCampaignEvents", () => {
     expect(new Set(invalidatedKeys).size).toBe(invalidatedKeys.length)
   })
 
-  it("on failed, refreshes the campaign's counts but not its applications", () => {
-    const applications = queryKeys.applications.list(CAMPAIGN)
-    const campaign = queryKeys.campaigns.detail(CAMPAIGN)
-    queryClient.setQueryData(applications, {})
-    queryClient.setQueryData(campaign, {})
-    renderEvents()
+  it.each(["failed", "quota_exceeded"] as const)(
+    "on %s, refreshes the resume lists (failed step) and the campaign's counts but not its applications",
+    (status) => {
+      const resumes = queryKeys.resumes.list(CAMPAIGN)
+      const applications = queryKeys.applications.list(CAMPAIGN)
+      const campaign = queryKeys.campaigns.detail(CAMPAIGN)
+      queryClient.setQueryData(resumes, resumePage(resume("r-1", "processing")))
+      queryClient.setQueryData(applications, {})
+      queryClient.setQueryData(campaign, {})
+      renderEvents()
 
-    act(() => {
-      MockEventSource.latest().emit("resume_update", update("r-1", "failed", { error: "Unreadable PDF" }))
-      vi.advanceTimersByTime(INVALIDATE_DEBOUNCE_MS)
-    })
+      act(() => {
+        MockEventSource.latest().emit("resume_update", update("r-1", status, { error: "Unreadable PDF" }))
+        vi.advanceTimersByTime(INVALIDATE_DEBOUNCE_MS)
+      })
 
-    expect(isInvalidated(campaign)).toBe(true)
-    expect(isInvalidated(applications)).toBe(false)
-  })
+      expect(isInvalidated(resumes)).toBe(true)
+      expect(isInvalidated(campaign)).toBe(true)
+      expect(isInvalidated(applications)).toBe(false)
+    },
+  )
 
   it("skips payloads that are not a ResumeEvent", () => {
     const key = queryKeys.resumes.list(CAMPAIGN)
