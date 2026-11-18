@@ -17,8 +17,8 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 | E1-01 | Design tokens, shadcn/ui, app shell, `/dev/ui`; rebrand to HireFlow AI | M | done ([#34](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/34)) |
 | E1-02 | Backend `/api/v2`: campaigns, applications, uploads, people, home | L | done ([#36](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/36)) |
 | E1-03 | Generated API client and CI drift check; Query, problem+json, SSE hook | M | done ([#37](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/37)) |
-| E1-04 | Campaign list and new campaign (JD extraction) | M | review |
-| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | todo |
+| E1-04 | Campaign list and new campaign (JD extraction) | M | done ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39)) |
+| E1-05 | Candidates table: columns, URL filters, sort, pagination, bulk actions, export | L | review |
 
 **Order** (stacks no more than two deep, as agreed in the Sprint 4 retro):
 - **Wave 1:** B4, E1-01 and E1-02, all independent and branched from `master`.
@@ -107,7 +107,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 ---
 
 ### E1-04 · Campaigns: list and new campaign
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
+**Status:** done ([#39](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/39))  ·  **Size:** M  ·  **Branch:** `e1-04-campaigns`
 
 **Goal:** `/campaigns` and `/campaigns/new` on the new foundation (spec §4).
 
@@ -145,7 +145,7 @@ This sprint builds the foundation from spec §10 (E1-01 to E1-05). The rest of t
 - [x] Vitest tests for columns, filters ↔ URL and bulk actions.
 
 **Notes:**
-- **Where.** `src/features/applications`, public entry `CandidatesTab({ campaignId, uploadHref? })` (plus the presentational `CandidatesTable`). TanStack Table 8.21.3 (pinned). Until the workspace (E1-04) merges, the tab is mounted at a temporary dev-only route, `/dev/candidates/<campaign id>` (404 in production builds, like `/dev/ui`); `/dev/candidates/fixture?rows=500` renders the table over synthetic rows with a React commit-time readout. The route goes once the tab is wired into `/campaigns/[id]`.
+- **Where.** `src/features/applications`, public entry `CandidatesTab({ campaignId, uploadHref? })` (plus the presentational `CandidatesTable`). TanStack Table 8.21.3 (pinned). It is mounted as the Candidates tab of `/campaigns/[id]`: the route passes it into the workspace's `candidatesTab` slot, so neither feature imports the other (the placeholder from E1-04 is gone). The temporary dev route that mounted the tab on its own was removed when the tab was wired in; only its fixture mode stays, as `/dev/candidates?rows=500` (404 in production builds, like `/dev/ui`), to re-run the 500-row check.
 - **URL state (nuqs).** `q`, `cat` (`strong,moderate,weak,rejected`), `min`, `max` (score 0–100), `skill`, `stage` (API values), `sort` (API values; the default `-score` is left out), `page`, `size` (25 / 50 / 100, default 50; the API caps pages at 100) and `open` (the panel's application). `tab` is left to the workspace. History entries are replaced. A filter, sort or page-size change goes back to page 1; "Clear filters" keeps the sort and page size. Unknown values fall back to defaults and scores are clamped, so a hand-edited URL never causes a 422. Search and skill commit after a 300 ms pause (Enter commits at once): one request per pause, not per key.
 - **Sorting.** Score and updated toggle descending → ascending (`-score`/`score`, `-updated_at`/`updated_at`; the API keeps unscored last both ways). Name sorts A→Z only (the API has no descending name sort), so a second click returns to the default. Other columns are not sortable server-side.
 - **Bulk actions.** Selection is local and per view (it resets when filters, sort or page change; per page, so ≤ 100 ids). Move to stage and reject patch every cached page of the campaign (`setQueriesData` on `applications.campaignLists`), roll back on error (the global mutation toast shows the problem; the selection stays for a retry) and invalidate the lists, application details and the campaign on settle. The success toast reports `not_found` ids. Export downloads the selection (`ids` + sort) or everything matching the filters (filters + sort) as a blob; the file name is built client-side because CORS does not expose `Content-Disposition`.

@@ -19,7 +19,7 @@ export type FixtureViewProps = {
 /**
  * The table over synthetic rows, with selection, J/K and the preview panel
  * wired like the real tab but no API: the 500-row benchmark (Vitest) and the
- * dev route's fixture mode (`/dev/candidates/fixture?rows=500`). Sorting is a
+ * dev route (`/dev/candidates?rows=500`). Sorting is a
  * no-op here (it is server-side in the product).
  */
 export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) {

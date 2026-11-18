@@ -29,7 +29,7 @@ into it.
 1. **Routes compose features.** Files in `src/app` stay thin: read params,
    pick a feature component, render it. A feature's public entry is its
    `index.ts`; a `dev.ts` entry may expose fixtures for `/dev/*` routes only
-   (e.g. `applications/dev.ts` for `/dev/candidates/fixture`).
+   (e.g. `applications/dev.ts` for `/dev/candidates`).
 2. **Features never import each other.** Code in `src/features/<a>/**` may not
    import from `src/features/<b>/**`. If two features need the same thing, it
    is shared code: move it to

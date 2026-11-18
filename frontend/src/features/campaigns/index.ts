@@ -5,4 +5,3 @@
 export { CampaignList } from "./list/campaign-list"
 export { NewCampaignForm } from "./new/new-campaign-form"
 export { CampaignWorkspace } from "./workspace/campaign-workspace"
-export { CandidatesPlaceholder } from "./workspace/placeholders"
