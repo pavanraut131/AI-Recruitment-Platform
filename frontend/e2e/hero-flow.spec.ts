@@ -9,8 +9,10 @@ import { EXTRACTED_ROLE, EXTRACTED_SKILLS, heroCandidates, JOB_DESCRIPTION, newR
  * The hero flow (EPIC-01 §9), as a recruiter does it: create a campaign from a
  * job description, upload three resumes and watch them finish, filter the
  * ranked table, review a candidate and move them to a stage, open their
- * profile, export the shortlist. Every screen it visits gets axe (light and
- * dark) and a screenshot in both themes (`checkScreen`).
+ * profile, export the shortlist; then the same campaign on the dashboards:
+ * its Insights, the people on Talent and the campaign on Home. Every screen it
+ * visits gets axe (light and dark) and a screenshot in both themes
+ * (`checkScreen`); `docs` marks the README's product-tour screenshots.
  *
  * It creates everything it asserts on (a new campaign, resumes with this run's
  * e-mails), so it does not depend on the seed or on earlier runs.
@@ -24,11 +26,21 @@ function candidateRows(page: Page) {
   return candidatesTable(page).locator("tbody").getByRole("row")
 }
 
-test("hero flow: campaign → uploads → ranked table → review → profile → export", async ({ page }, testInfo) => {
+/** A link in the sidebar's main navigation (Home, Campaigns, Talent). */
+function sidebarLink(page: Page, name: string) {
+  return page.getByRole("list", { name: "Main" }).getByRole("link", { name })
+}
+
+test("hero flow: campaign → uploads → ranked table → review → profile → export → insights, talent, home", async ({
+  page,
+}, testInfo) => {
   const runId = newRunId()
   const title = `E2E ${runId} Python platform`
   const candidates = heroCandidates(runId)
   const [strong, moderate, weak] = candidates
+  // The strong candidate's application and its campaign, read from the URL in step 4.
+  let campaignId = ""
+  let applicationId = ""
 
   await test.step("campaign list", async () => {
     await page.goto("/campaigns")
@@ -50,7 +62,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
       EXTRACTED_SKILLS,
     )
     await form.getByRole("textbox", { name: "Title" }).fill(title)
-    await checkScreen(page, testInfo, "02-new-campaign")
+    await checkScreen(page, testInfo, "02-new-campaign", { docs: ["light"] })
 
     await form.getByRole("button", { name: "Create campaign" }).click()
     await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}$/)
@@ -72,7 +84,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
       await expect(row.getByRole("link", { name: "View candidate" })).toBeVisible()
     }
     await expect(page.getByText("3 resumes", { exact: true })).toBeVisible()
-    await checkScreen(page, testInfo, "04-uploads")
+    await checkScreen(page, testInfo, "04-uploads", { docs: ["light"] })
   })
 
   await test.step("3. ranked candidates, filtered", async () => {
@@ -108,12 +120,15 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     const panel = page.getByRole("dialog", { name: strong.name })
     await expect(panel).toBeVisible()
     await expect(page).toHaveURL(/[?&]open=[0-9a-f-]{36}/)
+    const url = new URL(page.url())
+    campaignId = url.pathname.split("/").at(-1) ?? ""
+    applicationId = url.searchParams.get("open") ?? ""
     await expect(panel.getByRole("link", { name: strong.email })).toBeVisible()
     await expect(panel.getByText("Proceed to technical interview")).toBeVisible()
 
     const stage = panel.getByRole("combobox", { name: "Stage" })
     await expect(stage).toHaveText("Unreviewed")
-    await checkScreen(page, testInfo, "03-candidates-panel")
+    await checkScreen(page, testInfo, "03-candidates-panel", { docs: ["light", "dark"] })
 
     await stage.click()
     await page.getByRole("option", { name: "Phone call" }).click()
@@ -137,7 +152,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
       .filter({ hasText: title })
     await expect(application).toContainText("Phone call")
     await expect(application).toContainText(strong.category)
-    await checkScreen(page, testInfo, "05-person-profile")
+    await checkScreen(page, testInfo, "05-person-profile", { docs: ["light"] })
   })
 
   await test.step("6. export CSV", async () => {
@@ -160,5 +175,71 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     expect(lines[0]).toContain("phone_call")
     expect(lines[1]).toContain(`${moderate.name},${moderate.email}`)
     expect(lines[2]).toContain(`${weak.name},${weak.email}`)
+  })
+
+  await test.step("7. the campaign's Insights", async () => {
+    await page.getByRole("tab", { name: "Insights" }).click()
+    await expect(page).toHaveURL(/[?&]tab=insights/)
+    const categories = page.getByRole("region", { name: "Category distribution" })
+    await expect(categories).toContainText("3 applications: 1 strong, 1 moderate and 1 weak matches, 0 rejected.")
+    await expect(page.getByRole("region", { name: "Processing funnel" })).toContainText(
+      "3 uploaded, 3 processed, 3 scored, 1 reviewed.",
+    )
+    await checkScreen(page, testInfo, "06-insights", { docs: ["light"] })
+
+    // The chart's data as a table (the keyboard and screen-reader route).
+    const toggle = categories.getByRole("button", { name: "Table for category distribution" })
+    await toggle.click()
+    await expect(toggle).toHaveAttribute("aria-pressed", "true")
+    const strongRow = categories.getByRole("table", { name: "Category distribution" }).getByRole("row", {
+      name: /Strong match/,
+    })
+    await expect(strongRow).toBeVisible()
+    await expect(strongRow).toContainText("1 (33%)")
+  })
+
+  await test.step("an old /candidates/<id> link opens the application in its campaign", async () => {
+    await page.goto(`/candidates/${applicationId}`)
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/campaigns/${campaignId}` && url.search === `?open=${applicationId}`,
+    )
+    const panel = page.getByRole("dialog", { name: strong.name })
+    await expect(panel).toBeVisible()
+    // The panel is modal: close it before using the sidebar.
+    await panel.getByRole("button", { name: "Close" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+  })
+
+  await test.step("8. Talent, searched by the run's e-mails", async () => {
+    await sidebarLink(page, "Talent").click()
+    await expect(page.getByRole("heading", { level: 1, name: "Talent" })).toBeVisible()
+    await checkScreen(page, testInfo, "07-talent", { docs: ["light"] })
+
+    await page.getByRole("searchbox", { name: "Search people by name or email" }).fill(runId)
+    await expect(page).toHaveURL(new RegExp(`[?&]q=${runId}`))
+    const people = page.getByRole("table", { name: /^People/ }).locator("tbody").getByRole("row")
+    await expect(people).toHaveCount(3)
+    await expect(people.filter({ hasText: strong.email })).toContainText(strong.name)
+
+    await people.getByRole("link", { name: strong.name }).click()
+    await expect(page).toHaveURL(/\/people\/[0-9a-f-]{36}$/)
+    await expect(page.getByRole("heading", { level: 1, name: strong.name })).toBeVisible()
+  })
+
+  await test.step("9. Home shows the campaign and its strong match", async () => {
+    await sidebarLink(page, "Home").click()
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Active campaigns" }).getByRole("link", { name: title })).toBeVisible()
+    // The row of this run's campaign (earlier runs on a kept stack have their own Asha Verma).
+    const match = page
+      .getByRole("region", { name: "Recent strong matches" })
+      .getByRole("row")
+      .filter({ hasText: title })
+    await expect(match).toContainText(strong.name)
+    await expect(match.getByRole("link", { name: strong.name })).toHaveAttribute(
+      "href",
+      `/campaigns/${campaignId}?open=${applicationId}`,
+    )
+    await checkScreen(page, testInfo, "08-home", { docs: ["light", "dark"] })
   })
 })
