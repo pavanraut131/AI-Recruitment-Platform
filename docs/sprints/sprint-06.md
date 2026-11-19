@@ -1,6 +1,6 @@
 # Sprint 6 · HireFlow AI hero flow, end to end
 
-**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-11-18 → 2026-11-25  ·  **Status:** in progress
+**Epic:** [E1 · Product design & frontend foundation](../specs/EPIC-01-frontend.md)  ·  **Dates:** 2026-11-18 → 2026-11-25  ·  **Status:** done (closed 2026-11-19)
 
 ## Sprint goal
 
@@ -22,7 +22,7 @@
 | E1-07 | Review side panel and Person profile | L | done ([#44](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/44)) |
 | E1-08 | Home dashboard, Insights tab and Talent list | M | done ([#45](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/45)) |
 | E1-09 | Playwright E2E + axe in CI (`e2e` job), screenshots artifact | M | done ([#46](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/46)) |
-| E1-10 | Remove the old UI, README product tour, close E1 | S | review |
+| E1-10 | Remove the old UI, README product tour, close E1 | S | done ([#48](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/48)) |
 
 **Order** (stacks no more than two deep):
 - **Wave 1:** S2, E1-06 and E1-07 in parallel, branched from `master`.
@@ -185,7 +185,7 @@
 ---
 
 ### E1-10 · Remove the old UI, product tour, close E1
-**Status:** review  ·  **Size:** S  ·  **Branch:** `e1-10-close-e1`
+**Status:** done ([#48](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/48))  ·  **Size:** S  ·  **Branch:** `e1-10-close-e1`
 
 **Goal:** Spec §11: no old UI left, a README ready for pitching, and E1 closed.
 
@@ -212,15 +212,42 @@
 
 ---
 
-## Sprint 7 (rough backlog)
-
-E2 · Identity & tenancy: needs its spec first (Agency → Clients → users, roles, Postgres row-level security), then removing `/api/v1`. Security follow-ups from the backlog (Pillow and the other `pip-audit` findings, pydantic) before E5.
-
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+**Goal met:** yes, and E1 is closed.
+- Six ticket PRs merged in three waves: #42, #43 and #44, then #45 and #46, then #48.
+- The E2 spec ([#47](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/47)) was drafted in parallel with E1-10.
+- CI is green on `master`, including the new `e2e` job. The local Compose stack was rebuilt after each dependency change: Next 16.4.6, Playwright, and removing `axios`.
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+### Demo
+
+- **The whole hero flow in HireFlow AI**, through `/api/v2` and the generated client only:
+  - create a campaign with "Extract with AI";
+  - drop resumes and watch them process live ([#43](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/43));
+  - review ranked candidates in the side panel with J/K/S, and open a Person's profile across campaigns ([#44](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/44));
+  - Home, Insights and Talent ([#45](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/45)).
+- **Playwright and axe in CI** ([#46](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/46), extended in [#48](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/48)):
+  - the flow runs in Chromium against an isolated Compose stack with the fake AI provider;
+  - accessibility is checked in light and dark on every screen;
+  - the job takes about 3.5 minutes.
+- **The old UI, `axios` and every `/api/v1` call from the frontend are gone.** Old `/candidates/<id>` links forward to the review panel. The README has a product tour with screenshots from the E2E run.
+- **Security:** Next.js 16.4.6 ([#42](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/42)), and `follow-redirects` went with `axios`.
+
+### Keep
+
+- **Splitting a ticket as soon as a dependency shows up.** E1-09 was split in two when it turned out that deleting the old UI needed E1-08's Home. The E2E work went ahead in parallel, and the deletion moved to E1-10.
+- **axe in the browser tests.** It found three real problems the unit tests had missed: chip contrast on an active row, sort buttons whose names didn't contain their labels, and a hidden scrollable region on Insights.
+- **Proving a new check can fail.** Each E2E addition was broken on purpose once, to see it fail at the right step.
+- **Designing the next epic while closing the current one.** The E2 spec was written in parallel with E1-10, so Sprint 7 starts right away.
+
+### Drop
+
+- **Ticket PRs editing shared doc lines** (the sprint board, the roadmap, the end of the backlog). Two parallel PRs needed a shared commit merged with `-s ours` to avoid conflicts on this file. The board edits came from my own instructions to the agents, against our working agreement.
+
+### Try
+
+- **Only a sprint docs PR edits the board, the roadmap and other tickets' sections.** That covers opening a sprint, waves and closing. A ticket PR edits only its own section in the spec or sprint file, and adds backlog items next to related ones.
+- **Pitch screenshots from a curated dataset**, not the E2E run's test data. The campaign title currently shows the run id.
+- **Make `e2e` a required check** once it has a few green runs on `master`. It has been green on every `master` run so far.
+
+Next: [Sprint 7](sprint-07.md).
