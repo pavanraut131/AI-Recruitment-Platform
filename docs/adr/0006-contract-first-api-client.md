@@ -23,6 +23,7 @@ Forces:
 - **CI drift check.** The `frontend` job installs the backend with uv, runs the export and the generator, and fails on `git diff --exit-code -- src/lib/api/`. A backend change that alters the contract therefore needs `make api-client` and a commit in the same PR. Any frontend code that the change breaks then fails `tsc` in that PR too.
 - **Query keys** live next to the client (`query-keys.ts`), one hierarchical factory per resource, typed from the generated query parameters.
 - New code may not import `axios`, `react-toastify` or the legacy `@/lib/api`. ESLint enforces this in `src/features/**`, `src/lib/api/**` and `src/lib/query/**`. `src/lib/api.ts` stays, used only by `src/app/(legacy)`, until E1-09 removes the old UI.
+  *Update (E1-10):* the old UI, `src/lib/api.ts` and `axios` are deleted; the frontend calls only `/api/v2`, and the ESLint ban on `axios` / `react-toastify` now covers all of `src`.
 
 ## Alternatives considered
 - **Hand-written types and fetch wrappers** (the v1 approach). This needs no tooling, but it drifts silently, which is the problem we already have.
