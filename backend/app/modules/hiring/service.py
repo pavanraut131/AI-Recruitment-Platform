@@ -70,6 +70,13 @@ the data crosses this interface instead:
    that shape to keep in sync. The verification command
    (``app.modules.ingestion.verify_people_applications``) reads applications through
    :func:`application_refs` and :func:`legacy_candidate_map`.
+
+Tenancy (EPIC-02, expand phase E2-01)
+-------------------------------------
+Every insert sets ``agency_id``: :func:`_new_campaign` (both create endpoints) and
+:func:`upsert_application`. Until tenant context exists (E2-03) that is the default agency, and
+a new campaign is run for the default client (until E2-06 makes the client a field of the
+request); see :mod:`app.platform.tenancy`. Nothing reads them yet, so no response changes.
 """
 
 import csv
@@ -103,6 +110,7 @@ from app.modules.hiring.schemas import (
     JDParseResponse,
 )
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 logger = structlog.get_logger()
 
@@ -136,8 +144,14 @@ class JDParseError(HiringError):
 
 
 # ── Campaigns ─────────────────────────────────────────────────
+def _new_campaign(fields: Mapping[str, Any]) -> Campaign:
+    """A campaign to insert, in the default agency, run for its default client (E2-01; the
+    agency comes from tenant context from E2-03, the client from the request from E2-06)."""
+    return Campaign(**fields, agency_id=DEFAULT_AGENCY_ID, client_id=DEFAULT_CLIENT_ID)
+
+
 async def create_campaign(db: AsyncSession, payload: CampaignCreate) -> Campaign:
-    campaign = await repository.add_campaign(db, Campaign(**payload.model_dump()))
+    campaign = await repository.add_campaign(db, _new_campaign(payload.model_dump()))
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign
 
@@ -873,7 +887,7 @@ async def list_campaigns_page(
 async def create_campaign_v2(db: AsyncSession, payload: v2.CampaignCreate) -> v2.Campaign:
     """Create a campaign. A new campaign has no resumes or applications yet, so its counts are
     zero without asking ingestion."""
-    campaign = await repository.add_campaign(db, Campaign(**payload.model_dump(mode="json")))
+    campaign = await repository.add_campaign(db, _new_campaign(payload.model_dump(mode="json")))
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign_resource(campaign, None, ResumeTally())
 
@@ -1401,6 +1415,8 @@ def upsert_application(
         raise ValueError("resume_uploaded_at must be timezone-aware")
     values: dict[str, Any] = {
         "id": application_id or uuid.uuid4(),
+        # Inserted only: an existing row keeps its agency (E2-01; from tenant context in E2-03).
+        "agency_id": DEFAULT_AGENCY_ID,
         "campaign_id": campaign_id,
         "person_id": person_id,
         "resume_id": resume_id,

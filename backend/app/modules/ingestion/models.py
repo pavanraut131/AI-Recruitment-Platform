@@ -15,6 +15,12 @@ nullable columns (a metadata-only ``ADD COLUMN`` in Postgres, no table rewrite).
 pipeline (``tasks.process_candidate_ai``) writes them since E0-16; the backfill (E0-17) filled
 them for the resumes processed before. Since the read switch (E0-19) ``extracted`` is also what
 the legacy candidate endpoints show as the candidate's name, contacts and profile.
+
+**Tenancy (EPIC-02).** ``resumes.agency_id`` (identity's agency) and ``uploaded_by_user_id``
+(identity's user, from E2-05) are plain UUIDs with no foreign key (ADR 0003), added by the E2-01
+expand migration as nullable columns (metadata-only). The upload sets ``agency_id``
+(``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03); E2-02 backfills it, makes it
+``NOT NULL`` and adds the index ``(agency_id, campaign_id)``.
 """
 
 import uuid
@@ -74,3 +80,8 @@ class Resume(Base):
     # (``candidates.raw_text``; the contract migration copied what was left there onto the
     # resume before dropping the table). Never part of an API response.
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # identity's user who uploaded the file; NULL before sign-in exists (E2-05).
+    uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

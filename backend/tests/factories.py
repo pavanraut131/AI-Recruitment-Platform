@@ -19,6 +19,9 @@ Timestamps: inside one test everything runs in one database transaction, where P
 is frozen, so rows created with server defaults all get the *same* timestamp and ``ORDER BY
 created_at`` would be ambiguous. The factories therefore set timestamps explicitly; pass
 ``created_at=at(n)`` / ``uploaded_at=at(n)`` to control ordering.
+
+Tenancy (E2-01): every row is in the default agency, and campaigns are run for its default
+client, as the app writes them until tenant context exists (E2-03).
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 
@@ -73,6 +77,8 @@ async def make_campaign(db: AsyncSession, **overrides: Any) -> Campaign:
         "status": "active",
         "created_at": BASE_TIME,
         "updated_at": BASE_TIME,
+        "agency_id": DEFAULT_AGENCY_ID,
+        "client_id": DEFAULT_CLIENT_ID,
     }
     fields.update(overrides)
     return await _save(db, Campaign(**fields))
@@ -98,6 +104,7 @@ async def make_resume(
         "error_message": None,
         "uploaded_at": BASE_TIME,
         "updated_at": BASE_TIME,
+        "agency_id": campaign.agency_id,
     }
     fields.update(overrides)
     return await _save(db, Resume(**fields))
@@ -174,6 +181,7 @@ async def make_candidate(
             latest_resume_id=resume.id,
             created_at=fields["created_at"],
             updated_at=fields["updated_at"],
+            agency_id=resume.agency_id,
         ),
     )
     resume.extracted = extracted
@@ -187,6 +195,7 @@ async def make_candidate(
             person_id=person.id,
             resume_id=resume.id,
             resume_uploaded_at=resume.uploaded_at,
+            agency_id=resume.agency_id,
             **fields,
         ),
     )

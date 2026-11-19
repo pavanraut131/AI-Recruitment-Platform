@@ -456,12 +456,13 @@ APPLICATION_PIPELINE_COLUMNS = (
 def upsert_application_sync(db: Session, values: dict[str, Any]) -> Application:
     """``INSERT … ON CONFLICT (campaign_id, person_id) DO UPDATE`` one application.
 
-    ``values`` holds ``id``, ``campaign_id``, ``person_id`` and every column in
+    ``values`` holds ``id``, ``agency_id``, ``campaign_id``, ``person_id`` and every column in
     :data:`APPLICATION_PIPELINE_COLUMNS`. On a conflict the pipeline columns are replaced only
     when the incoming resume is not older than the stored one, comparing ``(resume_uploaded_at,
     resume_id)`` as a tuple; a stored row whose upload time is unknown (``NULL``) always counts
-    as older. The row's ``id``, ``created_at`` and recruiter columns never change. Returns the
-    row as stored after the statement, whether or not it changed.
+    as older. The row's ``id``, ``agency_id``, ``created_at`` and recruiter columns never change
+    (a row from before E2-01 keeps ``agency_id`` NULL until the E2-02 backfill). Returns the row
+    as stored after the statement, whether or not it changed.
     """
     stmt = pg_insert(Application).values(**values)
     excluded = stmt.excluded

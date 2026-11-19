@@ -33,6 +33,7 @@ from app.modules.ingestion.models import Resume
 from app.modules.ingestion.schemas import UploadBatchResponse
 from app.platform import storage
 from app.platform.config import settings
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 logger = structlog.get_logger()
 
@@ -161,6 +162,8 @@ async def _accept_uploads(
             db,
             Resume(
                 id=resume_id,
+                # The default agency until tenant context exists (E2-03); no user yet (E2-05).
+                agency_id=DEFAULT_AGENCY_ID,
                 campaign_id=campaign_id,
                 original_filename=filename,
                 storage_path=object_key,
