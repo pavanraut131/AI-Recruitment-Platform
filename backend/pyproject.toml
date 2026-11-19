@@ -21,9 +21,9 @@ dependencies = [
     "redis==5.0.5",  # redis 5 has no "asyncio" extra; redis.asyncio is built in
     "flower==2.0.1",
     # PDF processing
-    "pdfplumber==0.11.1",
+    "pdfplumber==0.11.10",  # S3: pins pdfminer.six==20260107 (0.11.1 pinned 20231228: CMap pickle RCE)
     "pymupdf==1.24.5",
-    "Pillow==10.3.0",
+    "Pillow==13.0.0",  # S3: 10.3.0 had 53 advisories (image decoders; pdfplumber dependency)
     # AI
     "google-generativeai==0.7.2",
     # Object storage (MinIO / S3 compatible)
