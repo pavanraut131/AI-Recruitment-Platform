@@ -85,7 +85,15 @@ export function ChartPanel({
               {children}
             </div>
           )}
-          <div id={tableId} className={cn(!showTable && "sr-only")}>
+          {/*
+            Visually hidden, the table's own scroll container (overflow-x-auto)
+            would be a 1 px wide scrollable region with nothing to focus, which
+            keyboard users can't scroll (axe: scrollable-region-focusable).
+          */}
+          <div
+            id={tableId}
+            className={cn(!showTable && "sr-only [&_[data-slot=table-container]]:overflow-visible")}
+          >
             <Table className="text-dense">
               <TableCaption className="sr-only">{title}</TableCaption>
               <TableHeader>
