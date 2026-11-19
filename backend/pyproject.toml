@@ -52,8 +52,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     # Test
-    "pytest==8.2.2",
-    "pytest-asyncio==0.23.7",
+    "pytest==9.2.0",  # S3: 8.2.2 had PYSEC-2026-1845
+    "pytest-asyncio==1.5.0",  # S3: 0.23 requires pytest<9
     "pytest-cov==7.1.0",
     "syrupy==6.1.1",  # snapshot tests (tests/characterization)
     "hypothesis==6.169.0",  # property-based tests (tests/unit)
@@ -80,6 +80,9 @@ constraint-dependencies = [
     "protobuf>=5.29.6",  # google-generativeai; its generativelanguage 0.6.15 caps protobuf<6
     "pyasn1>=0.6.5",  # google-auth (pyasn1-modules)
     "tornado>=6.6.1",  # flower
+    # dev group (pre-commit)
+    "filelock>=4.2.1",  # virtualenv
+    "virtualenv>=21.14.10",  # pre-commit
 ]
 
 # ── pytest ───────────────────────────────────────────────────
