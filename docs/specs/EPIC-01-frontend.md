@@ -1,6 +1,6 @@
 # E1 · Product design & frontend foundation: Design Spec
 
-**Status:** in review  ·  **Date:** 2026-10-19  ·  **Roadmap:** [roadmap.md](../roadmap.md)  ·  **Depends on:** E0 closed (People + Applications are the read model)
+**Status:** approved (E1 closed in Sprint 6)  ·  **Date:** 2026-10-19  ·  **Roadmap:** [roadmap.md](../roadmap.md)  ·  **Depends on:** E0 closed (People + Applications are the read model)
 
 ## 1. Goal
 
@@ -253,13 +253,22 @@ A new CI job, **`e2e`** (Compose up with fake AI, seed a small dataset, run Play
 
 ## 11. Definition of done for the epic
 
-- [ ] The hero flow passes in Playwright E2E in CI, with no serious or critical axe violations.
-- [ ] No `style={}`, no hex colours in components, no `axios` / `react-toastify`. Every colour comes from tokens, and light and dark both pass contrast.
-- [ ] The frontend talks only to `/api/v2` through the generated client. The CI drift check is green.
-- [ ] Every v2 endpoint has contract snapshots. v1 snapshots are unchanged.
-- [ ] The candidate table handles 500 rows smoothly (measured).
-- [ ] README has screenshots (light and dark) and a short "product tour" for pitching.
-- [ ] ADRs: 0006 *Contract-first API client (OpenAPI → TS)*, 0007 *Frontend state model (Query / URL / local)*.
+Checked off in E1-10, each with where the evidence lives.
+
+- [x] The hero flow passes in Playwright E2E in CI, with no serious or critical axe violations.
+  `frontend/e2e/hero-flow.spec.ts` (E1-09, [#46](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/46); Home, Insights and Talent added in E1-10), axe through `checkScreen` in `e2e/support/checks.ts` on every screen in light and dark; the `e2e` CI job, green on `master` since #46.
+- [x] No `style={}`, no hex colours in components, no `axios` / `react-toastify`. Every colour comes from tokens, and light and dark both pass contrast.
+  ESLint: `hireflow/no-inline-styles` (a `style` prop may only set CSS custom properties from runtime values, such as a bar's `--bar: 42%`; shadcn's sidebar, sonner and chart primitives use the same pattern) and `hireflow/banned-libraries` (all of `src`); `axios` is out of `package.json` (E1-10) and `react-toastify` went in E1-01. The only hex in `src` is in `components/ui/chart.tsx`: shadcn's selectors for Recharts' built-in `#ccc` / `#fff` strokes, which it recolours with tokens. Contrast: `npm run check:contrast` (every token pair, both themes) in the `frontend` CI job, and axe's `color-contrast` in the E2E run.
+- [x] The frontend talks only to `/api/v2` through the generated client. The CI drift check is green.
+  The old UI and its v1 client `src/lib/api.ts` are deleted (E1-10); `src` has no `/api/v1` call. The `frontend` CI job exports the document, runs `npm run api:generate` and fails on a diff in `src/lib/api/` (E1-03).
+- [x] Every v2 endpoint has contract snapshots. v1 snapshots are unchanged.
+  `backend/tests/contract_v2/` covers all 21 operations of the v2 document, plus the document itself (E1-02). No E1 ticket changed a v1 snapshot; the only changes in that time were S1's framework upgrade ([#38](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/38)), recorded and explained there.
+- [x] The candidate table handles 500 rows smoothly (measured).
+  `frontend/src/features/applications/candidates-table.perf.test.tsx` (E1-05, [#40](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/40)): 500 rows, mount and J/K/selection timings from React's Profiler; `/dev/candidates` for a manual check in a browser.
+- [x] README has screenshots (light and dark) and a short "product tour" for pitching.
+  [README › Product tour](../../README.md#product-tour), screenshots in `docs/screenshots/` written by the E2E run (`E2E_SCREENSHOT_DIR`, E1-10).
+- [x] ADRs: 0006 *Contract-first API client (OpenAPI → TS)*, 0007 *Frontend state model (Query / URL / local)*.
+  [0006](../adr/0006-contract-first-api-client.md), [0007](../adr/0007-frontend-state-model.md) (E1-03), plus [0008](../adr/0008-api-v2-sub-application.md) (E1-02).
 
 ## 12. Risks
 
