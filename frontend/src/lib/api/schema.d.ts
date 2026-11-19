@@ -391,7 +391,9 @@ export interface components {
              * Score Breakdown
              * @description Sub-scores: skills_match, experience_match, project_relevance, education_bonus, communication_quality.
              */
-            score_breakdown: Record<string, never> | null;
+            score_breakdown: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Skills
              * @description Skills extracted from the current resume.
@@ -1128,13 +1130,19 @@ export interface components {
             /** Certifications */
             certifications: string[];
             /** Education */
-            education: Record<string, never>[];
+            education: {
+                [key: string]: unknown;
+            }[];
             /** Projects */
-            projects: Record<string, never>[];
+            projects: {
+                [key: string]: unknown;
+            }[];
             /** Skills */
             skills: string[];
             /** Work Experience */
-            work_experience: Record<string, never>[];
+            work_experience: {
+                [key: string]: unknown;
+            }[];
             /** Years Of Experience */
             years_of_experience: number | null;
         };
