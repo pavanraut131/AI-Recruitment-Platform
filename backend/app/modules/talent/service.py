@@ -15,6 +15,11 @@ the caller commits (or rolls back) together with its own writes, so a Person is 
 a resume whose processing then fails. The advisory locks it takes are held until that commit, so
 callers should commit promptly after it returns. It needs ``READ COMMITTED`` (Postgres' default):
 each statement must see rows committed while it waited for a lock.
+
+**Tenancy (E2-01).** Every row :func:`resolve_person` inserts (the Person, its identifiers, a
+conflict, the resume's resolution) gets ``agency_id``: the default agency until tenant context
+exists (E2-03, ``app.platform.tenancy``). Matching itself is not per agency yet: E2-02 scopes
+the identifiers' unique constraint and the advisory-lock keys to the agency (spec §3.4).
 """
 
 import uuid
@@ -33,6 +38,7 @@ from app.modules.talent import schemas_v2 as v2
 from app.modules.talent.identity import classify_phone, normalize_email
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 logger = structlog.get_logger()
 
@@ -331,7 +337,7 @@ def _resolve_locked(
     conflicting_id = owners.get(PHONE) if owners.get(PHONE) not in (None, chosen_id) else None
 
     if chosen_id is None:
-        person = Person(id=uuid.uuid4())
+        person = Person(id=uuid.uuid4(), agency_id=DEFAULT_AGENCY_ID)
         _refresh_profile(person, profile, resume_id, newer=True)
         session.add(person)
         session.flush()
@@ -347,6 +353,7 @@ def _resolve_locked(
         session.add(
             IdentityConflict(
                 id=conflict_id,
+                agency_id=DEFAULT_AGENCY_ID,
                 resume_id=resume_id,
                 chosen_person_id=person.id,
                 conflicting_person_id=conflicting_id,
@@ -368,6 +375,7 @@ def _resolve_locked(
     session.add(
         PersonResume(
             resume_id=resume_id,
+            agency_id=DEFAULT_AGENCY_ID,
             person_id=person.id,
             uploaded_at=uploaded_at,
             matched_existing=chosen_id is not None,
@@ -392,6 +400,7 @@ def _attach(
     if row is None:
         session.add(
             PersonIdentifier(
+                agency_id=DEFAULT_AGENCY_ID,
                 person_id=person_id,
                 kind=ident.kind,
                 value_normalized=ident.value,

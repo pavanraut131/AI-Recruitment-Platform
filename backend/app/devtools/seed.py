@@ -20,6 +20,10 @@ What it does
     ``docs/specs/EPIC-00-platform-core.md`` §6.4); ``verify_people_applications --manifest``
     compares them (§6.3).
 
+    Tenancy (EPIC-02, E2-01): everything is created in the default agency
+    (``app.platform.tenancy.DEFAULT_AGENCY_ID``) and every campaign is run for its default client,
+    as the API and the pipeline do until tenant context exists (E2-03).
+
     Why through the services, not direct inserts (E0-20): until the contract phase the seed
     wrote legacy ``candidates`` and the backfill turned them into People and Applications. With
     ``candidates`` gone it could insert People and Applications directly, but it would then
@@ -32,7 +36,8 @@ Safety
     * Refuses when any application exists, unless ``--reset`` is given. ``--reset`` deletes the
       rows of ``applications``, ``resumes`` and ``campaigns`` and of the tables derived from
       them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
-      ``legacy_candidate_map``; nothing else) and prints how many it deleted. ``--if-empty``
+      ``legacy_candidate_map``; nothing else: ``agencies`` and ``clients`` stay) and prints how
+      many it deleted. ``--if-empty``
       instead exits successfully without changes (used by ``make setup``).
     * Commits every :data:`BATCH_SIZE` resumes (the CLI; ``--reset`` with the first batch):
       ``resolve_person`` holds transaction-level advisory locks until the commit, and one
@@ -158,6 +163,7 @@ from app.modules.ingestion.tasks import person_profile
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform.config import settings
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "seed-manifest.json"
@@ -517,6 +523,9 @@ class _Builder:
             rows.append(
                 {
                     "id": _uuid(self.rng),
+                    # The default agency and client, as the create endpoint sets them (E2-01).
+                    "agency_id": DEFAULT_AGENCY_ID,
+                    "client_id": DEFAULT_CLIENT_ID,
                     "title": f"{role} - Hiring Round {i // len(ROLES) + 1}",
                     "role": role,
                     "description": f"We are hiring a {role} to join our {self.fake.city()} team.",
@@ -537,6 +546,7 @@ class _Builder:
         filename = f"{h.first}_{h.last}_resume{suffix}.pdf"
         sub.resume_row = {
             "id": resume_id,
+            "agency_id": campaign["agency_id"],
             "campaign_id": campaign["id"],
             "original_filename": filename,
             "file_hash": hashlib.sha256(f"seed:{self.seed}:resume:{position}".encode()).hexdigest(),
