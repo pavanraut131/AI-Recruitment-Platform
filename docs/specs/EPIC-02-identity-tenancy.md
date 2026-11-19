@@ -244,7 +244,7 @@ The matrix lives in one module, `app.modules.identity.permissions` (`ROLE_PERMIS
 
 - A membership with `all_clients = false` lists its clients in `membership_clients`. Only `recruiter` and `viewer` can be scoped.
 - **Lists** (campaigns, applications through their campaign, Home, stats, Insights, clients) are filtered to the allowed clients. **Single objects** outside the scope answer `404`, exactly like another agency's objects, so the response never confirms that something exists.
-- **The talent pool stays agency-wide** (§3.1): a scoped user sees every Person in the agency, which is what talent rediscovery needs. On a Person's profile, **applications to campaigns outside the scope are left out**, together with their scores and notes. This is open question Q2.
+- **The talent pool stays agency-wide** (§3.1): a scoped user sees every Person in the agency, which is what talent rediscovery needs. On a Person's profile, **applications to campaigns outside the scope are left out**, together with their scores and notes. Decided in §15 (Q2).
 - Uploads, events and exports go through the campaign, so they follow the campaign's client.
 - Client scoping is enforced in the application, not by RLS: it is a contractual boundary inside one tenant, not a legal one between tenants. It is covered by the authorization test suite (§11.3).
 
@@ -764,12 +764,17 @@ ASVS 4.0.3 references in brackets. Every item has a test (§11) or a review step
 | v1 stays unauthenticated during the epic | Bound to the default agency; nothing is deployed before E5; removed by E2-12 |
 | Cookies do not reach the API in a split-domain deployment | Same-site requirement documented (§4.1) and carried into E5; `Me.csrf_token` covers a frontend that cannot read the API's cookies |
 
-## 15. Open questions
+## 15. Decisions on the open questions (2026-11-19)
 
-1. **Several agencies per user.** The design supports it (memberships and the agency switcher). Is it needed for customers, or only for our own support staff? If only support, the switcher could stay hidden behind a single-membership UI.
-2. **Client-scoped users and the talent pool.** Proposed: they see the whole agency's People, but not applications, scores or notes from other clients' campaigns. The alternative is to show only People who applied to their clients' campaigns, which weakens rediscovery.
-3. **Session lifetime.** The proposed defaults are 8 h idle and 7 days absolute. That is friendlier than ASVS L2 (about 30 minutes idle or 12 h absolute without MFA). Is it acceptable until MFA arrives?
-4. **Matrix defaults.** Should recruiters delete applications and export CSV? Should viewers export? Should recruiters see the team list?
-5. **Microsoft accounts.** Work and school accounts only (`organizations`), or personal Microsoft accounts too?
-6. **Domain-based joining.** Should an agency be able to say "anyone signing in with @agency.com joins as a recruiter"? Proposed: later, invitations only in E2.
-7. **Names for migrated data.** "Default agency" and "Default client" for the existing rows, or should the owner name them during the E2-05 `create-owner` step?
+These were open in the first draft. They are decided here and can be revisited with a real customer.
+
+1. **Several agencies per user: yes, for anyone.** The model supports it anyway, and freelance recruiters who work for several agencies are a real case. The UI shows the agency switcher only when a user has more than one membership.
+2. **Client-scoped users see the whole talent pool**, as proposed in §5.3. Applications, scores and notes from campaigns outside their scope stay hidden. Rediscovery is the product's core value, and restricting People would weaken it.
+3. **Sessions: 8 h idle, 7 days absolute** until MFA exists. Both are settings. TOTP MFA is on the backlog as a requirement before the first paying customer. When it ships, the absolute lifetime for users without MFA drops to 12 h.
+4. **Permission defaults as in the §5.2 matrix:**
+   - Recruiters may delete and export within their scope.
+   - Viewers may not export.
+   - Recruiters do not see the team list.
+5. **Microsoft: work and school accounts only** (`organizations`). Agencies sign in with business identities, and personal accounts would add verification risk for little value.
+6. **Joining by email domain: later.** E2 uses invitations only, and domain joining goes to the backlog.
+7. **Names for migrated data:** the E2-02 backfill names them "Default agency" and "General". `create-owner` (E2-05) takes `--agency-name` to rename the agency at setup, and the owner can rename both in Settings.
