@@ -41,7 +41,8 @@ export type CandidatesTableProps = {
   isFetching?: boolean
 }
 
-const SORT_LABEL: Record<SortableColumn, string> = { name: "name", score: "score", updated: "last update" }
+/** Each includes its column's visible header, so the button's name contains its text (WCAG 2.5.3). */
+const SORT_LABEL: Record<SortableColumn, string> = { name: "candidate name", score: "score", updated: "last updated" }
 
 /**
  * The ranked candidates table (spec §5.1), presentational: rows, sort and

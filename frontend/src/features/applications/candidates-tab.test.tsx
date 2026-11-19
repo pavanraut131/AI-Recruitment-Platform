@@ -196,7 +196,7 @@ describe("CandidatesTab: filters, sort and pages in the URL", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sort by score" }))
     await waitFor(() => expect(lastQuery()).toBe("?sort=score"))
     await waitFor(() => expect(lastListQuery(api).get("sort")).toBe("score"))
-    fireEvent.click(screen.getByRole("button", { name: "Sort by last update" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sort by last updated" }))
     await waitFor(() => expect(lastListQuery(api).get("sort")).toBe("-updated_at"))
   })
 
@@ -308,7 +308,7 @@ describe("CandidatesTab: bulk actions", () => {
     installFakeApi({ applications: people })
     renderTab()
     await selectTwo()
-    fireEvent.click(screen.getByRole("button", { name: "Sort by name" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sort by candidate name" }))
     await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Bulk actions" })).toBeNull())
   })
 })

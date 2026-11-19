@@ -12,6 +12,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:report": "playwright show-report e2e-results/report",
     "check:contrast": "node scripts/check-contrast.mjs",
     "api:generate": "openapi-typescript src/lib/api/openapi.v2.json --output src/lib/api/schema.d.ts"
   },
@@ -43,6 +45,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/postcss": "^4",
     "@tanstack/react-query-devtools": "^5.107.1",
     "@testing-library/dom": "^10.4.2",

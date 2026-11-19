@@ -213,3 +213,72 @@ jobs:
 
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
+
+      # The E2E project (docker-compose.e2e.yml over docker-compose.yml), as scripts/e2e.sh runs it.
+      - name: Validate the E2E override
+        run: docker compose -p hireflow-e2e --env-file .env.example -f docker-compose.yml -f docker-compose.e2e.yml config --quiet
+
+  # The hero flow in Playwright against the Compose stack with the fake AI provider, with axe on
+  # every page (EPIC-01 §9). scripts/e2e.sh is the same script `make e2e` runs locally. Not yet a
+  # required check (CONTRIBUTING.md): it becomes one once it has been green on master.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      E2E_FRONTEND_PORT: 13000
+      E2E_BACKEND_PORT: 18000
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Chromium's headless shell and its system libraries. Not cached: Playwright advises
+      # against it (restoring takes about as long as downloading, and the apt packages can't be).
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps --only-shell chromium
+
+      # Builds the images, starts the services with `--wait` (health checks), migrates and seeds.
+      # Configured from .env.example with AI_PROVIDER=fake: no secrets needed.
+      - name: Start the E2E stack
+        run: scripts/e2e.sh up
+
+      # CI=true: one retry, the `github` reporter (annotations) and the HTML report.
+      - name: Playwright
+        run: scripts/e2e.sh test
+
+      - name: Stack logs
+        if: ${{ failure() }}
+        run: mkdir -p frontend/e2e-results && scripts/e2e.sh logs > frontend/e2e-results/compose.log 2>&1
+
+      - name: Upload screenshots (light and dark)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots
+          path: frontend/e2e-results/screenshots
+          if-no-files-found: warn
+
+      - name: Upload the Playwright report, traces and stack logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            frontend/e2e-results/report
+            frontend/e2e-results/artifacts
+            frontend/e2e-results/compose.log
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: ${{ always() }}
+        run: scripts/e2e.sh down

@@ -36,8 +36,10 @@ export function SkillsCell({ skills, required }: { skills: readonly string[]; re
           data-required={isRequired || undefined}
           className={cn(
             "inline-flex h-5 max-w-32 items-center truncate rounded-sm border px-1.5 text-xs",
+            // Required skills: tinted chip, foreground text. Teal text on the translucent tint
+            // fell below 4.5:1 on an active or selected row (axe, E1-09).
             isRequired
-              ? "border-primary/30 bg-primary/10 font-medium text-primary"
+              ? "border-primary/30 bg-primary/10 font-medium text-foreground"
               : "border-border text-muted-foreground",
           )}
           title={isRequired ? `${skill} (required skill)` : skill}

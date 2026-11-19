@@ -1,0 +1,121 @@
+# The end-to-end (Playwright) stack: docker-compose.yml plus this override, as its own Compose
+# project, so it runs next to a dev stack without touching it. Use `make e2e` or scripts/e2e.sh;
+# by hand (from the repo root):
+#
+#   docker compose -p hireflow-e2e --env-file .env.example \
+#     -f docker-compose.yml -f docker-compose.e2e.yml up --build --wait \
+#     postgres redis minio backend worker_extract worker_ai frontend
+#
+# What it changes, and why:
+# - Isolation: no fixed container names (Compose names them hireflow-e2e-<service>-1), its own
+#   volumes (named per project), and host ports only for the frontend and the API, on E2E ports
+#   (E2E_FRONTEND_PORT, default 13000; E2E_BACKEND_PORT, default 18000). Postgres, Redis and MinIO
+#   are reached through `docker compose exec` only.
+# - Configuration from the committed template, never a developer's .env: the services read
+#   .env.example, and `--env-file .env.example` feeds the ${...} interpolation of
+#   docker-compose.yml, so the Postgres and MinIO credentials match the URLs in the template.
+#   The few E2E settings are in `environment` below (it takes precedence over env_file).
+# - Fake AI (AI_PROVIDER=fake): deterministic, offline, no API key.
+# - Code baked into the images (no bind mounts, no --reload) and a production build of the
+#   frontend (frontend/Dockerfile.e2e): what CI tests is what was built, and pages do not compile
+#   on first visit while a test waits.
+# - Celery beat and Flower are not needed and are left out (profile `unused`).
+#
+# The `!reset` / `!override` tags need Docker Compose 2.24.4 or newer.
+name: hireflow-e2e
+
+x-e2e-backend-env: &e2e-backend-env
+  APP_ENV: development
+  DEBUG: "false"
+  AI_PROVIDER: fake
+  GEMINI_API_KEY: ""
+  CORS_ORIGINS: http://localhost:${E2E_FRONTEND_PORT:-13000},http://127.0.0.1:${E2E_FRONTEND_PORT:-13000}
+
+services:
+  # Shorter health-check intervals than the dev stack: `up --wait` returns as soon as they pass.
+  postgres:
+    container_name: !reset null
+    ports: !reset []
+    healthcheck:
+      interval: 2s
+      retries: 30
+
+  redis:
+    container_name: !reset null
+    ports: !reset []
+    healthcheck:
+      interval: 2s
+      retries: 30
+
+  minio:
+    container_name: !reset null
+    ports: !reset []
+    healthcheck:
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    container_name: !reset null
+    # The image's own command: no --reload, code from the image.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    ports: !override
+      - "${E2E_BACKEND_PORT:-18000}:8000"
+    volumes: !reset []
+    healthcheck:
+      interval: 2s
+      retries: 60
+      start_period: 0s
+
+  worker_extract:
+    container_name: !reset null
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    volumes: !reset []
+
+  worker_ai:
+    container_name: !reset null
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    volumes: !reset []
+
+  celery_beat:
+    container_name: !reset null
+    profiles: [unused]
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    volumes: !reset []
+
+  flower:
+    container_name: !reset null
+    profiles: [unused]
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    ports: !reset []
+
+  frontend:
+    container_name: !reset null
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+      args:
+        # Baked into the client bundle at build time: the browser calls the API directly.
+        NEXT_PUBLIC_API_URL: http://localhost:${E2E_BACKEND_PORT:-18000}
+    env_file: !reset []
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:${E2E_BACKEND_PORT:-18000}
+    ports: !override
+      - "${E2E_FRONTEND_PORT:-13000}:3000"
+    volumes: !reset []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/campaigns"]
+      interval: 2s
+      timeout: 5s
+      retries: 60

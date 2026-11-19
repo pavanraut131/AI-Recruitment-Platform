@@ -109,6 +109,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Playwright's output (the HTML report bundles its own JS).
+    "e2e-results/**",
   ]),
 ])
 

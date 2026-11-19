@@ -99,6 +99,26 @@ frontend-install:
 frontend-dev:
 	cd frontend && npm run dev
 
+# ── End-to-end tests (Playwright + axe, EPIC-01 §9) ─────────
+# An isolated Compose project (hireflow-e2e: its own containers, volumes and ports 13000/18000,
+# configured from .env.example with AI_PROVIDER=fake) next to the dev stack, never touching it.
+# `make e2e` starts it, migrates, seeds, runs the suite and removes it; E2E_KEEP=1 keeps it up
+# (then `make e2e-test` to re-run, `make e2e-down` to remove). Playwright args: E2E_ARGS="--headed".
+# Needs Node and Chromium on the host once: cd frontend && npm ci && npx playwright install chromium
+.PHONY: e2e e2e-up e2e-test e2e-down
+E2E_ARGS ?=
+e2e:
+	bash scripts/e2e.sh run $(E2E_ARGS)
+
+e2e-up:
+	bash scripts/e2e.sh up
+
+e2e-test:
+	bash scripts/e2e.sh test $(E2E_ARGS)
+
+e2e-down:
+	bash scripts/e2e.sh down
+
 # ── Cleanup ──────────────────────────────────────────────────
 clean:
 	docker compose down -v --remove-orphans

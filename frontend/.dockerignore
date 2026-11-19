@@ -9,3 +9,5 @@ next-env.d.ts
 npm-debug.log*
 .env*
 .git
+# Playwright output (E2E runs on the host)
+e2e-results

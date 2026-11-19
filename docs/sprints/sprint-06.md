@@ -150,12 +150,12 @@
 ---
 
 ### E1-09 · Playwright E2E and axe in CI
-**Status:** doing  ·  **Size:** M  ·  **Branch:** `e1-09-e2e`
+**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-09-e2e`
 
 **Goal:** Spec §9: prove the hero flow end to end in CI, with automated accessibility checks.
 
 **Acceptance criteria**
-- [ ] **Playwright** runs against the Compose stack with `AI_PROVIDER=fake` and a deterministic seed. It covers the hero flow:
+- [x] **Playwright** runs against the Compose stack with `AI_PROVIDER=fake` and a deterministic seed. It covers the hero flow:
   1. create a campaign with JD extraction;
   2. upload 3 PDFs and see them process;
   3. use the ranked table, filtering it;
@@ -164,12 +164,23 @@
   6. export CSV.
 
   It has no fixed sleeps and retries once in CI only.
-- [ ] `@axe-core/playwright` runs on every E2E page, with no serious or critical violations.
-- [ ] Screenshots of the key screens, in light and dark, are uploaded as a CI artifact.
-- [ ] A new **`e2e`** CI job, to be made a required check once it is green on `master`.
-- [ ] **Locally:** one command runs the suite against its own Compose project and ports, without touching the dev stack. The container names stay `resumeai_*` by default.
+- [x] `@axe-core/playwright` runs on every E2E page, with no serious or critical violations.
+- [x] Screenshots of the key screens, in light and dark, are uploaded as a CI artifact.
+- [x] A new **`e2e`** CI job, to be made a required check once it is green on `master` ([backlog](../backlog.md#platform-and-tooling)).
+- [x] **Locally:** one command runs the suite against its own Compose project and ports, without touching the dev stack. The container names stay `resumeai_*` by default.
 
 **Concept to learn:** reliable E2E tests in CI (seeded data, auto-waiting, health checks) and automated accessibility checks.
+
+**Notes:**
+- **Split.** This PR is the E2E half: Playwright, axe, screenshots and the `e2e` job. Deleting the old UI, the README product tour and closing E1 move to E1-10.
+- **Stack.** `docker-compose.e2e.yml` is an override on `docker-compose.yml`, run as its own Compose project `hireflow-e2e`. `docker-compose.yml` is unchanged, so the dev stack keeps its `resumeai_*` names. The override resets `container_name` (`!reset`), so containers are `hireflow-e2e-<service>-1`. It has its own volumes and publishes only the frontend (13000) and the API (18000). Settings come from `.env.example` (`env_file` plus `--env-file` for interpolation; `.env` is never read), with `AI_PROVIDER=fake` and the E2E CORS origin. Code is baked into the images (no bind mounts, no `--reload`). The frontend is a production build (`frontend/Dockerfile.e2e`, standalone output, `NEXT_PUBLIC_API_URL` baked in), so pages don't compile on first visit while a test waits. Beat and Flower are left out. Health checks are tightened so `up --wait` returns as soon as the services are ready. Needs Compose 2.24.4 or newer (`!reset` / `!override`).
+- **One command.** `scripts/e2e.sh` (`make e2e`, or `bash scripts/e2e.sh` without make) runs `up` (build, `--wait`, `alembic upgrade head`, `app.devtools.seed --people 40 --campaigns 3 --seed 42 --if-empty`), `test` (Playwright on the host), then `down -v`. `E2E_KEEP=1` keeps the stack up; there are also `make e2e-up`, `e2e-test` (with `E2E_ARGS="--ui"`) and `e2e-down`. On failure it writes the stack logs to `frontend/e2e-results/compose.log`.
+- **Data.** The seed is a small deterministic background (lists aren't empty). The test creates everything it asserts on: a campaign titled with the run id, and three PDFs generated in memory (`e2e/support/resume-pdf.ts`, one page of Helvetica text) with run-unique e-mails, so uploads aren't de-duplicated and People aren't merged across runs. The fake AI's rules fix the outcome: Asha Verma 90 (strong), Rahul Iyer 59 (moderate), Meera Nair 28 (weak). The test asserts the order, the scores, the categories and the CSV.
+- **Selectors.** Roles and accessible names only (`table "Candidates"`, `dialog "<name>"`, `combobox "Stage"`, `search "Filter candidates"`, the dropzone's `PDF resumes` input…). No `data-testid` was added. Waiting uses web-first assertions only (Done rows get 60 s, everything else 10 s). Screens are "settled" when no `aria-busy="true"` is left. The stage change is checked optimistically in the table, then again after a reload.
+- **axe and screenshots.** `checkScreen` runs axe (all rules; serious and critical fail, as soft assertions so one run reports every page) and takes a full-page screenshot in light and in dark (`emulateMedia`, next-themes follows the system). It covers the campaign list, new campaign (after extraction), the candidates table with the panel, uploads and the Person profile. Output goes to `frontend/e2e-results/screenshots/{light,dark}/NN-name.png`; toasts are hidden in the screenshots. Each page's full axe result is attached to the HTML report.
+- **axe findings, fixed.** (1) Required-skill chips in the table had teal text on `bg-primary/10` at 4.44:1 on an active row (`color-contrast`, serious). The chip now has foreground text and keeps its tint and border. (2) The sort buttons were labelled "Sort by name" / "Sort by last update" while showing "Candidate" / "Updated" (`label-content-name-mismatch`, WCAG 2.5.3). They are now "Sort by candidate name" / "Sort by last updated", and the unit tests are updated to match. No other serious or critical violations on any page, in either theme.
+- **CI job `e2e`.** Node 22 with the npm cache, `npm ci`, `playwright install --with-deps --only-shell chromium`, `scripts/e2e.sh up`, then `scripts/e2e.sh test` (CI: one retry, `github` reporter). It uploads `e2e-screenshots` always and `e2e-report` (HTML report, traces, `compose.log`) on failure, and runs `down` always. Browsers aren't cached (Playwright advises against it; the apt dependencies can't be cached anyway). Docker layers aren't cached yet ([backlog](../backlog.md#platform-and-tooling)). The `compose` job also validates the E2E override. Not a required check yet.
+- **Proof (local, Windows, Docker Desktop).** Two full `scripts/e2e.sh` runs from a removed stack, both green. Run 1: 210 s in total (including the frontend image rebuild; the test took 57 s on a cold stack). Run 2: 66 s in total (cached images; the test took 22 s). A deliberately wrong expectation (Asha's score 91) failed at the ranking assertion with the received row text; it was reverted. `@playwright/test` 1.65.1 and `@axe-core/playwright` 4.14.0 are pinned. Vitest ignores the specs (`src/**/*.test.*` only), `tsc` checks them, and ESLint ignores `e2e-results/`.
 
 ---
 

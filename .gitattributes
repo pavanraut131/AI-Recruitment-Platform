@@ -2,3 +2,6 @@
 # regeneration on Windows is byte-identical to the committed file and to CI's.
 frontend/src/lib/api/openapi.v2.json linguist-generated=true eol=lf
 frontend/src/lib/api/schema.d.ts linguist-generated=true eol=lf
+
+# Shell scripts run under bash on every OS (Git Bash too): LF, or bash trips over the CRs.
+*.sh text eol=lf

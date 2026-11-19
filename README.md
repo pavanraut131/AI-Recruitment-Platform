@@ -283,6 +283,31 @@ and `src/components/ui` (shadcn/ui primitives). Open **http://localhost:3000/dev
 to see every component in every state, in both themes. Press **⌘K / Ctrl+K** anywhere for the
 command palette.
 
+### End-to-end tests
+```bash
+cd frontend && npm ci && npx playwright install chromium   # once
+make e2e                  # or: bash scripts/e2e.sh (no make needed, e.g. Git Bash on Windows)
+```
+[Playwright](https://playwright.dev) runs the hero flow in Chromium (`frontend/e2e/`): create a
+campaign with JD extraction, upload 3 PDFs and watch them reach Done, filter the ranked table,
+change a candidate's stage in the review panel, open the Person profile, export CSV. Every page
+it visits is checked with [axe](https://github.com/dequelabs/axe-core) in light and dark (no
+serious or critical violations) and screenshotted in both themes.
+
+`make e2e` starts its own Compose project, **`hireflow-e2e`**, next to your dev stack without
+touching it: its own containers and volumes, the frontend on port **13000** and the API on
+**18000** (`E2E_FRONTEND_PORT`, `E2E_BACKEND_PORT`), `AI_PROVIDER=fake`, configured from
+`.env.example` (your `.env` is not read) and a production build of the frontend
+(`docker-compose.e2e.yml`). It migrates, seeds a small deterministic dataset, runs the suite and
+removes the project again. The tests create the data they check (a new campaign, generated PDFs
+with the run's id), so they don't depend on the seed or on earlier runs.
+
+- **Debug:** `E2E_KEEP=1 make e2e` keeps the stack up; then `make e2e-test E2E_ARGS="--ui"` (or
+  `--headed`, `--debug`) re-runs against it, and `make e2e-down` removes it.
+- **Results** in `frontend/e2e-results/`: `screenshots/{light,dark}/`, the HTML report
+  (`npm run e2e:report`) and, for a failure, traces, videos and `compose.log`. CI's **`e2e`** job
+  runs the same script and uploads the screenshots (and on failure the report) as artifacts.
+
 ---
 
 ## Project Structure

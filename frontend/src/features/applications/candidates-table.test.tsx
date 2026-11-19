@@ -127,9 +127,9 @@ describe("CandidatesTable sorting", () => {
     const { onSortChange } = renderTable({ sort: "-score" })
     fireEvent.click(screen.getByRole("button", { name: "Sort by score" }))
     expect(onSortChange).toHaveBeenLastCalledWith("score")
-    fireEvent.click(screen.getByRole("button", { name: "Sort by last update" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sort by last updated" }))
     expect(onSortChange).toHaveBeenLastCalledWith("-updated_at")
-    fireEvent.click(screen.getByRole("button", { name: "Sort by name" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sort by candidate name" }))
     expect(onSortChange).toHaveBeenLastCalledWith("name")
   })
 

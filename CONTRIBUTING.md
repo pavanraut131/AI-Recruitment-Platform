@@ -28,6 +28,7 @@ make typecheck   # mypy
 make test        # pytest
 make api-client  # after a /api/v2 change: regenerate frontend/src/lib/api/ (CI fails if stale)
 cd frontend && npm run lint && npx tsc --noEmit && npm test
+make e2e         # Playwright + axe against an isolated Compose stack (README: End-to-end tests)
 pre-commit install   # once per clone; runs the hooks on every commit
 ```
 
@@ -47,6 +48,7 @@ GitHub only lists a status check in the picker after it has reported on the repo
    - `migrations`
    - `frontend`
    - `compose`
+   - `e2e`: add it once the job has been green on `master` (it arrived with E1-09 and is not required yet).
 5. Enable **Require branches to be up to date before merging**.
 6. Make sure **force pushes** and **deletions** are blocked (leave "Allow force pushes" and "Allow deletions" unchecked, or enable "Block force pushes" and "Restrict deletions" in a ruleset).
 7. Save the rule. Check it works by pushing a commit directly to `master`; it should be rejected.
