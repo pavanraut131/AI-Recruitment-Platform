@@ -5,6 +5,9 @@ Reads every foreign key of the migrated schema (the session database, at ``head`
 same module. :data:`TABLE_OWNERS` is the ownership map (spec §4); every table in the schema
 must be in it, so a new table has to be given an owner before this passes. Since the contract
 migration (E0-20) dropped ``resumes.campaign_id -> campaigns``, there are none left.
+
+The tenant key (EPIC-02, E2-01) adds none either: ``agency_id`` on hiring, talent and ingestion
+tables refers to identity's ``agencies`` as a plain UUID (ADR 0003).
 """
 
 from __future__ import annotations
@@ -15,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.platform.database import Base
 
 TABLE_OWNERS = {
+    "agencies": "identity",
+    "clients": "hiring",
     "campaigns": "hiring",
     "applications": "hiring",
     "legacy_candidate_map": "hiring",
