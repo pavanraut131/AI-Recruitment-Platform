@@ -4,3 +4,4 @@
  */
 export { CandidatesTab } from "./candidates-tab"
 export { CandidatesTable, type CandidatesTableProps } from "./candidates-table"
+export { CandidateRedirect } from "./candidate-redirect"

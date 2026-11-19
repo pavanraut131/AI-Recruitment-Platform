@@ -4,6 +4,63 @@
 
 ---
 
+## Product tour
+
+A recruiter at an agency opens a new role, drops in a batch of resumes and has a ranked, explained
+shortlist a few minutes later. Every candidate is one **person** with their history across the
+agency's campaigns. Light and dark themes, keyboard-first, built for long sessions.
+
+1. **Home.** What needs attention today: active campaigns with new uploads and strong matches,
+   resumes still processing, and the newest strong matches across campaigns, each one click from
+   its review.
+
+   | Light | Dark |
+   |---|---|
+   | ![Home, light theme](docs/screenshots/home-light.png) | ![Home, dark theme](docs/screenshots/home-dark.png) |
+
+2. **New campaign with "Extract with AI".** Paste the job description; the AI fills in the role,
+   the required skills (editable chips) and a clean description.
+
+   ![New campaign after Extract with AI](docs/screenshots/new-campaign-light.png)
+
+3. **Uploads with live progress.** Drop up to 50 PDFs. Each file moves through Uploading →
+   Extracting → Analysing → Done live (Server-Sent Events, no polling); failures say which step
+   failed and can be retried.
+
+   ![Uploads tab with three processed resumes](docs/screenshots/uploads-light.png)
+
+4. **Ranked candidates and the review panel.** Candidates ranked by score, with filters, sorting
+   and bulk actions that live in the URL. The side panel shows the score breakdown, the AI's
+   recommendation, strengths, gaps and missing skills; change the stage and take notes without
+   leaving the table (J/K to move, S for the stage).
+
+   | Light | Dark |
+   |---|---|
+   | ![Candidates table with the review panel, light theme](docs/screenshots/candidates-panel-light.png) | ![Candidates table with the review panel, dark theme](docs/screenshots/candidates-panel-dark.png) |
+
+5. **Person profile.** One page per person: contact and links, the AI evaluation for each
+   application, the extracted profile, every campaign they applied to with its stage, and notes.
+
+   ![Person profile](docs/screenshots/person-profile-light.png)
+
+6. **Insights.** Per campaign: category distribution, score histogram, top skills against the
+   required ones and the processing funnel, each chart with a one-line summary and a data table.
+
+   ![Campaign Insights tab](docs/screenshots/insights-light.png)
+
+7. **Talent.** Everyone who ever applied, as one searchable list of people, ready for the next
+   role.
+
+   ![Talent list](docs/screenshots/talent-light.png)
+
+8. **CSV export.** "Export CSV" downloads the shortlist in the table's order, with scores,
+   categories, stages and notes, for the client or the ATS.
+
+The screenshots come from the end-to-end test run (fake AI, generated resumes); see
+[End-to-end tests](#end-to-end-tests) to refresh them.
+
+---
+
 ## Architecture
 
 One FastAPI backend and two Celery workers, organised as a **modular monolith**
@@ -135,8 +192,8 @@ contract migration, and dropped in E0-20.
 - **Real-time Updates**: Server-Sent Events (SSE) stream live processing status per file
 - **AI Scoring**: Each candidate scored 0–100 against job role requirements
 - **Smart Categorization**: Strong Match / Moderate Match / Weak Match / Rejected
-- **Candidate Dashboard**: Filter by skill, score range, category, search by name
-- **Analytics Panel**: Pie chart (category distribution) + Bar chart (top skills)
+- **Candidate Review**: Ranked table with filters, sorting and bulk actions in the URL, a review side panel, and one profile per person across campaigns
+- **Insights**: Category distribution, score histogram, top skills vs required skills, processing funnel
 - **Celery Monitoring**: Flower dashboard at `localhost:5555`
 - **Retry Logic**: 3 automatic retries per failed task; every step is safe to re-run, and a quota error retries after the provider's retry delay
 
@@ -210,17 +267,6 @@ seeded resumes do not work. The same `--seed` always produces the same data.
 
 ---
 
-## Usage Flow
-
-1. **Create Campaign** → set role + required skills (e.g. "AI Engineer", Python, FastAPI, LLMs)
-2. **Upload Resumes** → drag & drop up to 50 PDFs
-3. **Watch Live Processing** → SSE updates show each file: Extracting → AI Analysis → Done
-4. **Review Candidates** → sorted by AI score, filterable by category/skill/experience
-5. **View Detail** → full profile with strengths, weaknesses, missing skills, recommendation
-6. **Override Category** → manually adjust AI classification if needed
-
----
-
 ## Development (without Docker)
 
 ### Backend
@@ -290,9 +336,10 @@ make e2e                  # or: bash scripts/e2e.sh (no make needed, e.g. Git Ba
 ```
 [Playwright](https://playwright.dev) runs the hero flow in Chromium (`frontend/e2e/`): create a
 campaign with JD extraction, upload 3 PDFs and watch them reach Done, filter the ranked table,
-change a candidate's stage in the review panel, open the Person profile, export CSV. Every page
-it visits is checked with [axe](https://github.com/dequelabs/axe-core) in light and dark (no
-serious or critical violations) and screenshotted in both themes.
+change a candidate's stage in the review panel, open the Person profile, export CSV, then the
+campaign's Insights, Talent (with a search) and Home. Every page it visits is checked with
+[axe](https://github.com/dequelabs/axe-core) in light and dark (no serious or critical violations)
+and screenshotted in both themes.
 
 `make e2e` starts its own Compose project, **`hireflow-e2e`**, next to your dev stack without
 touching it: its own containers and volumes, the frontend on port **13000** and the API on
@@ -307,6 +354,10 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 - **Results** in `frontend/e2e-results/`: `screenshots/{light,dark}/`, the HTML report
   (`npm run e2e:report`) and, for a failure, traces, videos and `compose.log`. CI's **`e2e`** job
   runs the same script and uploads the screenshots (and on failure the report) as artifacts.
+- **README screenshots:** `E2E_SCREENSHOT_DIR=docs/screenshots make e2e` (a path from the repo
+  root) also writes the product tour's screenshots, cropped to the 1440 × 900 viewport, over the
+  ones in `docs/screenshots/`. Which screens and themes go there is the `docs` option of
+  `checkScreen` in `frontend/e2e/hero-flow.spec.ts`.
 
 ---
 
@@ -353,19 +404,22 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 │   │   └── main.py           # FastAPI app + lifespan
 │   └── alembic/              # Database migrations
 ├── frontend/
+│   ├── e2e/                  # Playwright end-to-end tests (hero flow, axe, screenshots)
 │   └── src/
 │       ├── app/              # Next.js App Router routes (thin)
 │       │   ├── layout.tsx            # Root layout: fonts, themes, app shell, toaster
-│       │   ├── (legacy)/             # Prototype screens, same URLs; replaced in E1-04..08
-│       │   ├── talent/, settings/    # Placeholders until E1-08 / E2
+│       │   ├── page.tsx              # Home; campaigns/, people/, talent/ for the other screens
+│       │   ├── candidates/[id]/      # Old /candidates/<id> links → the application in its campaign
+│       │   ├── settings/             # Placeholder until E2
 │       │   └── dev/ui/               # Component gallery (dev builds only)
 │       ├── components/
 │       │   ├── ui/               # shadcn/ui primitives
 │       │   ├── app-shell/        # Sidebar, top bar, ⌘K palette, theme toggle
-│       │   └── *.tsx             # Prototype components, removed with their screens
+│       │   └── …                 # Shared pieces used by several features (data states, badges)
 │       ├── features/             # Product features (one folder each; see README there)
 │       ├── styles/tokens.css     # Design tokens (light + dark)
-│       └── lib/                  # API client and utilities
+│       └── lib/                  # Generated /api/v2 client, Query hooks, utilities
+├── docs/                     # Roadmap, specs, sprints, ADRs, backlog; screenshots/ for this README
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -374,6 +428,10 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 ---
 
 ## API Reference
+
+The frontend uses **`/api/v2`** only (interactive docs at http://localhost:8000/api/v2/docs; the
+spec is [EPIC-01 §6](docs/specs/EPIC-01-frontend.md#6-api-apiv2)). The frozen **`/api/v1`** stays
+for existing integrations until it is removed after E2:
 
 | Method | Endpoint | Description |
 |---|---|---|

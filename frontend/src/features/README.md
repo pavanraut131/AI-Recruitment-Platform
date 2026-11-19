@@ -46,10 +46,11 @@ the uploads feature's tab into them.
    (`var(--category-strong)`, `var(--chart-1)`), never hex. Each chart needs a
    text alternative: the Insights tab's `ChartPanel` pairs it with a summary
    sentence and a data table.
-4. **No `axios`, `react-toastify` or legacy `@/lib/api`** (the v1 client) in
-   features. Use the generated client from `@/lib/api/client` (ADR 0006) with
-   the keys in `@/lib/api/query-keys`, and `toast` from `sonner`. Server state
-   lives in TanStack Query, URL state in nuqs, the rest in React (ADR 0007).
+4. **`/api/v2` only, through the generated client.** Use `@/lib/api/client`
+   (ADR 0006) with the keys in `@/lib/api/query-keys`, and `toast` from
+   `sonner`; `axios` and `react-toastify` are banned everywhere in `src` (the
+   old UI and its `/api/v1` client were deleted in E1-10). Server state lives
+   in TanStack Query, URL state in nuqs, the rest in React (ADR 0007).
 
 Inside a feature, import freely, relatively or via `@/features/<same>/…`.
 

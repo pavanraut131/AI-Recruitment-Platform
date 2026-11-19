@@ -20,9 +20,9 @@
 | S2 | Upgrade Next.js (security) | S | done ([#42](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/42)) |
 | E1-06 | Uploads tab: dropzone, live processing list, retry, quota state | M | done ([#43](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/43)) |
 | E1-07 | Review side panel and Person profile | L | done ([#44](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/44)) |
-| E1-08 | Home dashboard, Insights tab and Talent list | M | doing |
-| E1-09 | Playwright E2E + axe in CI (`e2e` job), screenshots artifact | M | doing |
-| E1-10 | Remove the old UI, README product tour, close E1 | S | todo |
+| E1-08 | Home dashboard, Insights tab and Talent list | M | done ([#45](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/45)) |
+| E1-09 | Playwright E2E + axe in CI (`e2e` job), screenshots artifact | M | done ([#46](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/46)) |
+| E1-10 | Remove the old UI, README product tour, close E1 | S | review |
 
 **Order** (stacks no more than two deep):
 - **Wave 1:** S2, E1-06 and E1-07 in parallel, branched from `master`.
@@ -109,7 +109,7 @@
 ---
 
 ### E1-08 · Home, Insights and Talent
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-08-home-insights-talent`
+**Status:** done ([#45](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/45))  ·  **Size:** M  ·  **Branch:** `e1-08-home-insights-talent`
 
 **Goal:** Spec §4: the dashboard screens.
 
@@ -150,7 +150,7 @@
 ---
 
 ### E1-09 · Playwright E2E and axe in CI
-**Status:** review  ·  **Size:** M  ·  **Branch:** `e1-09-e2e`
+**Status:** done ([#46](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/46))  ·  **Size:** M  ·  **Branch:** `e1-09-e2e`
 
 **Goal:** Spec §9: prove the hero flow end to end in CI, with automated accessibility checks.
 
@@ -185,20 +185,30 @@
 ---
 
 ### E1-10 · Remove the old UI, product tour, close E1
-**Status:** todo  ·  **Size:** S  ·  **Branch:** `e1-10-close-e1`
+**Status:** review  ·  **Size:** S  ·  **Branch:** `e1-10-close-e1`
 
 **Goal:** Spec §11: no old UI left, a README ready for pitching, and E1 closed.
 
 **Acceptance criteria**
-- [ ] **The old UI is deleted:**
+- [x] **The old UI is deleted:**
   - `src/app/(legacy)` (the legacy candidate page and layout), `legacy.css` and the old components;
   - the legacy client `src/lib/api.ts`;
   - `axios` and `react-toastify`.
 
   The frontend calls only `/api/v2`.
-- [ ] The E2E suite also visits Home, Insights and Talent, and the axe checks pass on them.
-- [ ] The README has screenshots (light and dark, from the E2E run) and a short **product tour** for pitching.
-- [ ] **The E1 definition of done** (spec §11) is checked off, the roadmap marks E1 done, and the remaining E1 follow-ups are in the backlog.
+- [x] The E2E suite also visits Home, Insights and Talent, and the axe checks pass on them.
+- [x] The README has screenshots (light and dark, from the E2E run) and a short **product tour** for pitching.
+- [x] **The E1 definition of done** (spec §11) is checked off, the roadmap marks E1 done, and the remaining E1 follow-ups are in the backlog.
+
+**Notes:**
+- **Deleted:** `src/app/(legacy)` (the candidate page, its layout and `legacy.css`; no old components were left, `react-toastify` went in E1-01) and `src/lib/api.ts`, the axios `/api/v1` client. `npm uninstall axios` also drops ten packages only it needed (`follow-redirects`, `form-data`, …) from the lockfile. `src` has no `/api/v1` call and no `axios` or `react-toastify` import; the ESLint ban on them now covers all of `src`, not only features and `lib/api|query`.
+- **Old `/candidates/<id>` links.** The old candidate id is the application's id, and `getApplication` returns its `campaign_id`, so `/candidates/[id]` is now a small client page (`CandidateRedirect` in `features/applications`) that looks the application up and replaces the URL with `/campaigns/<campaign>?open=<id>`, the review panel open; an unknown id shows "Candidate not found". Client side, not a server redirect: the Next server can't reach the API at `NEXT_PUBLIC_API_URL` (the browser's URL) inside Compose. Ids of candidates merged during E0 (`legacy_candidate_map`) don't resolve in v2 ([backlog](../backlog.md#platform-and-tooling)).
+- **E2E.** The hero flow goes on after the export: **7.** the campaign's Insights (category and funnel summaries, the category chart's table toggle), an old `/candidates/<id>` link landing on `?open=`, **8.** Talent (the list, then a search for the run id: its 3 people, one opened), **9.** Home (the campaign's card and the strong match linking to its review). Each screen gets `checkScreen` (axe in light and dark, screenshots in both themes). One spec, one journey: it adds about 8 s to the test.
+- **axe finding, fixed.** Insights' visually hidden data tables kept their scroll container (`overflow-x-auto`), a 1 px scrollable region with nothing to focus (`scrollable-region-focusable`, serious, both themes). Hidden, the container is no longer scrollable. Home and Talent had no serious or critical violations.
+- **README product tour** (Home → new campaign with Extract with AI → uploads → ranked candidates and the review panel → Person profile → Insights → Talent → CSV export), with 9 screenshots in `docs/screenshots/`: all 7 screens in light, Home and the candidates panel also in dark, 1440 × 900, 88–151 KB each (no optimiser needed). `checkScreen`'s `docs` option picks them; `E2E_SCREENSHOT_DIR=docs/screenshots make e2e` refreshes them (README, CONTRIBUTING). README's usage section, feature list, project tree and API section are updated for the new frontend.
+- **DoD sweep (spec §11).** Every item is checked off with a pointer to its evidence. New: an ESLint rule, `hireflow/no-inline-styles`, makes "no `style={}`" checkable: a `style` prop may only set CSS custom properties (the score and progress bars, shadcn's sidebar, sonner and chart). The only hex in `src` is shadcn's chart selectors for Recharts' `#ccc` / `#fff`. The v2 document exported from the running backend is identical to the committed one, and `npm run api:generate` gives no diff.
+- **Proof:** two full `scripts/e2e.sh` runs from a removed stack, both green: 212 s in total with the image rebuilds (the test took 54 s on a cold stack), then 76 s (36 s). The first run of the new steps found the Insights violation above (it failed in both themes before the fix). Deliberately wrong expectations failed where they should: the category summary ("2 strong … 0 weak") at the Insights step and the strong match's link (`?open=<campaign id>`) at the Home step; both reverted. Lint, `tsc`, Vitest (215 tests, 4 new for the redirect), `next build` and the contrast check pass.
+- **Kept-stack flakiness (local).** `--repeat-each=10` against a stack that had already served about 15 runs failed 5 of 10, in old and new steps alike (the campaign POST, "Open full profile", the redirect's lookup, CSS not applied in one dark-theme axe pass). In the one traced, the browser's preflight reached the API and the POST on a new connection never did, so it looks like the Docker Desktop port forwarding on this Windows host rather than the app; 5 earlier repeats and every run on a fresh stack passed. In the [backlog](../backlog.md#platform-and-tooling).
 
 ---
 

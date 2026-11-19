@@ -29,6 +29,7 @@ make test        # pytest
 make api-client  # after a /api/v2 change: regenerate frontend/src/lib/api/ (CI fails if stale)
 cd frontend && npm run lint && npx tsc --noEmit && npm test
 make e2e         # Playwright + axe against an isolated Compose stack (README: End-to-end tests)
+E2E_SCREENSHOT_DIR=docs/screenshots make e2e   # after a visible UI change: refresh the README's screenshots, then commit them
 pre-commit install   # once per clone; runs the hooks on every commit
 ```
 

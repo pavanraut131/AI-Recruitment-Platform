@@ -7,10 +7,9 @@ import nextTs from "eslint-config-next/typescript"
  * Feature-folder boundaries (EPIC-01 §7, src/features/README.md).
  *
  * Code in src/features/<a>/** may not import src/features/<b>/** — shared
- * pieces live in src/components or src/lib. Features, and the new data layer
- * in src/lib/api/** and src/lib/query/** (E1-03), may also not use the
- * libraries the new frontend replaces (axios and the legacy v1 client in
- * src/lib/api.ts → the generated client, react-toastify → sonner).
+ * pieces live in src/components or src/lib. No code in src may use the
+ * libraries the new frontend replaced (axios → the generated /api/v2 client,
+ * react-toastify → sonner); the old UI and its v1 client went in E1-10.
  *
  * One config block per feature folder, generated from the file system, so a
  * new feature is covered without editing this file. Each block repeats the
@@ -36,12 +35,6 @@ const bannedLibraries = [
   {
     name: "react-toastify",
     message: "Use toast from 'sonner' (EPIC-01 §7).",
-  },
-  {
-    // The legacy /api/v1 client (src/lib/api.ts), kept only for src/app/(legacy).
-    name: "@/lib/api",
-    message:
-      "src/lib/api.ts is the legacy /api/v1 client. Use the generated /api/v2 client from '@/lib/api/client' (ADR 0006).",
   },
 ]
 const bannedLibraryPatterns = [
@@ -70,12 +63,8 @@ function featureBoundary(feature) {
 
 const featureRules = [
   {
-    name: "hireflow/new-code-banned-libraries",
-    files: [
-      "src/features/**/*.{ts,tsx,js,jsx,mjs}",
-      "src/lib/api/**/*.{ts,tsx,js,jsx,mjs}",
-      "src/lib/query/**/*.{ts,tsx,js,jsx,mjs}",
-    ],
+    name: "hireflow/banned-libraries",
+    files: ["src/**/*.{ts,tsx,js,jsx,mjs}"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -98,10 +87,33 @@ const featureRules = [
   })),
 ]
 
+/*
+ * No inline styling (EPIC-01 §3, §11): every colour and size comes from tokens
+ * and classes. A `style` prop may only set CSS custom properties from runtime
+ * values (a bar's `--bar: 42%`, read by a `w-(--bar)` class), so a property
+ * written as a plain key (`backgroundColor`, "color") is an error.
+ */
+const inlineStyleRule = {
+  name: "hireflow/no-inline-styles",
+  files: ["src/**/*.{ts,tsx,js,jsx}"],
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "JSXAttribute[name.name='style'] Property:matches([key.type='Identifier'], [key.type='Literal']:not([key.value=/^--/]))",
+        message:
+          "Style with classes and tokens; a style prop may only set CSS custom properties (--name) from runtime values (EPIC-01 §3).",
+      },
+    ],
+  },
+}
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...featureRules,
+  inlineStyleRule,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
