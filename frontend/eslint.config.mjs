@@ -87,10 +87,33 @@ const featureRules = [
   })),
 ]
 
+/*
+ * No inline styling (EPIC-01 §3, §11): every colour and size comes from tokens
+ * and classes. A `style` prop may only set CSS custom properties from runtime
+ * values (a bar's `--bar: 42%`, read by a `w-(--bar)` class), so a property
+ * written as a plain key (`backgroundColor`, "color") is an error.
+ */
+const inlineStyleRule = {
+  name: "hireflow/no-inline-styles",
+  files: ["src/**/*.{ts,tsx,js,jsx}"],
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "JSXAttribute[name.name='style'] Property:matches([key.type='Identifier'], [key.type='Literal']:not([key.value=/^--/]))",
+        message:
+          "Style with classes and tokens; a style prop may only set CSS custom properties (--name) from runtime values (EPIC-01 §3).",
+      },
+    ],
+  },
+}
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...featureRules,
+  inlineStyleRule,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
