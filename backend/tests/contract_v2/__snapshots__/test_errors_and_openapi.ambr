@@ -152,6 +152,7 @@
             'score_breakdown': dict({
               'anyOf': list([
                 dict({
+                  'additionalProperties': True,
                   'type': 'object',
                 }),
                 dict({
@@ -448,9 +449,6 @@
           'properties': dict({
             'action': dict({
               'const': 'delete',
-              'enum': list([
-                'delete',
-              ]),
               'title': 'Action',
               'type': 'string',
             }),
@@ -478,9 +476,6 @@
           'properties': dict({
             'action': dict({
               'const': 'reject',
-              'enum': list([
-                'reject',
-              ]),
               'title': 'Action',
               'type': 'string',
             }),
@@ -508,9 +503,6 @@
           'properties': dict({
             'action': dict({
               'const': 'stage',
-              'enum': list([
-                'stage',
-              ]),
               'title': 'Action',
               'type': 'string',
             }),
@@ -1693,6 +1685,7 @@
             }),
             'education': dict({
               'items': dict({
+                'additionalProperties': True,
                 'type': 'object',
               }),
               'title': 'Education',
@@ -1700,6 +1693,7 @@
             }),
             'projects': dict({
               'items': dict({
+                'additionalProperties': True,
                 'type': 'object',
               }),
               'title': 'Projects',
@@ -1714,6 +1708,7 @@
             }),
             'work_experience': dict({
               'items': dict({
+                'additionalProperties': True,
                 'type': 'object',
               }),
               'title': 'Work Experience',
@@ -2882,8 +2877,8 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'maximum': 100.0,
-                    'minimum': 0.0,
+                    'maximum': 100,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({
@@ -2900,8 +2895,8 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'maximum': 100.0,
-                    'minimum': 0.0,
+                    'maximum': 100,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({
@@ -2938,7 +2933,7 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'minimum': 0.0,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({
@@ -3200,8 +3195,8 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'maximum': 100.0,
-                    'minimum': 0.0,
+                    'maximum': 100,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({
@@ -3218,8 +3213,8 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'maximum': 100.0,
-                    'minimum': 0.0,
+                    'maximum': 100,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({
@@ -3256,7 +3251,7 @@
               'schema': dict({
                 'anyOf': list([
                   dict({
-                    'minimum': 0.0,
+                    'minimum': 0,
                     'type': 'number',
                   }),
                   dict({

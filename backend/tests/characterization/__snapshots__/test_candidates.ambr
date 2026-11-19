@@ -156,7 +156,7 @@
       'detail': list([
         dict({
           'ctx': dict({
-            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+            'error': 'invalid character: found `n` at 0',
           }),
           'input': 'nope',
           'loc': list([
@@ -164,7 +164,7 @@
             'candidate_ids',
             0,
           ]),
-          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
           'type': 'uuid_parsing',
         }),
       ]),
@@ -247,14 +247,14 @@
       'detail': list([
         dict({
           'ctx': dict({
-            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+            'error': 'invalid character: found `n` at 0',
           }),
           'input': 'not-a-uuid',
           'loc': list([
             'path',
             'candidate_id',
           ]),
-          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
           'type': 'uuid_parsing',
         }),
       ]),
@@ -601,14 +601,14 @@
       'detail': list([
         dict({
           'ctx': dict({
-            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+            'error': 'invalid character: found `n` at 0',
           }),
           'input': 'not-a-uuid',
           'loc': list([
             'path',
             'resume_id',
           ]),
-          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
           'type': 'uuid_parsing',
         }),
       ]),
@@ -647,14 +647,14 @@
       'detail': list([
         dict({
           'ctx': dict({
-            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+            'error': 'invalid character: found `n` at 0',
           }),
           'input': 'not-a-uuid',
           'loc': list([
             'path',
             'candidate_id',
           ]),
-          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
           'type': 'uuid_parsing',
         }),
       ]),
@@ -1312,14 +1312,14 @@
       'detail': list([
         dict({
           'ctx': dict({
-            'error': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+            'error': 'invalid character: found `n` at 0',
           }),
           'input': 'not-a-uuid',
           'loc': list([
             'path',
             'campaign_id',
           ]),
-          'msg': 'Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1',
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
           'type': 'uuid_parsing',
         }),
       ]),

@@ -14,8 +14,8 @@ dependencies = [
     "alembic==1.13.1",
     "psycopg2-binary==2.9.9",
     # Settings
-    "pydantic-settings==2.3.0",
-    "pydantic==2.9.2",  # S1: fastapi 0.163 requires pydantic>=2.9
+    "pydantic-settings==2.16.3",  # S3: needs python-dotenv>=1.2.2
+    "pydantic==2.14.3",  # S3: current 2.x (S1 moved only to fastapi 0.163's minimum, 2.9)
     # Celery (flower is used by the flower container)
     "celery[redis]==5.4.0",
     "redis==5.0.5",  # redis 5 has no "asyncio" extra; redis.asyncio is built in
