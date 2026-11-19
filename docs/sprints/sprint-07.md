@@ -1,0 +1,98 @@
+# Sprint 7 · Tenancy in the data, isolation in the database, sign-in
+
+**Epic:** [E2 · Identity & tenancy](../specs/EPIC-02-identity-tenancy.md)  ·  **Dates:** 2026-11-19 → 2026-11-26  ·  **Status:** in progress
+
+## Sprint goal
+
+> Every row, task, stream and stored file belongs to an **agency**. Postgres row-level security refuses another agency's rows even when the code forgets a filter, and the tenant-isolation suite proves it. People **sign in** with email and password into a server-side session, and `/api/v2` requires one. A temporary `AUTH_REQUIRED=false` keeps the frontend and the E2E job working as the default agency's owner until Sprint 8 adds the login screens.
+>
+> Also: the backend's dependency advisories are closed before anything is deployed (E5).
+
+## Board
+
+| Ticket | Title | Size | Status |
+|---|---|---|---|
+| S3 | Backend dependency security upgrades (Pillow, pdfminer.six, pydantic, the rest of `pip-audit`) | M | todo |
+| E2-01 | Tenancy expand: `agencies`, `clients`, nullable `agency_id` / `client_id`, writes set them | M | todo |
+| E2-02 | Tenancy backfill, verify and contract: NOT NULL, per-agency uniques and matching | M | todo |
+| E2-03 | Tenant context: bound sessions, repository filters, Celery, SSE channels and storage keys | L | todo |
+| E2-04 | Row-level security: roles, policies, the app role everywhere, the isolation suite | L | todo |
+| E2-05 | Identity core: users, sessions, login, CSRF, rate limits, audit; v2 requires a session | L | todo |
+
+**Order** (spec §12):
+- **Wave 1:** E2-01 and S3 in parallel.
+  - S3 is the only ticket in this wave that changes `pyproject.toml` / `uv.lock`, and the only one that may re-record the v2 OpenAPI snapshot and regenerate the client (pydantic).
+  - E2-01 makes no API change, and all snapshots stay as they are.
+- **Wave 2:** E2-02 and E2-03 in parallel, after E2-01. E2-02 owns the migrations and `resolve_person`. E2-03 owns `app.platform.tenancy`, the repositories' filters, Celery, SSE and storage.
+- **Wave 3:** E2-04 and E2-05 in parallel, after wave 2.
+  - E2-04 owns the database roles, the RLS migration and the test harness's switch to the app role.
+  - E2-05 owns the `identity` tables and the auth endpoints, and it adds `argon2-cffi`.
+  - Whichever merges second rebases on the other. Expect overlap in the test fixtures.
+
+**Working agreements** (from the [Sprint 6 retro](sprint-06.md#sprint-review--retro)):
+- **Only a sprint docs PR edits the board, the roadmap and other tickets' sections.** A ticket PR ticks its own acceptance criteria in the spec (§12), may add notes under its own section here, and adds backlog items next to related ones.
+- **Rebuild the local Compose stack** after any merge that changes dependencies or adds an init script (S3, E2-04, E2-05).
+- **Migrations** are tested upgrade → downgrade → upgrade. Every PR with a migration says in its body how it was rehearsed on the Compose stack with the seed data.
+- **Snapshots:** the v1 characterization snapshots and the v2 contract snapshots stay unchanged unless the ticket says otherwise. Any change is listed and explained in the PR.
+- **Security changes** are checked against the spec's checklist (§10). The PR says which items it covers.
+
+---
+
+### S3 · Backend dependency security upgrades
+**Status:** todo  ·  **Size:** M  ·  **Branch:** `s3-backend-security-deps`
+
+**Goal:** Close the backend's known advisories before E5 ([backlog](../backlog.md#platform-and-tooling)). Uploaded PDFs are untrusted input, so the PDF parsing stack comes first.
+
+**Acceptance criteria**
+- [ ] Pillow (10.3.0, 53 advisories) and pdfminer.six (20231228) are upgraded to releases without known advisories. If pdfplumber pins them, it is upgraded too, and PDF extraction is re-checked on the sample PDFs and the ingestion tests.
+- [ ] The other `pip-audit` findings are upgraded where a fix exists: filelock, pyasn1, protobuf, tornado (flower), certifi, python-dotenv, and dev-only pytest and virtualenv. What can't be fixed is listed with the reason.
+- [ ] pydantic (2.9.2) and pydantic-settings are upgraded to the current 2.x. If the v2 OpenAPI document changes, the snapshot is re-recorded with an explanation and the TypeScript client is regenerated, so the drift check passes.
+- [ ] `pip-audit` on `uv export --all-groups` reports nothing fixable. The full test suite, mypy, ruff and import-linter pass, and the Compose stack runs the hero flow (`make e2e`).
+
+**Concept to learn:** reading advisories for a transitive dependency, and judging how far an upgrade may move a public contract.
+
+---
+
+### E2-01 · Tenancy expand
+**Status:** todo  ·  **Size:** M  ·  **Branch:** `e2-01-tenancy-expand`
+
+Goal and acceptance criteria: [spec §12, E2-01](../specs/EPIC-02-identity-tenancy.md#e2-01--tenancy-expand). Design: spec §3 (tables, module ownership) and §7.1 (phase 1).
+
+---
+
+### E2-02 · Tenancy backfill, verify and contract
+**Status:** todo  ·  **Size:** M  ·  **Branch:** `e2-02-tenancy-contract`
+
+Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenancy.md#e2-02--tenancy-backfill-verify-and-contract). Design: spec §3.3, §7.1 (phases 2–4) and §7.3. Takes the `resumes (agency_id, campaign_id)` index from the backlog.
+
+---
+
+### E2-03 · Tenant context
+**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-03-tenant-context`
+
+Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenancy.md#e2-03--tenant-context). Design: spec §6.3, §6.5 and §6.6.
+
+---
+
+### E2-04 · Row-level security
+**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-04-rls`
+
+Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenancy.md#e2-04--row-level-security). Design: spec §6, §7.2 and §11.1–11.2; [ADR 0009](../adr/0009-tenant-isolation-row-level-security.md) is accepted in this ticket.
+
+---
+
+### E2-05 · Identity core
+**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
+
+Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenancy.md#e2-05--identity-core). Design: spec §4, §5.4, §8 and §10; [ADR 0010](../adr/0010-server-side-sessions.md) is accepted in this ticket.
+
+---
+
+## Sprint review & retro
+
+*(To be filled in at the end of the sprint.)*
+
+- **Demo:**
+- **Keep:**
+- **Drop:**
+- **Try:**

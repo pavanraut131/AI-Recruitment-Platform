@@ -14,7 +14,7 @@ Status values: ⬜ not started · 🟦 designing · 🟨 in progress · ✅ done
 |---|---|---|---|---|
 | E0 | **Platform core**: modular restructure, Person/Application split, Postgres test infra, working CI | ✅ | DDD, testcontainers, data migrations | [spec](specs/EPIC-00-platform-core.md) |
 | E1 | **Product design & frontend foundation (HireFlow AI)**: agency-model screen structure, design system (shadcn/ui, tokens, light/dark), TanStack Query, API client generated from OpenAPI, rebuild existing screens, Playwright | ✅ | Product/UX design, design systems, frontend architecture | [spec](specs/EPIC-01-frontend.md) |
-| E2 | **Identity & tenancy**: Agency → Clients → users, roles, Postgres row-level security | ⬜ | OAuth/OIDC, RBAC, multi-tenant isolation | — |
+| E2 | **Identity & tenancy**: Agency → Clients → users, roles, Postgres row-level security | 🟨 | OAuth/OIDC, RBAC, multi-tenant isolation | [spec](specs/EPIC-02-identity-tenancy.md) |
 | E3 | **AI gateway**: Gemini/Claude/OpenAI behind one interface, structured outputs, fallback, per-tenant cost logging | ⬜ | Provider abstraction, resilience, metering | — |
 | E4 | **AI quality & observability**: golden-set evals, prompt regression in CI, tracing | ⬜ | LLM evals, Langfuse, OpenTelemetry | — |
 | E5 | **Infrastructure & delivery**: Terraform on GCP (Cloud Run, Cloud SQL, GCS), staging and prod | ⬜ | Infrastructure-as-code, CI/CD, secrets | — |
@@ -29,6 +29,7 @@ Ordering notes:
 - E1 follows E0 so that the generated API client targets the settled Person/Application API.
 - E1 precedes E2 so that login and the agency/client switcher are built on the new design system.
 - E5 follows E2 so that nothing is deployed publicly until authentication and tenant isolation exist.
+- E5 must serve the frontend and the API under one registrable domain, preferably one origin with `/api` routed to the backend, so E2's `SameSite=Lax` session cookie works (E2 spec §4.1). Flower's and MinIO's default credentials must not ship.
 
 ## Sprints
 
@@ -39,7 +40,9 @@ Ordering notes:
 | [3](sprints/sprint-03.md) | 2026-10-15 → 10-19 | People and applications side by side: expand, dual write, backfill, verify | done |
 | [4](sprints/sprint-04.md) | 2026-10-19 (closed early) | Switch reads, contract, close E0 | done |
 | [5](sprints/sprint-05.md) | 2026-11-17 (closed 11-18) | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | done |
-| [6](sprints/sprint-06.md) | 2026-11-18 → 11-25 | E1 hero flow end to end: uploads, review panel and Person profile, Home/Insights/Talent, Playwright E2E, old UI removed; close E1 | in progress |
+| [6](sprints/sprint-06.md) | 2026-11-18 (closed 11-19) | E1 hero flow end to end: uploads, review panel and Person profile, Home/Insights/Talent, Playwright E2E, old UI removed; close E1 | done |
+| [7](sprints/sprint-07.md) | 2026-11-19 → 11-26 | E2 part 1: tenancy in the data, row-level security, sign-in core; backend dependency advisories | in progress |
+| [8](sprints/sprint-08.md) | after Sprint 7 | E2 part 2: roles and clients, invitations, Google/Microsoft sign-in, auth screens, `/api/v1` removed; close E2 | planned |
 
 Open follow-ups (bugs, upgrades, small debts) that no sprint has taken yet: [backlog.md](backlog.md).
 
