@@ -354,14 +354,14 @@ The isolation suite asserts that **every** other table has RLS enabled and force
 
 ## 7. Migration plan (expand → backfill → contract → enforce)
 
-The same pattern as E0 (EPIC-00 §6). The existing data becomes the **default agency** ("Default agency", fixed id `DEFAULT_AGENCY_ID` in `app.platform.tenancy`) with one **default client** ("Default client"). Both are renamed by the owner afterwards. The constant only exists for the transition: E2-12 deletes it, and the agency itself becomes a normal agency.
+The same pattern as E0 (EPIC-00 §6). The existing data becomes the **default agency** ("Default agency", fixed id `DEFAULT_AGENCY_ID` in `app.platform.tenancy`) with one **default client** ("General", §15 Q7). Both are renamed by the owner afterwards. The constant only exists for the transition: E2-12 deletes it, and the agency itself becomes a normal agency.
 
 ### 7.1 Phases
 
 | Phase | Ticket | Migration and code | Runtime behaviour |
 |---|---|---|---|
 | **1 · Expand** | E2-01 | Create `agencies` and `clients`; insert the default agency and default client; add **nullable** `agency_id` (and `client_id`, `created_by_user_id`, `uploaded_by_user_id`) to the tenant tables. Nothing is dropped. | Every insert sets `agency_id` (the default agency) and new campaigns get the default client: the equivalent of E0's dual write. |
-| **2 · Backfill** | E2-02 | `python -m app.modules.identity.backfill_tenancy`: per table, in batches of 1,000 by keyset on `id` (`UPDATE … SET agency_id = :default WHERE id IN (…) AND agency_id IS NULL`), one transaction per batch; resumable and idempotent. Campaigns also get `client_id`. | Runs while the app is live |
+| **2 · Backfill** | E2-02 | `python -m app.modules.ingestion.backfill_tenancy` (in `ingestion`, the top layer, like E0's backfill: `identity` is a leaf and may not write other modules' tables): per table, in batches of 1,000 by keyset on `id` (`UPDATE … SET agency_id = :default WHERE id IN (…) AND agency_id IS NULL`), one transaction per batch; resumable and idempotent. Campaigns also get `client_id`. | Runs while the app is live |
 | **3 · Verify** | E2-02 | `verify_people_applications` gains `tenancy_complete` (no NULL `agency_id`) and `cross_module_same_agency` (an application, its Person, its resume and its campaign share one agency). It must pass before phase 4. | Read-only |
 | **4 · Contract** | E2-02 | `agency_id` NOT NULL using `ADD CONSTRAINT … CHECK (agency_id IS NOT NULL) NOT VALID` → `VALIDATE CONSTRAINT` → `SET NOT NULL` → drop the check (no long exclusive lock). Unique and composite-FK targets built `CONCURRENTLY` in an `autocommit_block()`, then attached with `ADD CONSTRAINT … USING INDEX`. Swap `person_identifiers`' unique to `(agency_id, kind, value_normalized)`. Composite FKs added `NOT VALID`, then validated. | Unchanged |
 | **5 · Enforce** | E2-04 | Create the roles (if missing), grants, default privileges, `app_current_agency()`, `ENABLE` + `FORCE` RLS and the policies. The app switches `DATABASE_URL` / `SYNC_DATABASE_URL` to `hireflow_app`. | Tenant-bound sessions only. Rollback: point the URLs back at the owner (the owner policy keeps the app working) and downgrade the migration. |
@@ -585,7 +585,7 @@ ASVS 4.0.3 references in brackets. Every item has a test (§11) or a review step
 
 **Concept to learn:** expand/contract for a new tenant key; metadata-only `ADD COLUMN`.
 
-**Notes (done):** migration `e2a01d5c8f36`. Both transition ids are in `app.platform.tenancy`: `DEFAULT_AGENCY_ID` (`…a001`, "Default agency", slug `default`) and `DEFAULT_CLIENT_ID` (`…c001`, "General" per §15 Q7, not "Default client" as §7 says). The client id sits next to the agency id because the E2-02 backfill needs it and `identity` may not import `hiring`. `clients` is new, so its `agency_id` is `NOT NULL` and its uniques (`(agency_id, id)`, `(agency_id, lower(name))` as a unique index) exist already; no composite FK or index on the existing tables yet (E2-02). Rows written before E2-01 keep `agency_id` NULL, and so do they when the pipeline re-scores them (the upsert sets it on insert only): the backfill fills them. Rehearsed on the Compose-size seed written by the E0-20 code: the upgrade rewrites no table, `verify_people_applications` passes, new writes carry the default agency.
+**Notes (done):** migration `e2a01d5c8f36`. Both transition ids are in `app.platform.tenancy`: `DEFAULT_AGENCY_ID` (`…a001`, "Default agency", slug `default`) and `DEFAULT_CLIENT_ID` (`…c001`, "General" per §15 Q7). The client id sits next to the agency id because the E2-02 backfill needs it and `identity` may not import `hiring`. `clients` is new, so its `agency_id` is `NOT NULL` and its uniques (`(agency_id, id)`, `(agency_id, lower(name))` as a unique index) exist already; no composite FK or index on the existing tables yet (E2-02). Rows written before E2-01 keep `agency_id` NULL, and so do they when the pipeline re-scores them (the upsert sets it on insert only): the backfill fills them. Rehearsed on the Compose-size seed written by the E0-20 code: the upgrade rewrites no table, `verify_people_applications` passes, new writes carry the default agency.
 
 ### E2-02 · Tenancy backfill, verify and contract
 **Size:** M  ·  **Branch:** `e2-02-tenancy-contract`  ·  **Depends on:** E2-01
@@ -593,7 +593,7 @@ ASVS 4.0.3 references in brackets. Every item has a test (§11) or a review step
 **Goal:** Every existing row belongs to the default agency, and the schema guarantees `agency_id` from now on.
 
 **Acceptance criteria**
-- [ ] `python -m app.modules.identity.backfill_tenancy`: batched, keyset-paginated, resumable, idempotent; a second run changes nothing (tested).
+- [ ] `python -m app.modules.ingestion.backfill_tenancy`: batched, keyset-paginated, resumable, idempotent; a second run changes nothing (tested).
 - [ ] `verify_people_applications` gains `tenancy_complete`, `cross_module_same_agency` and `clients_same_agency` (§7.3) and passes on the Compose seed.
 - [ ] Contract migration (§7.1 phase 4): NOT NULL via validated CHECK; `UNIQUE(agency_id, id)` targets and composite FKs (`NOT VALID` → `VALIDATE`); `person_identifiers` unique becomes `(agency_id, kind, value_normalized)`; `(agency_id, …)` indexes including `resumes (agency_id, campaign_id)`; index builds `CONCURRENTLY`.
 - [ ] `resolve_person` matches and locks per agency (`agency_id:kind:value` keys). The concurrency test passes 20 runs in a row with two agencies.
@@ -779,4 +779,4 @@ These were open in the first draft. They are decided here and can be revisited w
    - Recruiters do not see the team list.
 5. **Microsoft: work and school accounts only** (`organizations`). Agencies sign in with business identities, and personal accounts would add verification risk for little value.
 6. **Joining by email domain: later.** E2 uses invitations only, and domain joining goes to the backlog.
-7. **Names for migrated data:** the E2-02 backfill names them "Default agency" and "General". `create-owner` (E2-05) takes `--agency-name` to rename the agency at setup, and the owner can rename both in Settings.
+7. **Names for migrated data:** the E2-01 expand migration creates them as "Default agency" and "General". `create-owner` (E2-05) takes `--agency-name` to rename the agency at setup, and the owner can rename both in Settings.
