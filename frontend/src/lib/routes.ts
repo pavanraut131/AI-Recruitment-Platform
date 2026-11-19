@@ -15,7 +15,8 @@ export function personHref(personId: string, applicationId?: string): string {
   return applicationId ? `${path}?application=${encodeURIComponent(applicationId)}` : path
 }
 
-/** A campaign's workspace. */
-export function campaignHref(campaignId: string): string {
-  return `/campaigns/${encodeURIComponent(campaignId)}`
+/** A campaign's workspace, on its default tab (Candidates) or on `tab` (`?tab=`, E1-04). */
+export function campaignHref(campaignId: string, tab?: "uploads" | "insights" | "settings"): string {
+  const path = `/campaigns/${encodeURIComponent(campaignId)}`
+  return tab ? `${path}?tab=${tab}` : path
 }

@@ -4,6 +4,7 @@ import * as React from "react"
 import { debounce, parseAsArrayOf, parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs"
 
 import type { CampaignListParams } from "@/lib/api/query-keys"
+import { useDebouncedValue } from "@/lib/use-debounced-value"
 
 import { CAMPAIGN_STATUSES, type CampaignStatus } from "../schema"
 
@@ -60,13 +61,4 @@ export function useCampaignListParams() {
     setPage: (value: number) => void setParams({ page: value <= 1 ? null : value }),
     clearFilters: () => void setParams({ status: null, q: null, page: null }),
   }
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = React.useState(value)
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
 }

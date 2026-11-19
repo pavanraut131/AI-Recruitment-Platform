@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useQueryState } from "nuqs"
 import { ArrowLeftIcon, PencilIcon, SearchXIcon, UploadIcon } from "lucide-react"
 
+import { CampaignStatusBadge } from "@/components/campaign/status-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,10 +13,9 @@ import { useCampaignEvents, type CampaignEventsStatus } from "@/lib/query/use-ca
 import { cn } from "@/lib/utils"
 
 import { useCampaign, type Campaign } from "../api"
-import { CampaignStatusBadge } from "../components/campaign-status-badge"
-import { EmptyState, ErrorState } from "../components/data-states"
+import { InsightsTab } from "../insights/insights-tab"
+import { EmptyState, ErrorState } from "@/components/data-states"
 import { KpiStrip } from "./kpi-strip"
-import { InsightsPlaceholder } from "./placeholders"
 import { SettingsTab } from "./settings-tab"
 import { WORKSPACE_TAB_LABELS, WORKSPACE_TABS, workspaceTabParser, type WorkspaceTab } from "./workspace-tabs"
 
@@ -84,7 +84,7 @@ export function CampaignWorkspace({
         <TabsContent value="candidates">{candidatesTab}</TabsContent>
         <TabsContent value="uploads">{uploadsTab}</TabsContent>
         <TabsContent value="insights">
-          <InsightsPlaceholder />
+          <InsightsTab campaign={data} onUpload={() => void setTab("uploads")} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsTab campaign={data} />

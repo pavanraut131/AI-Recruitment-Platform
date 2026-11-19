@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils"
 
 /*
  * Empty and error states for data views (spec §8: every view has designed
- * states). Shared by features; `features/campaigns` still has its own copy
- * (data-states.tsx) until it switches to this one (backlog).
+ * states). Shared by every feature's screens.
  */
 
 export function EmptyState({

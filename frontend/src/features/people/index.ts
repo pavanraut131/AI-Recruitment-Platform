@@ -1,5 +1,6 @@
 /**
- * People feature (EPIC-01 §5.4, §7): the Person profile. Routes import from
- * here only. (The Talent list joins it in E1-08.)
+ * People feature (EPIC-01 §4, §5.4, §7): the Person profile and the Talent
+ * list. Routes import from here only.
  */
 export { PersonProfile } from "./person-profile"
+export { TalentList } from "./talent/talent-list"
