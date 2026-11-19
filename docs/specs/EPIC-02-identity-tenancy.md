@@ -578,12 +578,14 @@ ASVS 4.0.3 references in brackets. Every item has a test (§11) or a review step
 **Goal:** Add the tenant key to the schema without breaking anything, and make every write set it.
 
 **Acceptance criteria**
-- [ ] `identity` module skeleton (models, service, `agencies` table) with import-linter: added to `leaf-modules`, `llm-sdk-only-in-ai` and the module lists; `TABLE_OWNERS` updated.
-- [ ] Expand migration: `agencies`, `clients` (hiring), nullable `agency_id` on the seven existing tenant tables, `campaigns.client_id` / `created_by_user_id`, `resumes.uploaded_by_user_id`; inserts the default agency and default client. Upgrade → downgrade → upgrade is tested.
-- [ ] Every insert path (campaigns, applications, People and their identifiers, conflicts, `person_resumes`, resumes, the seed) sets `agency_id = DEFAULT_AGENCY_ID`; new campaigns get the default client.
-- [ ] All v1 snapshots and v2 contract snapshots are unchanged (no API change yet).
+- [x] `identity` module skeleton (models, service, `agencies` table) with import-linter: added to `leaf-modules`, `llm-sdk-only-in-ai` and the module lists; `TABLE_OWNERS` updated.
+- [x] Expand migration: `agencies`, `clients` (hiring), nullable `agency_id` on the seven existing tenant tables, `campaigns.client_id` / `created_by_user_id`, `resumes.uploaded_by_user_id`; inserts the default agency and default client. Upgrade → downgrade → upgrade is tested.
+- [x] Every insert path (campaigns, applications, People and their identifiers, conflicts, `person_resumes`, resumes, the seed) sets `agency_id = DEFAULT_AGENCY_ID`; new campaigns get the default client.
+- [x] All v1 snapshots and v2 contract snapshots are unchanged (no API change yet).
 
 **Concept to learn:** expand/contract for a new tenant key; metadata-only `ADD COLUMN`.
+
+**Notes (done):** migration `e2a01d5c8f36`. Both transition ids are in `app.platform.tenancy`: `DEFAULT_AGENCY_ID` (`…a001`, "Default agency", slug `default`) and `DEFAULT_CLIENT_ID` (`…c001`, "General" per §15 Q7, not "Default client" as §7 says). The client id sits next to the agency id because the E2-02 backfill needs it and `identity` may not import `hiring`. `clients` is new, so its `agency_id` is `NOT NULL` and its uniques (`(agency_id, id)`, `(agency_id, lower(name))` as a unique index) exist already; no composite FK or index on the existing tables yet (E2-02). Rows written before E2-01 keep `agency_id` NULL, and so do they when the pipeline re-scores them (the upsert sets it on insert only): the backfill fills them. Rehearsed on the Compose-size seed written by the E0-20 code: the upgrade rewrites no table, `verify_people_applications` passes, new writes carry the default agency.
 
 ### E2-02 · Tenancy backfill, verify and contract
 **Size:** M  ·  **Branch:** `e2-02-tenancy-contract`  ·  **Depends on:** E2-01
