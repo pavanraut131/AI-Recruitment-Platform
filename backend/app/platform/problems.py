@@ -64,7 +64,8 @@ class ProblemResponse(JSONResponse):
 
 
 class ProblemError(Exception):
-    """An error with a specific problem ``type`` (and optionally ``title``)."""
+    """An error with a specific problem ``type`` (and optionally ``title``), field ``errors``
+    (a 422 raised by a service rather than by request validation) or response ``headers``."""
 
     def __init__(
         self,
@@ -73,12 +74,16 @@ class ProblemError(Exception):
         *,
         type: str = ABOUT_BLANK,
         title: str | None = None,
+        errors: Sequence[FieldError] | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.status = status
         self.detail = detail
         self.type = type
         self.title = title
+        self.errors = errors
+        self.headers = headers
 
 
 def problem_response(
@@ -118,7 +123,14 @@ async def _http_exception(request: Request, exc: Exception) -> ProblemResponse:
 
 async def _problem_error(request: Request, exc: Exception) -> ProblemResponse:
     assert isinstance(exc, ProblemError)
-    return problem_response(exc.status, exc.detail, type=exc.type, title=exc.title)
+    return problem_response(
+        exc.status,
+        exc.detail,
+        type=exc.type,
+        title=exc.title,
+        errors=exc.errors,
+        headers=exc.headers,
+    )
 
 
 async def _validation_error(request: Request, exc: Exception) -> ProblemResponse:
