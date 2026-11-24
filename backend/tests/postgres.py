@@ -30,6 +30,17 @@ Readiness (regression note, E0-13)
     :data:`READY_CONSECUTIVE_SUCCESSES` times in a row (one lucky connection is not stable),
     within :data:`READY_TIMEOUT_S`. If it never does, the session stops with a message naming
     the last error, instead of failing somewhere inside Alembic.
+
+Roles (EPIC-02 spec §6.2, §7.2, §11.1)
+    The container's superuser (``test``) only creates and drops databases. :func:`apply_roles`
+    runs ``docker/postgres/roles.sql`` (the file the Compose init script and ``make db-roles``
+    run) inside the container with ``psql``: it creates ``hireflow_owner`` and ``hireflow_app``
+    and gives the owner role the database's schema. ``alembic upgrade head`` then runs as
+    ``hireflow_owner`` (``MIGRATION_DATABASE_URL``), and ``DATABASE_URL`` / ``SYNC_DATABASE_URL``
+    (the app's engines, ``db_engine`` and the workers' sync engine) are ``hireflow_app``: **no
+    test talks to tenant tables as a superuser**, so row-level security is exercised by the
+    whole suite. :func:`throwaway_database` and :func:`scratch_database` give their databases
+    the same roles and schema owner.
 """
 
 from __future__ import annotations
@@ -54,6 +65,11 @@ POSTGRES_IMAGE = "pgvector/pgvector:pg16"  # same image as docker-compose.yml
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
+ROLES_SQL = BACKEND_DIR.parent / "docker" / "postgres" / "roles.sql"
+
+OWNER_ROLE = "hireflow_owner"
+APP_ROLE = "hireflow_app"
+ROLE_PASSWORDS = {OWNER_ROLE: "test_owner", APP_ROLE: "test_app"}
 
 # Host-side readiness check (see the module docstring).
 READY_TIMEOUT_S = 60.0
@@ -80,6 +96,7 @@ STATIC_TEST_ENV = {
 }
 
 _container: PostgresContainer | None = None
+_admin_url: str | None = None  # the container's superuser: CREATE / DROP DATABASE only
 
 
 class PostgresNotReadyError(RuntimeError):
@@ -130,9 +147,10 @@ def wait_until_accepting_queries(
 
 
 def start() -> None:
-    """Start the container, wait until it answers queries on the host port, export the env vars
-    ``Settings`` needs, and migrate to head."""
-    global _container
+    """Start the container, wait until it answers queries on the host port, create the roles,
+    export the env vars ``Settings`` needs (the app as ``hireflow_app``, migrations as
+    ``hireflow_owner``), and migrate to head."""
+    global _container, _admin_url
     if "app" in sys.modules:  # guard against misuse: too late to configure Settings
         raise RuntimeError("tests.postgres.start() must run before `app` is imported")
 
@@ -155,19 +173,67 @@ def start() -> None:
             returncode=3,
         )
     _container = container
+    _admin_url = f"postgresql+psycopg2://{auth}"
+    apply_roles(container.dbname)
 
     os.environ.update(STATIC_TEST_ENV)
-    os.environ["DATABASE_URL"] = f"postgresql+asyncpg://{auth}"
-    os.environ["SYNC_DATABASE_URL"] = f"postgresql+psycopg2://{auth}"
+    os.environ["DATABASE_URL"] = role_url(container.dbname, APP_ROLE, "postgresql+asyncpg")
+    os.environ["SYNC_DATABASE_URL"] = role_url(container.dbname, APP_ROLE)
+    os.environ["MIGRATION_DATABASE_URL"] = role_url(container.dbname, OWNER_ROLE)
 
     migrate_to_head()
+
+
+def role_url(database: str, role: str, driver: str = "postgresql+psycopg2") -> str:
+    """The URL of ``database`` in the session's container as ``role`` (``hireflow_owner`` or
+    ``hireflow_app``)."""
+    from sqlalchemy.engine import make_url
+
+    assert _admin_url is not None, "the test Postgres is not running"
+    url = make_url(_admin_url).set(
+        drivername=driver, username=role, password=ROLE_PASSWORDS[role], database=database
+    )
+    return url.render_as_string(hide_password=False)
+
+
+def admin_url(url: str) -> str:
+    """The database of ``url`` as the container's superuser: for what only a superuser may do
+    (catalog surgery in a migration test). Never for tenant tables."""
+    from sqlalchemy.engine import make_url
+
+    assert _admin_url is not None, "the test Postgres is not running"
+    database = make_url(url).database
+    return make_url(_admin_url).set(database=database).render_as_string(hide_password=False)
+
+
+def as_role(engine: Engine, role: str) -> str:
+    """``engine``'s database, as ``role``: e.g. the app role's URL of a throwaway database."""
+    assert engine.url.database is not None
+    return role_url(engine.url.database, role, engine.url.drivername)
+
+
+def apply_roles(database: str) -> None:
+    """Run ``docker/postgres/roles.sql`` on ``database`` as the container's superuser, the way
+    the Compose init script does: the roles (created once, reset each time) and the schema's
+    owner. Raises with psql's output if it fails."""
+    assert _container is not None, "the test Postgres is not running"
+    sql = ROLES_SQL.read_text(encoding="utf-8")
+    script = (
+        f"psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -U {_container.username} -d {database} "
+        f"-v owner_password={ROLE_PASSWORDS[OWNER_ROLE]} "
+        f"-v app_password={ROLE_PASSWORDS[APP_ROLE]} -f - <<'HIREFLOW_ROLES_SQL'\n"
+        f"{sql}\nHIREFLOW_ROLES_SQL\n"
+    )
+    exit_code, output = _container.exec(["bash", "-c", script])
+    if exit_code != 0:
+        raise RuntimeError(f"roles.sql failed on {database} (exit {exit_code}): {output!r}")
 
 
 def migrate_to_head() -> None:
     """Run ``alembic upgrade head`` against the (empty) container, exactly as the CLI would.
 
-    ``alembic/env.py`` takes the URL from ``settings.SYNC_DATABASE_URL``, which is why this runs
-    after the environment is set. Applying every migration to an empty database on each run also
+    ``alembic/env.py`` takes the URL from ``settings.MIGRATION_DATABASE_URL`` (the owner role),
+    which is why this runs after the environment is set. Applying every migration to an empty database on each run also
     proves the migration chain is valid.
     """
     from alembic import command
@@ -181,44 +247,21 @@ def migrate_to_head() -> None:
 
 
 @contextlib.contextmanager
-def throwaway_database(
-    prefix: str, revision: str = "head", **engine_options: Any
-) -> Iterator[Engine]:
-    """A new database in the session's container, migrated to ``revision`` (default ``head``),
-    dropped afterwards.
-
-    For tests that must **commit** on several connections (concurrency, the seed served by the API), which the
-    rolled-back ``db_session`` / ``sync_session`` cannot give. The session database is never
-    touched. ``engine_options`` go to ``create_engine`` (e.g. ``pool_size``).
-    """
-    from alembic import command
-    from alembic.config import Config
+def scratch_database(prefix: str) -> Iterator[str]:
+    """A new, empty database in the session's container with the roles applied (its schema
+    owned by ``hireflow_owner``), dropped afterwards. Yields the **owner** role's URL: what
+    Alembic connects with (``MIGRATION_DATABASE_URL``)."""
     from sqlalchemy import create_engine, text
-    from sqlalchemy.engine import make_url
 
-    from app.platform.config import settings
-
+    assert _admin_url is not None, "the test Postgres is not running"
     name = f"{prefix}_{uuid.uuid4().hex[:8]}"
-    base_url = make_url(settings.SYNC_DATABASE_URL)
-    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
+    admin = create_engine(_admin_url, isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = base_url.set(database=name).render_as_string(hide_password=False)
-
-    original = settings.SYNC_DATABASE_URL
-    settings.SYNC_DATABASE_URL = url  # alembic/env.py reads it
     try:
-        cfg = Config()  # no ini file: env.py would reconfigure logging
-        cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-        command.upgrade(cfg, revision)
+        apply_roles(name)
+        yield role_url(name, OWNER_ROLE)
     finally:
-        settings.SYNC_DATABASE_URL = original
-
-    engine = create_engine(url, **engine_options)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
         # Suppressed: after `pytest -x` the session hook may already have stopped the container
         # (and the database with it); that must not hide the test failure.
         with contextlib.suppress(Exception), admin.connect() as conn:
@@ -226,9 +269,49 @@ def throwaway_database(
         admin.dispose()
 
 
+@contextlib.contextmanager
+def throwaway_database(
+    prefix: str, revision: str = "head", **engine_options: Any
+) -> Iterator[Engine]:
+    """A new database in the session's container, migrated to ``revision`` (default ``head``),
+    dropped afterwards.
+
+    For tests that must **commit** on several connections (concurrency, the seed served by the
+    API), which the rolled-back ``db_session`` / ``sync_session`` cannot give. The session
+    database is never touched. ``engine_options`` go to ``create_engine`` (e.g. ``pool_size``).
+
+    The engine is the **owner** role's (``hireflow_owner``): what these tests use to arrange
+    and inspect data across agencies (truncate, seed, verify), like the operator commands.
+    Code under test that runs as the application in production gets the app role's URL from
+    :func:`as_role` (``as_role(engine, APP_ROLE)``).
+    """
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+
+    from app.platform.config import settings
+
+    with scratch_database(prefix) as url:
+        original = settings.MIGRATION_DATABASE_URL
+        settings.MIGRATION_DATABASE_URL = url  # alembic/env.py reads it
+        try:
+            cfg = Config()  # no ini file: env.py would reconfigure logging
+            cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+            command.upgrade(cfg, revision)
+        finally:
+            settings.MIGRATION_DATABASE_URL = original
+
+        engine = create_engine(url, **engine_options)
+        try:
+            yield engine
+        finally:
+            engine.dispose()
+
+
 def stop() -> None:
     """Stop and remove the container this session started (and only that one)."""
-    global _container
+    global _container, _admin_url
     if _container is not None:
         _container.stop()
         _container = None
+        _admin_url = None

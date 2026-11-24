@@ -20,8 +20,11 @@ is frozen, so rows created with server defaults all get the *same* timestamp and
 created_at`` would be ambiguous. The factories therefore set timestamps explicitly; pass
 ``created_at=at(n)`` / ``uploaded_at=at(n)`` to control ordering.
 
-Tenancy (E2-01): every row is in the default agency, and campaigns are run for its default
-client, as the app writes them until tenant context exists (E2-03).
+Tenancy (E2-03, E2-04): rows take the agency of the session they are added through
+(``app.platform.tenancy.agency_id_of``), as the app writes them, and row-level security accepts
+nothing else: arrange another agency's rows through a session bound to it
+(``tests/tenancy/conftest.py``'s ``session_for``). Campaigns of the default agency are run for
+its default client; another agency's need ``client_id``.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 
@@ -69,6 +72,9 @@ async def _save(db: AsyncSession, row: Any) -> Any:
 
 
 async def make_campaign(db: AsyncSession, **overrides: Any) -> Campaign:
+    agency_id = overrides.get("agency_id", agency_id_of(db))
+    if agency_id != DEFAULT_AGENCY_ID and "client_id" not in overrides:
+        raise ValueError("a campaign of another agency than the default one needs its client_id")
     fields: dict[str, Any] = {
         "title": "Backend Engineer - Q1 Hiring",
         "role": "Backend Engineer",
@@ -77,7 +83,7 @@ async def make_campaign(db: AsyncSession, **overrides: Any) -> Campaign:
         "status": "active",
         "created_at": BASE_TIME,
         "updated_at": BASE_TIME,
-        "agency_id": DEFAULT_AGENCY_ID,
+        "agency_id": agency_id,
         "client_id": DEFAULT_CLIENT_ID,
     }
     fields.update(overrides)

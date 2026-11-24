@@ -1,14 +1,15 @@
 """The tenancy backfill (E2-02, EPIC-02 spec §7.1 phase 2) on data written before E2-01.
 
 The module gets its own throwaway database at the **expand** revision (``e2a01d5c8f36``), where
-``agency_id`` is still nullable. Each test seeds it with the seed generator and then clears
+``agency_id`` is still nullable, as the owner role (the backfill is an operator command, and
+there is no row-level security at that revision). Each test seeds it with the seed generator and then clears
 every ``agency_id`` and ``campaigns.client_id``: exactly what a database written before E2-01
 looks like after the expand migration. The contract migration itself is tested in
 ``tests/migrations/test_tenancy_e2_02.py``.
 
 Covered: every table is filled and nothing else changes (``updated_at`` included); a second
-run changes nothing; an interrupted run resumes; uploads during the backfill (interleaved and
-truly concurrent) still find the existing People and leave a database that verifies; a batch
+run changes nothing; an interrupted run resumes; uploads during the backfill leave a database
+that verifies; a batch
 blocked by a live row lock is retried; what the backfill must not fill is reported; the
 verification's tenancy checks before and after.
 """
@@ -24,12 +25,11 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.devtools import seed
 from app.modules.ingestion import backfill_tenancy, verify_people_applications
-from app.modules.talent.models import Person, PersonIdentifier
 from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
 from tests import postgres
 from tests.ingestion.test_people_applications import make_application, make_campaign
@@ -212,62 +212,14 @@ def test_an_interrupted_run_resumes_where_it_stopped(
 
 
 # ── Live writes ───────────────────────────────────────────────
-def a_seeded_email(manifest: dict[str, Any]) -> str:
-    email = manifest["cases"]["plain"]["examples"][0]["email"]
-    assert isinstance(email, str)
-    return email
-
-
-def person_of(sessions: sessionmaker[Session], email: str) -> tuple[uuid.UUID, uuid.UUID | None]:
-    with sessions() as db:
-        row = db.execute(
-            select(Person.id, Person.agency_id)
-            .join(PersonIdentifier, PersonIdentifier.person_id == Person.id)
-            .where(PersonIdentifier.value_normalized == email.strip().lower())
-        ).one()
-        return row.id, row.agency_id
-
-
-def test_uploads_between_batches_find_the_existing_people(
-    engine: Engine, sessions: sessionmaker[Session], manifest: dict[str, Any]
-) -> None:
-    """Interleaved, deterministically: uploads before the backfill reaches ``people`` and after
-    it filled part of it. A returning candidate is matched to the seeded Person (an identifier
-    without an agency yet: the transition fallback), never duplicated."""
-    seeded = a_seeded_email(manifest)
-    seeded_person, agency = person_of(sessions, seeded)
-    assert agency is None
-    live = make_campaign(sessions, "Live uploads")
-
-    run(sessions, tables=["campaigns", "applications"])
-    returning = make_application(sessions, live, email=seeded, name="Returning", score=50.0)
-    run(sessions, batch_size=10, max_batches=1, tables=["people"])
-    newcomer = make_application(sessions, live, email="new@example.com", name="New", score=60.0)
-    summary = run(sessions, batch_size=25)
-
-    assert summary.complete
-    with sessions() as db:
-        rows = db.execute(
-            text("SELECT id, person_id, agency_id FROM applications WHERE campaign_id = :c"),
-            {"c": live},
-        ).all()
-    assert {r.id: r.person_id for r in rows}[returning] == seeded_person
-    assert {r.agency_id for r in rows} == {DEFAULT_AGENCY_ID}
-    assert person_of(sessions, seeded) == (seeded_person, DEFAULT_AGENCY_ID)
-    assert person_of(sessions, "new@example.com")[1] == DEFAULT_AGENCY_ID
-    assert newcomer in {r.id for r in rows}
-
-    report = verify(sessions, manifest)  # the manifest counts only its own campaigns
-    assert report.ok, report.render()
-
-
+# (Until E2-04, uploads during the backfill also matched returning candidates to People not
+# backfilled yet: tenant_filter's `agency_id IS NULL` branch for the default agency. E2-04
+# removed that branch, dead since the contract, and the test of it.)
 def test_concurrent_uploads_during_the_backfill(
     engine: Engine, sessions: sessionmaker[Session], manifest: dict[str, Any]
 ) -> None:
-    """Uploads in a second thread while the backfill runs in small batches: no error on either
-    side, and the result verifies."""
-    seeded = a_seeded_email(manifest)
-    seeded_person, _ = person_of(sessions, seeded)
+    """Uploads (new candidates) in a second thread while the backfill runs in small batches: no
+    error on either side, and the result verifies."""
     live = make_campaign(sessions, "Live uploads")
     errors: list[BaseException] = []
     uploaded: list[uuid.UUID] = []
@@ -275,7 +227,7 @@ def test_concurrent_uploads_during_the_backfill(
     def upload() -> None:
         try:
             for i in range(30):
-                email = seeded if i == 0 else f"live.upload{i}@example.com"
+                email = f"live.upload{i}@example.com"
                 uploaded.append(
                     make_application(sessions, live, email=email, name=f"Live {i}", score=i)
                 )
@@ -294,10 +246,11 @@ def test_concurrent_uploads_during_the_backfill(
     report = verify(sessions, manifest)
     assert report.ok, report.render()
     with sessions() as db:
-        returning = db.execute(
-            text("SELECT person_id FROM applications WHERE id = :id"), {"id": uploaded[0]}
-        ).scalar_one()
-    assert returning == seeded_person
+        agencies = db.execute(
+            text("SELECT DISTINCT agency_id FROM applications WHERE id = ANY(:ids)"),
+            {"ids": uploaded},
+        ).scalars()
+        assert set(agencies) == {DEFAULT_AGENCY_ID}
 
 
 def test_a_batch_blocked_by_a_live_row_lock_is_retried(

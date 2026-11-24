@@ -35,7 +35,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import Engine, delete, event, func, select, text, update
+from sqlalchemy import Engine, create_engine, delete, event, func, select, text, update
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -86,12 +86,27 @@ def empty_tables(engine: Engine) -> None:
 
 @pytest.fixture
 def sessions(engine: Engine) -> sessionmaker[Session]:
+    """The owner role's sessions (``postgres.throwaway_database``): to arrange and inspect rows
+    of every agency, and for the operator commands (verify, storage_orphans), as in production."""
     return sessionmaker(bind=engine)
+
+
+@pytest.fixture(scope="module")
+def app_engine(engine: Engine) -> Iterator[Engine]:
+    """The same database as the application role (the workers' engine), under RLS."""
+    eng = create_engine(postgres.as_role(engine, postgres.APP_ROLE), poolclass=NullPool)
+    try:
+        yield eng
+    finally:
+        eng.dispose()
 
 
 @pytest_asyncio.fixture
 async def async_engine(engine: Engine) -> AsyncIterator[AsyncEngine]:
-    url = engine.url.set(drivername="postgresql+asyncpg")
+    """The API's engine on the throwaway database: the application role, under RLS."""
+    url = postgres.as_role(engine, postgres.APP_ROLE).replace(
+        "postgresql+psycopg2", "postgresql+asyncpg"
+    )
     eng = create_async_engine(url, poolclass=NullPool)
     try:
         yield eng
@@ -418,11 +433,12 @@ async def test_deleting_a_candidate_removes_its_pdfs_after_the_commit(
 # ── After the contract ────────────────────────────────────────
 async def test_an_upload_after_the_contract_is_processed_and_verified(
     sessions: sessionmaker[Session],
+    app_engine: Engine,
     api: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     fake_ai: FakeAIService,
 ) -> None:
-    monkeypatch.setattr(tasks, "SyncSession", sessions)
+    monkeypatch.setattr(tasks, "SyncSession", sessionmaker(bind=app_engine))  # as the workers
     campaign = make_campaign(sessions)
     with sessions() as db:  # as the extract step leaves it: the text on the resume
         resume = Resume(
@@ -498,14 +514,22 @@ async def test_the_list_queries_use_the_indexes(
         ]
         assert len(reads) == expected, [s for s, _ in reads]
 
+        # As the app role, with the request's agency set: the plans row-level security gives
+        # (ADR 0009: policy quals can change plans; the list queries must keep their indexes).
         plans: list[str] = []
         async with async_engine.connect() as conn:
             raw = await conn.get_raw_connection()
             driver = raw.driver_connection
             assert driver is not None
-            for statement, parameters in reads:
-                rows = await driver.fetch(f"EXPLAIN (ANALYZE, BUFFERS) {statement}", *parameters)
-                plans.append("\n".join(r[0] for r in rows))
+            async with driver.transaction():
+                await driver.fetch(
+                    "SELECT set_config('app.agency_id', $1, true)", str(DEFAULT_AGENCY_ID)
+                )
+                for statement, parameters in reads:
+                    rows = await driver.fetch(
+                        f"EXPLAIN (ANALYZE, BUFFERS) {statement}", *parameters
+                    )
+                    plans.append("\n".join(r[0] for r in rows))
         print(f"\n### GET /campaigns/{{id}}/candidates {params or '(no filters)'}")
         for (statement, _), plan in zip(reads, plans, strict=True):
             print(f"\n{statement}\n--\n{plan}")

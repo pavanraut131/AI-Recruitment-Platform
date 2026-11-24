@@ -1,13 +1,6 @@
 """Explicit filtering (EPIC-02 spec §6.1): every repository query on a tenant table reads only the
-bound agency's rows, and every insert writes it.
-
-Rows written before E2-01 have ``agency_id IS NULL`` until the E2-02 backfill. They belong to the
-default agency, so while it is bound they are listed too (the transition in
-``app.platform.tenancy.tenant_filter``, removed in E2-04); another agency never sees them. Since
-the E2-02 contract the session database's columns are ``NOT NULL``, so that test makes them
-nullable again (as the E2-01 schema had them) inside its own rolled-back transaction. The
-backfill tests cover the same transition at the real E2-01 revision
-(``tests/ingestion/test_backfill_tenancy.py``).
+bound agency's rows, and every insert writes it. (Row-level security, underneath, is
+``test_isolation.py``'s.)
 """
 
 from __future__ import annotations
@@ -17,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -30,7 +23,7 @@ from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile
 from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, agency_id_of
-from tests.factories import make_campaign, make_candidate, make_resume
+from tests.factories import make_campaign, make_candidate
 from tests.fakes import CeleryRecorder, InMemoryStorage
 from tests.ingestion.test_service import PDF, FakeUpload
 from tests.tenancy.conftest import OtherAgency, SessionFor
@@ -40,38 +33,13 @@ V2 = "/api/v2"
 T0 = datetime(2026, 11, 24, 9, 0, tzinfo=UTC)
 
 
-async def _other_agencys_campaign(db: AsyncSession, other: OtherAgency) -> Application:
+async def _other_agencys_campaign(other: OtherAgency) -> Application:
     """A campaign of the other agency with one processed application (and its resume and
-    Person), all in that agency."""
+    Person), all in that agency (written through its own session: RLS accepts nothing else)."""
     campaign = await make_campaign(
-        db, title="Other agency's campaign", agency_id=other.agency_id, client_id=other.client_id
+        other.db, title="Other agency's campaign", client_id=other.client_id
     )
-    return await make_candidate(db, campaign, name="Other Person", email="other@example.com")
-
-
-async def _as_before_the_contract(db: AsyncSession) -> None:
-    """The tenant columns nullable again, as between E2-01 and E2-02's contract, for this test's
-    transaction only (it is rolled back; DDL is transactional in Postgres). The composite keys
-    stay: a key with a NULL column is not checked (``MATCH SIMPLE``)."""
-    for table, column in TENANT_COLUMNS:
-        await db.execute(text(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL"))
-
-
-TENANT_COLUMNS = (
-    *(
-        (table, "agency_id")
-        for table in (
-            "campaigns",
-            "applications",
-            "people",
-            "person_identifiers",
-            "identity_conflicts",
-            "person_resumes",
-            "resumes",
-        )
-    ),
-    ("campaigns", "client_id"),
-)
+    return await make_candidate(other.db, campaign, name="Other Person", email="other@example.com")
 
 
 async def _ids(client: AsyncClient, path: str) -> set[str]:
@@ -85,7 +53,7 @@ async def test_requests_never_see_another_agencys_rows(
     client: AsyncClient, db_session: AsyncSession, other_agency: OtherAgency
 ) -> None:
     mine = await make_candidate(db_session)
-    theirs = await _other_agencys_campaign(db_session, other_agency)
+    theirs = await _other_agencys_campaign(other_agency)
 
     assert await _ids(client, f"{V2}/campaigns") == {str(mine.campaign_id)}
     assert await _ids(client, f"{V2}/people") == {str(mine.person_id)}
@@ -121,42 +89,9 @@ async def test_requests_never_see_another_agencys_rows(
     )
     assert resp.status_code == 404
     assert (await client.get(f"{V1}/campaigns/{theirs.campaign_id}/candidates")).json() == []
-    assert await db_session.get(Application, theirs.id) is not None
-
-
-async def test_rows_not_backfilled_yet_belong_to_the_default_agency(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    session_for: SessionFor,
-    other_agency: OtherAgency,
-) -> None:
-    """``agency_id IS NULL`` (written before E2-01): listed, found and counted for the default
-    agency until E2-02 backfills them; invisible to any other agency."""
-    await _as_before_the_contract(db_session)
-    legacy_campaign = await make_campaign(db_session, agency_id=None, client_id=None)
-    # make_candidate gives the Person and the application the resume's agency: NULL too.
-    legacy = await make_candidate(
-        db_session, resume=await make_resume(db_session, legacy_campaign, agency_id=None)
-    )
-    assert legacy.agency_id is None
-
-    assert await _ids(client, f"{V2}/campaigns") == {str(legacy.campaign_id)}
-    assert await _ids(client, f"{V2}/campaigns/{legacy.campaign_id}/applications") == {
-        str(legacy.id)
-    }
-    assert await _ids(client, f"{V2}/people") == {str(legacy.person_id)}
-    assert (await client.get(f"{V2}/applications/{legacy.id}")).status_code == 200
-
-    other = session_for(other_agency.agency_id)
-    scope = AccessScope(other_agency.agency_id)
-    assert not await hiring_service.campaign_exists(other, scope, legacy.campaign_id)
-    page, total = await hiring_service.list_campaigns_page(
-        other, scope, hiring_service.CampaignQuery(), 0, 10, ingestion_service.resume_tallies(other)
-    )
-    assert (page, total) == ([], 0)
-    assert await talent_service.count_people(other) == 0
-    with pytest.raises(ingestion_service.NotFoundError):
-        await ingestion_service.get_resume(other, scope, legacy.resume_id)
+    theirs_id = theirs.id
+    other_agency.db.expire_all()
+    assert await other_agency.db.get(Application, theirs_id) is not None
 
 
 # ── Another agency's session ──────────────────────────────────
@@ -164,7 +99,7 @@ async def test_a_session_of_another_agency_reads_only_its_own_rows(
     db_session: AsyncSession, session_for: SessionFor, other_agency: OtherAgency
 ) -> None:
     mine = await make_candidate(db_session)
-    theirs = await _other_agencys_campaign(db_session, other_agency)
+    theirs = await _other_agencys_campaign(other_agency)
     other = session_for(other_agency.agency_id)
     scope = AccessScope(other_agency.agency_id)
 
@@ -189,9 +124,7 @@ async def test_inserts_take_the_agency_of_the_session(
     celery_calls: CeleryRecorder,
     fake_storage: InMemoryStorage,
 ) -> None:
-    campaign = await make_campaign(
-        db_session, agency_id=other_agency.agency_id, client_id=other_agency.client_id
-    )
+    campaign = await make_campaign(other_agency.db, client_id=other_agency.client_id)
     other = session_for(other_agency.agency_id)
     scope = AccessScope(other_agency.agency_id)
 
@@ -241,8 +174,8 @@ async def test_inserts_take_the_agency_of_the_session(
     assert len(rows) == 4
     assert set(rows) == {other_agency.agency_id}
 
-    # And the default agency's requests do not see any of it.
+    # And the default agency's requests do not see any of it, even unfiltered (RLS).
     assert not await hiring_service.campaign_exists(
         db_session, AccessScope(DEFAULT_AGENCY_ID), campaign.id
     )
-    assert await db_session.get(Campaign, campaign.id) is not None  # it exists, unfiltered
+    assert await db_session.get(Campaign, campaign.id) is None

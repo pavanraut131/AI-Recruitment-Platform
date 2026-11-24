@@ -75,7 +75,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from tests import postgres
+from tests import postgres, tenant_sessions
 from tests.fakes import CeleryRecorder, FakeGemini, FakeRedis, InMemoryStorage
 
 if TYPE_CHECKING:
@@ -87,6 +87,7 @@ if TYPE_CHECKING:
 # ── Session hooks ─────────────────────────────────────────────
 def pytest_sessionstart(session: pytest.Session) -> None:
     postgres.start()
+    tenant_sessions.install()
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
