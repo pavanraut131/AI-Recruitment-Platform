@@ -1,5 +1,7 @@
-"""Shared state per agency (EPIC-02 spec §6.3, §6.5): Redis channels name the agency, new uploads
-are stored under the agency's prefix, and the orphan check scans the old and the new prefixes."""
+"""Shared state per agency (EPIC-02 spec §6.3, §6.5, §11.2 ``test_sse_tenant``): Redis channels
+name the agency, another agency's campaign stream is not found (under row-level security, even
+before any filter), new uploads are stored under the agency's prefix, and the orphan check scans
+the old and the new prefixes."""
 
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.characterization.sse import read_sse
 from tests.factories import make_campaign
 from tests.fakes import InMemoryStorage
+from tests.tenancy.conftest import OtherAgency
 
 OTHER_AGENCY = uuid.UUID("bbbbbbbb-0000-4000-8000-000000000002")
 
@@ -87,6 +90,16 @@ async def test_a_stream_gets_only_its_agencys_events_for_the_campaign(
     assert result.status_code == 200
     assert [e["event"] for e in result.events] == ["connected", "resume_update"]
     assert result.events[1]["data"]["resume_id"] == mine
+
+
+async def test_another_agencys_campaign_stream_is_not_found(
+    client: AsyncClient, other_agency: OtherAgency
+) -> None:
+    """v2 only: v1's stream answers 200 for any campaign id (B7, frozen until E2-12); it then
+    subscribes to the default agency's channel of that id, which no task of B publishes on."""
+    theirs = await make_campaign(other_agency.db, client_id=other_agency.client_id)
+    resp = await client.get(f"/api/v2/campaigns/{theirs.id}/events")
+    assert resp.status_code == 404
 
 
 def test_new_uploads_are_stored_under_the_agency() -> None:
