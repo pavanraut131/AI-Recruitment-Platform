@@ -30,7 +30,11 @@ Fixtures
         ``get_db`` so requests use ``db_session`` (the same session and transaction as the test),
         in the root app and in the mounted ``/api/v2`` app (which has overrides of its own).
         ASGITransport does not send lifespan events, so the app's startup hook
-        (``ensure_bucket_exists``) does not run.
+        (``ensure_bucket_exists``) does not run. On ``/api/v2`` it also overrides
+        ``identity.dependencies.current_principal`` with an owner of the default agency (E2-05,
+        spec §11.1), so the contract tests need no sign-in; the endpoints that need a real
+        session (``/me``, ``/auth/logout``) and the auth tests use real cookies
+        (``tests/identity``).
     ``celery_calls`` (function, autouse)
         :class:`tests.fakes.CeleryRecorder`. ``Task.apply_async`` is patched on Celery's base
         ``Task`` class, which covers ``delay()``, ``apply_async()`` and signatures of every
@@ -149,6 +153,7 @@ def _fastapi_apps(app: FastAPI) -> list[FastAPI]:
 
 @pytest_asyncio.fixture
 async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    from app.modules.identity.dependencies import DEV_FALLBACK, current_principal
     from app.platform.database import get_db
 
     async def override_get_db() -> AsyncIterator[AsyncSession]:
@@ -157,12 +162,15 @@ async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncC
     apps = _fastapi_apps(app)
     for each in apps:
         each.dependency_overrides[get_db] = override_get_db
+        # An owner of the default agency (the agency db_session is bound to).
+        each.dependency_overrides[current_principal] = lambda: DEV_FALLBACK
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
     finally:
         for each in apps:
             each.dependency_overrides.pop(get_db, None)
+            each.dependency_overrides.pop(current_principal, None)
 
 
 # ── External services ─────────────────────────────────────────

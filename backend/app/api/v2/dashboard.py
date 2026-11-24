@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v2.schemas import Home, HomeProcessing, ProcessingResume, Stats
 from app.modules.hiring import service as hiring
+from app.modules.identity.dependencies import access_scope, tenant_db
 from app.modules.ingestion import service as ingestion
 from app.modules.talent import service as talent
-from app.platform.request_tenant import access_scope, tenant_db
 from app.platform.tenancy import AccessScope
 
 router = APIRouter(tags=["dashboard"])
