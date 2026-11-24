@@ -63,6 +63,80 @@
   dict({
     'components': dict({
       'schemas': dict({
+        'ActiveAgencyChange': dict({
+          'properties': dict({
+            'agency_id': dict({
+              'format': 'uuid',
+              'title': 'Agency Id',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'agency_id',
+          ]),
+          'title': 'ActiveAgencyChange',
+          'type': 'object',
+        }),
+        'Agency': dict({
+          'description': 'The active agency.',
+          'properties': dict({
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'name': dict({
+              'title': 'Name',
+              'type': 'string',
+            }),
+            'slug': dict({
+              'description': 'Read-only.',
+              'title': 'Slug',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'name',
+            'slug',
+          ]),
+          'title': 'Agency',
+          'type': 'object',
+        }),
+        'AgencyRef': dict({
+          'properties': dict({
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'name': dict({
+              'title': 'Name',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'name',
+          ]),
+          'title': 'AgencyRef',
+          'type': 'object',
+        }),
+        'AgencyUpdate': dict({
+          'properties': dict({
+            'name': dict({
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Name',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'name',
+          ]),
+          'title': 'AgencyUpdate',
+          'type': 'object',
+        }),
         'Application': dict({
           'properties': dict({
             'campaign_id': dict({
@@ -907,6 +981,30 @@
           'title': 'CategoryCounts',
           'type': 'object',
         }),
+        'ClientScope': dict({
+          'description': 'The clients the user may see in the active agency: all of them, or the listed ones.',
+          'properties': dict({
+            'all_clients': dict({
+              'title': 'All Clients',
+              'type': 'boolean',
+            }),
+            'client_ids': dict({
+              'description': 'Empty when all_clients is true.',
+              'items': dict({
+                'format': 'uuid',
+                'type': 'string',
+              }),
+              'title': 'Client Ids',
+              'type': 'array',
+            }),
+          }),
+          'required': list([
+            'all_clients',
+            'client_ids',
+          ]),
+          'title': 'ClientScope',
+          'type': 'object',
+        }),
         'ConflictRole': dict({
           'description': "This Person's side of an identity conflict (ADR 0004).",
           'enum': list([
@@ -929,6 +1027,20 @@
             'campaign_id',
           ]),
           'title': 'ConnectedEvent',
+          'type': 'object',
+        }),
+        'CsrfToken': dict({
+          'properties': dict({
+            'csrf_token': dict({
+              'description': 'Send it back in the X-CSRF-Token header on POST, PUT, PATCH and DELETE. The same value is in the (readable) CSRF cookie.',
+              'title': 'Csrf Token',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'csrf_token',
+          ]),
+          'title': 'CsrfToken',
           'type': 'object',
         }),
         'FieldError': dict({
@@ -1118,6 +1230,145 @@
           'title': 'JobDescription',
           'type': 'object',
         }),
+        'LoginRequest': dict({
+          'properties': dict({
+            'email': dict({
+              'maxLength': 320,
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'password': dict({
+              'maxLength': 1024,
+              'title': 'Password',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'email',
+            'password',
+          ]),
+          'title': 'LoginRequest',
+          'type': 'object',
+        }),
+        'Me': dict({
+          'description': "The signed-in user, their agencies and the session's active agency.",
+          'properties': dict({
+            'active_agency': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/AgencyRef',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'null until the user has chosen an agency (setActiveAgency).',
+            }),
+            'client_scope': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/ClientScope',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'null without an active agency.',
+            }),
+            'csrf_token': dict({
+              'description': 'The CSRF token for this session (also in the CSRF cookie): send it in X-CSRF-Token on unsafe requests.',
+              'title': 'Csrf Token',
+              'type': 'string',
+            }),
+            'memberships': dict({
+              'items': dict({
+                '$ref': '#/components/schemas/Membership',
+              }),
+              'title': 'Memberships',
+              'type': 'array',
+            }),
+            'role': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/Role',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': "The user's role in the active agency.",
+            }),
+            'user': dict({
+              '$ref': '#/components/schemas/MeUser',
+            }),
+          }),
+          'required': list([
+            'user',
+            'memberships',
+            'active_agency',
+            'role',
+            'client_scope',
+            'csrf_token',
+          ]),
+          'title': 'Me',
+          'type': 'object',
+        }),
+        'MeUpdate': dict({
+          'properties': dict({
+            'display_name': dict({
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Display Name',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'display_name',
+          ]),
+          'title': 'MeUpdate',
+          'type': 'object',
+        }),
+        'MeUser': dict({
+          'properties': dict({
+            'display_name': dict({
+              'title': 'Display Name',
+              'type': 'string',
+            }),
+            'email': dict({
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'email',
+            'display_name',
+          ]),
+          'title': 'MeUser',
+          'type': 'object',
+        }),
+        'Membership': dict({
+          'description': 'One agency the user belongs to (active memberships in active agencies only).',
+          'properties': dict({
+            'agency': dict({
+              '$ref': '#/components/schemas/AgencyRef',
+            }),
+            'role': dict({
+              '$ref': '#/components/schemas/Role',
+            }),
+          }),
+          'required': list([
+            'agency',
+            'role',
+          ]),
+          'title': 'Membership',
+          'type': 'object',
+        }),
         'ParsedJobDescription': dict({
           'properties': dict({
             'role_title': dict({
@@ -1143,6 +1394,27 @@
             'skills',
           ]),
           'title': 'ParsedJobDescription',
+          'type': 'object',
+        }),
+        'PasswordChange': dict({
+          'properties': dict({
+            'current_password': dict({
+              'maxLength': 1024,
+              'title': 'Current Password',
+              'type': 'string',
+            }),
+            'new_password': dict({
+              'description': '12 to 128 characters, any characters, not your email address.',
+              'maxLength': 1024,
+              'title': 'New Password',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'current_password',
+            'new_password',
+          ]),
+          'title': 'PasswordChange',
           'type': 'object',
         }),
         'Person': dict({
@@ -2126,6 +2398,17 @@
           'title': 'RetryResult',
           'type': 'object',
         }),
+        'Role': dict({
+          'description': "An agency role (spec §5.1). What each may do is E2-06's permission matrix.",
+          'enum': list([
+            'owner',
+            'admin',
+            'recruiter',
+            'viewer',
+          ]),
+          'title': 'Role',
+          'type': 'string',
+        }),
         'ScoreBucket': dict({
           'properties': dict({
             'count': dict({
@@ -2270,14 +2553,148 @@
           'type': 'object',
         }),
       }),
+      'securitySchemes': dict({
+        'cookieAuth': dict({
+          'description': 'The session cookie set by `login` (HttpOnly). Named `hf_session` when the API runs without Secure cookies (development over http).',
+          'in': 'cookie',
+          'name': '__Host-hf_session',
+          'type': 'apiKey',
+        }),
+        'csrfToken': dict({
+          'description': 'The CSRF token (`getCsrfToken`, `Me.csrf_token` or the CSRF cookie), required on POST, PUT, PATCH and DELETE.',
+          'in': 'header',
+          'name': 'X-CSRF-Token',
+          'type': 'apiKey',
+        }),
+      }),
     }),
     'info': dict({
-      'description': 'The HireFlow AI resource API. Lists return `{items, total, page, page_size}`; errors are RFC 9457 problem details (`application/problem+json`).',
+      'description': '''
+        The HireFlow AI resource API. Lists return `{items, total, page, page_size}`; errors are RFC 9457 problem details (`application/problem+json`).
+        
+        Authentication: a server-side session in the HttpOnly cookie `__Host-hf_session` (`hf_session` in development over http), started by `login`. Unsafe requests (POST, PUT, PATCH, DELETE) also send the CSRF token in the `X-CSRF-Token` header: from `getCsrfToken` before sign-in, then `Me.csrf_token` or the `__Host-hf_csrf` cookie.
+      ''',
       'title': 'HireFlow AI API',
       'version': '2.0.0',
     }),
     'openapi': '3.1.0',
     'paths': dict({
+      '/agency': dict({
+        'get': dict({
+          'description': 'The active agency.',
+          'operationId': 'getAgency',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Agency',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Get Agency',
+          'tags': list([
+            'agency',
+          ]),
+        }),
+        'patch': dict({
+          'description': 'Rename the active agency (owners only).',
+          'operationId': 'updateAgency',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/AgencyUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Agency',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Update Agency',
+          'tags': list([
+            'agency',
+          ]),
+        }),
+      }),
       '/applications/{application_id}': dict({
         'delete': dict({
           'description': 'Delete the application with its resumes and their stored PDFs.',
@@ -2297,6 +2714,26 @@
           'responses': dict({
             '204': dict({
               'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
             }),
             '404': dict({
               'content': dict({
@@ -2319,6 +2756,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Delete Application',
           'tags': list([
             'applications',
@@ -2349,6 +2794,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2370,6 +2835,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Application',
           'tags': list([
             'applications',
@@ -2411,6 +2882,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2432,9 +2923,167 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Update Application',
           'tags': list([
             'applications',
+          ]),
+        }),
+      }),
+      '/auth/csrf': dict({
+        'get': dict({
+          'description': '''
+            A CSRF token for this browser (bound to its session cookie, if any), also set as the CSRF
+            cookie. Call it before signing in.
+          ''',
+          'operationId': 'getCsrfToken',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/CsrfToken',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+          }),
+          'summary': 'Get Csrf Token',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
+      '/auth/login': dict({
+        'post': dict({
+          'description': '''
+            Sign in with email and password. Any session cookie the browser sent is revoked and a new
+            session starts (new session and CSRF cookies). 401 with one message for every wrong email or
+            password; 403 when the account has no active agency; 429 with Retry-After when throttled.
+          ''',
+          'operationId': 'login',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/LoginRequest',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Me',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Login',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
+      '/auth/logout': dict({
+        'post': dict({
+          'description': 'Sign out: the session is revoked on the server and both cookies are cleared.',
+          'operationId': 'logout',
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Logout',
+          'tags': list([
+            'auth',
           ]),
         }),
       }),
@@ -2522,6 +3171,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '422': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2533,6 +3202,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'List Campaigns',
           'tags': list([
             'campaigns',
@@ -2562,6 +3237,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '422': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2573,6 +3268,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Create Campaign',
           'tags': list([
             'campaigns',
@@ -2607,6 +3310,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '422': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2628,6 +3351,14 @@
               'description': 'Bad Gateway',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Parse Job Description',
           'tags': list([
             'campaigns',
@@ -2654,6 +3385,26 @@
             '204': dict({
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2675,6 +3426,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Delete Campaign',
           'tags': list([
             'campaigns',
@@ -2705,6 +3464,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2726,6 +3505,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Campaign',
           'tags': list([
             'campaigns',
@@ -2767,6 +3552,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -2788,6 +3593,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Update Campaign',
           'tags': list([
             'campaigns',
@@ -2994,6 +3807,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3015,6 +3848,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'List Campaign Applications',
           'tags': list([
             'applications',
@@ -3062,6 +3901,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3083,6 +3942,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Bulk Application Action',
           'tags': list([
             'applications',
@@ -3285,6 +4152,26 @@
               }),
               'description': "CSV, one row per application, in the list's order.",
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3306,6 +4193,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Export Campaign Applications',
           'tags': list([
             'applications',
@@ -3339,6 +4232,26 @@
               }),
               'description': "Server-Sent Events: first `connected` (data: ConnectedEvent), then `resume_update` (data: ResumeEvent) each time one of the campaign's resumes changes status. Only this campaign's resumes.",
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3360,6 +4273,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Stream Campaign Events',
           'tags': list([
             'uploads',
@@ -3441,6 +4360,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3462,6 +4401,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'List Campaign Resumes',
           'tags': list([
             'uploads',
@@ -3498,6 +4443,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3519,6 +4484,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Retry Failed Resumes',
           'tags': list([
             'uploads',
@@ -3555,6 +4528,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3576,6 +4569,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Campaign Stats',
           'tags': list([
             'campaigns',
@@ -3635,6 +4634,26 @@
               }),
               'description': 'Bad Request',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3656,6 +4675,14 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
           'summary': 'Upload Resumes',
           'tags': list([
             'uploads',
@@ -3677,10 +4704,304 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Home',
           'tags': list([
             'dashboard',
+          ]),
+        }),
+      }),
+      '/me': dict({
+        'get': dict({
+          'description': '''
+            The signed-in user, their agencies, the active agency, role and client scope, and the
+            session's CSRF token.
+          ''',
+          'operationId': 'getMe',
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Me',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Get Me',
+          'tags': list([
+            'me',
+          ]),
+        }),
+        'patch': dict({
+          'description': 'Change your display name.',
+          'operationId': 'updateMe',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/MeUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Me',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Update Me',
+          'tags': list([
+            'me',
+          ]),
+        }),
+      }),
+      '/me/active-agency': dict({
+        'put': dict({
+          'description': '''
+            Switch the session to another of your agencies (404 for an agency you are not an active
+            member of). Clear any cached data of the previous agency.
+          ''',
+          'operationId': 'setActiveAgency',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/ActiveAgencyChange',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Me',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Set Active Agency',
+          'tags': list([
+            'me',
+          ]),
+        }),
+      }),
+      '/me/password': dict({
+        'post': dict({
+          'description': '''
+            Change your password (the current one is required). Every session of yours ends, other
+            browsers are signed out, and this one continues in a new session (new cookies).
+          ''',
+          'operationId': 'changePassword',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/PasswordChange',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Change Password',
+          'tags': list([
+            'me',
           ]),
         }),
       }),
@@ -3750,6 +5071,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '422': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3761,6 +5102,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'List People',
           'tags': list([
             'people',
@@ -3794,6 +5141,26 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
             '404': dict({
               'content': dict({
                 'application/problem+json': dict({
@@ -3815,6 +5182,12 @@
               'description': 'Unprocessable Entity',
             }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Person',
           'tags': list([
             'people',
@@ -3839,7 +5212,33 @@
               }),
               'description': 'Successful Response',
             }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
           }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
           'summary': 'Get Stats',
           'tags': list([
             'dashboard',
@@ -3872,6 +5271,18 @@
       dict({
         'description': 'Workspace counts and the Home screen.',
         'name': 'dashboard',
+      }),
+      dict({
+        'description': 'Sign-in, sign-out and the CSRF token.',
+        'name': 'auth',
+      }),
+      dict({
+        'description': 'The signed-in user: profile, password, active agency.',
+        'name': 'me',
+      }),
+      dict({
+        'description': 'The active agency.',
+        'name': 'agency',
       }),
     ]),
   })

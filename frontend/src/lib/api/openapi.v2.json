@@ -1,6 +1,80 @@
 {
   "components": {
     "schemas": {
+      "ActiveAgencyChange": {
+        "properties": {
+          "agency_id": {
+            "format": "uuid",
+            "title": "Agency Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agency_id"
+        ],
+        "title": "ActiveAgencyChange",
+        "type": "object"
+      },
+      "Agency": {
+        "description": "The active agency.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "description": "Read-only.",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ],
+        "title": "Agency",
+        "type": "object"
+      },
+      "AgencyRef": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgencyRef",
+        "type": "object"
+      },
+      "AgencyUpdate": {
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AgencyUpdate",
+        "type": "object"
+      },
       "Application": {
         "properties": {
           "campaign_id": {
@@ -834,6 +908,30 @@
         "title": "CategoryCounts",
         "type": "object"
       },
+      "ClientScope": {
+        "description": "The clients the user may see in the active agency: all of them, or the listed ones.",
+        "properties": {
+          "all_clients": {
+            "title": "All Clients",
+            "type": "boolean"
+          },
+          "client_ids": {
+            "description": "Empty when all_clients is true.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Client Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "all_clients",
+          "client_ids"
+        ],
+        "title": "ClientScope",
+        "type": "object"
+      },
       "ConflictRole": {
         "description": "This Person's side of an identity conflict (ADR 0004).",
         "enum": [
@@ -856,6 +954,20 @@
           "campaign_id"
         ],
         "title": "ConnectedEvent",
+        "type": "object"
+      },
+      "CsrfToken": {
+        "properties": {
+          "csrf_token": {
+            "description": "Send it back in the X-CSRF-Token header on POST, PUT, PATCH and DELETE. The same value is in the (readable) CSRF cookie.",
+            "title": "Csrf Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf_token"
+        ],
+        "title": "CsrfToken",
         "type": "object"
       },
       "FieldError": {
@@ -1045,6 +1157,145 @@
         "title": "JobDescription",
         "type": "object"
       },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1024,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "Me": {
+        "description": "The signed-in user, their agencies and the session's active agency.",
+        "properties": {
+          "active_agency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgencyRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null until the user has chosen an agency (setActiveAgency)."
+          },
+          "client_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientScope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null without an active agency."
+          },
+          "csrf_token": {
+            "description": "The CSRF token for this session (also in the CSRF cookie): send it in X-CSRF-Token on unsafe requests.",
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/Membership"
+            },
+            "title": "Memberships",
+            "type": "array"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's role in the active agency."
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        },
+        "required": [
+          "user",
+          "memberships",
+          "active_agency",
+          "role",
+          "client_scope",
+          "csrf_token"
+        ],
+        "title": "Me",
+        "type": "object"
+      },
+      "MeUpdate": {
+        "properties": {
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "MeUpdate",
+        "type": "object"
+      },
+      "MeUser": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name"
+        ],
+        "title": "MeUser",
+        "type": "object"
+      },
+      "Membership": {
+        "description": "One agency the user belongs to (active memberships in active agencies only).",
+        "properties": {
+          "agency": {
+            "$ref": "#/components/schemas/AgencyRef"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "agency",
+          "role"
+        ],
+        "title": "Membership",
+        "type": "object"
+      },
       "ParsedJobDescription": {
         "properties": {
           "role_title": {
@@ -1070,6 +1321,27 @@
           "skills"
         ],
         "title": "ParsedJobDescription",
+        "type": "object"
+      },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "maxLength": 1024,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "description": "12 to 128 characters, any characters, not your email address.",
+            "maxLength": 1024,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
         "type": "object"
       },
       "Person": {
@@ -2042,6 +2314,17 @@
         "title": "RetryResult",
         "type": "object"
       },
+      "Role": {
+        "description": "An agency role (spec \u00a75.1). What each may do is E2-06's permission matrix.",
+        "enum": [
+          "owner",
+          "admin",
+          "recruiter",
+          "viewer"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
       "ScoreBucket": {
         "properties": {
           "count": {
@@ -2185,15 +2468,142 @@
         "title": "UploadResult",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "description": "The session cookie set by `login` (HttpOnly). Named `hf_session` when the API runs without Secure cookies (development over http).",
+        "in": "cookie",
+        "name": "__Host-hf_session",
+        "type": "apiKey"
+      },
+      "csrfToken": {
+        "description": "The CSRF token (`getCsrfToken`, `Me.csrf_token` or the CSRF cookie), required on POST, PUT, PATCH and DELETE.",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
-    "description": "The HireFlow AI resource API. Lists return `{items, total, page, page_size}`; errors are RFC 9457 problem details (`application/problem+json`).",
+    "description": "The HireFlow AI resource API. Lists return `{items, total, page, page_size}`; errors are RFC 9457 problem details (`application/problem+json`).\n\nAuthentication: a server-side session in the HttpOnly cookie `__Host-hf_session` (`hf_session` in development over http), started by `login`. Unsafe requests (POST, PUT, PATCH, DELETE) also send the CSRF token in the `X-CSRF-Token` header: from `getCsrfToken` before sign-in, then `Me.csrf_token` or the `__Host-hf_csrf` cookie.",
     "title": "HireFlow AI API",
     "version": "2.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/agency": {
+      "get": {
+        "description": "The active agency.",
+        "operationId": "getAgency",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agency"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get Agency",
+        "tags": [
+          "agency"
+        ]
+      },
+      "patch": {
+        "description": "Rename the active agency (owners only).",
+        "operationId": "updateAgency",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgencyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agency"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Update Agency",
+        "tags": [
+          "agency"
+        ]
+      }
+    },
     "/applications/{application_id}": {
       "delete": {
         "description": "Delete the application with its resumes and their stored PDFs.",
@@ -2213,6 +2623,26 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "404": {
             "content": {
@@ -2235,6 +2665,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Delete Application",
         "tags": [
           "applications"
@@ -2265,6 +2701,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2286,6 +2742,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Application",
         "tags": [
           "applications"
@@ -2327,6 +2788,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2348,9 +2829,155 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Update Application",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/auth/csrf": {
+      "get": {
+        "description": "A CSRF token for this browser (bound to its session cookie, if any), also set as the CSRF\ncookie. Call it before signing in.",
+        "operationId": "getCsrfToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Csrf Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Sign in with email and password. Any session cookie the browser sent is revoked and a new\nsession starts (new session and CSRF cookies). 401 with one message for every wrong email or\npassword; 403 when the account has no active agency; 429 with Retry-After when throttled.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Sign out: the session is revoked on the server and both cookies are cleared.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "auth"
         ]
       }
     },
@@ -2438,6 +3065,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -2449,6 +3096,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "List Campaigns",
         "tags": [
           "campaigns"
@@ -2478,6 +3130,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -2489,6 +3161,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Create Campaign",
         "tags": [
           "campaigns"
@@ -2520,6 +3198,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -2541,6 +3239,12 @@
             "description": "Bad Gateway"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Parse Job Description",
         "tags": [
           "campaigns"
@@ -2567,6 +3271,26 @@
           "204": {
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2588,6 +3312,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Delete Campaign",
         "tags": [
           "campaigns"
@@ -2618,6 +3348,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2639,6 +3389,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Campaign",
         "tags": [
           "campaigns"
@@ -2680,6 +3435,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2701,6 +3476,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Update Campaign",
         "tags": [
           "campaigns"
@@ -2907,6 +3688,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2928,6 +3729,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "List Campaign Applications",
         "tags": [
           "applications"
@@ -2971,6 +3777,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -2992,6 +3818,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Bulk Application Action",
         "tags": [
           "applications"
@@ -3194,6 +4026,26 @@
             },
             "description": "CSV, one row per application, in the list's order."
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3215,6 +4067,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Export Campaign Applications",
         "tags": [
           "applications"
@@ -3248,6 +4105,26 @@
             },
             "description": "Server-Sent Events: first `connected` (data: ConnectedEvent), then `resume_update` (data: ResumeEvent) each time one of the campaign's resumes changes status. Only this campaign's resumes."
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3269,6 +4146,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Stream Campaign Events",
         "tags": [
           "uploads"
@@ -3350,6 +4232,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3371,6 +4273,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "List Campaign Resumes",
         "tags": [
           "uploads"
@@ -3404,6 +4311,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3425,6 +4352,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Retry Failed Resumes",
         "tags": [
           "uploads"
@@ -3458,6 +4391,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3479,6 +4432,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Campaign Stats",
         "tags": [
           "campaigns"
@@ -3532,6 +4490,26 @@
             },
             "description": "Bad Request"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3553,6 +4531,12 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
         "summary": "Upload Resumes",
         "tags": [
           "uploads"
@@ -3573,11 +4557,288 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Home",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "The signed-in user, their agencies, the active agency, role and client scope, and the\nsession's CSRF token.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get Me",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "description": "Change your display name.",
+        "operationId": "updateMe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Update Me",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/me/active-agency": {
+      "put": {
+        "description": "Switch the session to another of your agencies (404 for an agency you are not an active\nmember of). Clear any cached data of the previous agency.",
+        "operationId": "setActiveAgency",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveAgencyChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Set Active Agency",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/me/password": {
+      "post": {
+        "description": "Change your password (the current one is required). Every session of yours ends, other\nbrowsers are signed out, and this one continues in a new session (new cookies).",
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "me"
         ]
       }
     },
@@ -3644,6 +4905,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -3655,6 +4936,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "List People",
         "tags": [
           "people"
@@ -3688,6 +4974,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -3709,6 +5015,11 @@
             "description": "Unprocessable Entity"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Person",
         "tags": [
           "people"
@@ -3729,8 +5040,33 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
           }
         },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "summary": "Get Stats",
         "tags": [
           "dashboard"
@@ -3763,6 +5099,18 @@
     {
       "description": "Workspace counts and the Home screen.",
       "name": "dashboard"
+    },
+    {
+      "description": "Sign-in, sign-out and the CSRF token.",
+      "name": "auth"
+    },
+    {
+      "description": "The signed-in user: profile, password, active agency.",
+      "name": "me"
+    },
+    {
+      "description": "The active agency.",
+      "name": "agency"
     }
   ]
 }
