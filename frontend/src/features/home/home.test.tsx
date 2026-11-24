@@ -7,6 +7,7 @@ import { deferred, json, problem, renderWithProviders, toApiCall, type ApiCall }
 
 import { Home } from "./home"
 import { HOME_POLL_MS, homeQuery } from "./queries"
+import { greeting, summarySentence } from "./summary"
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -81,20 +82,29 @@ const HOME: HomeData = {
   },
   recent_strong_matches: [
     makeMatch("app-1"),
-    makeMatch("app-2", { person: { id: "person-2", name: null, email: null }, pipeline_stage: "phone_call", score: 88 }),
+    makeMatch("app-2", { person: { id: "person-2", name: null, email: null }, score: 93 }),
+    makeMatch("app-3", {
+      person: { id: "person-3", name: "Grace Hopper", email: null },
+      pipeline_stage: "phone_call",
+      score: 95,
+    }),
   ],
 }
 
 const EMPTY_HOME: HomeData = { active_campaigns: [], processing: { total: 0, items: [] }, recent_strong_matches: [] }
 
-function stats(campaigns: number): Schema<"Stats"> {
+function stats({
+  total = 2,
+  active = 2,
+  unreviewed = 7,
+}: { total?: number; active?: number; unreviewed?: number } = {}): Schema<"Stats"> {
   return {
-    campaigns: { total: campaigns, active: 0, closed: campaigns, archived: 0 },
+    campaigns: { total, active, closed: total - active, archived: 0 },
     resumes: { total: 0, pending: 0, extracting: 0, processing: 0, done: 0, failed: 0, quota_exceeded: 0 },
     applications: {
       total: 0,
       by_category: { strong_match: 0, moderate_match: 0, weak_match: 0, rejected: 0 },
-      by_stage: { unreviewed: 0, screened: 0, phone_call: 0, technical: 0, offer: 0, hired: 0, rejected_manual: 0 },
+      by_stage: { unreviewed, screened: 0, phone_call: 0, technical: 0, offer: 0, hired: 0, rejected_manual: 0 },
     },
     people: 0,
   }
@@ -109,7 +119,7 @@ function installHomeApi(routes: { home: () => Response | Promise<Response>; stat
       const call = await toApiCall(request)
       calls.push(call)
       if (call.method === "GET" && call.path === "/home") return routes.home()
-      if (call.method === "GET" && call.path === "/stats" && routes.stats) return routes.stats()
+      if (call.method === "GET" && call.path === "/stats") return (routes.stats ?? (() => json(stats())))()
       return problem(404, "Not Found")
     }),
   )
@@ -131,7 +141,7 @@ beforeEach(() => {
 })
 
 describe("Home", () => {
-  it("shows a skeleton, then the three sections", async () => {
+  it("shows a skeleton, then the queue, the open campaigns and the processing line", async () => {
     const response = deferred<Response>()
     installHomeApi({ home: () => response.promise })
     renderHome()
@@ -139,107 +149,132 @@ describe("Home", () => {
     expect(screen.getByLabelText("Loading home")).toBeTruthy()
     response.resolve(json(HOME))
 
-    expect(await screen.findByRole("region", { name: "Active campaigns" })).toBeTruthy()
-    expect(section("Recent strong matches")).toBeTruthy()
+    expect(await screen.findByRole("region", { name: "Ready for review" })).toBeTruthy()
+    expect(section("Open campaigns")).toBeTruthy()
     expect(section("Processing")).toBeTruthy()
     expect(screen.getAllByRole("link", { name: "New campaign" })[0].getAttribute("href")).toBe("/campaigns/new")
   })
 
-  it("lists active campaigns with their status, new uploads, strong matches and processing, linking to each workspace", async () => {
+  it("greets by the time of day and sums the day up in one sentence", async () => {
     installHomeApi({ home: () => json(HOME) })
     renderHome()
-    const campaigns = await screen.findByRole("region", { name: "Active campaigns" })
 
-    const cards = within(campaigns).getAllByRole("article")
-    expect(cards).toHaveLength(2)
-    const backend = within(cards[0])
+    expect(await screen.findByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeTruthy()
+    // 5 + 0 new resumes over the two campaigns Home lists (both of the 2 open ones).
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent ===
+            "7 candidates are waiting for a first look across 2 open campaigns, and 5 resumes came in over the last day.",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("lists open campaigns as rows with the counts the API gives, linking to each workspace", async () => {
+    installHomeApi({ home: () => json(HOME) })
+    renderHome()
+    const campaigns = await screen.findByRole("region", { name: "Open campaigns" })
+
+    const rows = within(campaigns).getAllByRole("listitem")
+    expect(rows).toHaveLength(2)
+    const backend = within(rows[0])
     expect(backend.getByRole("link", { name: "Backend hire, Q1" }).getAttribute("href")).toBe(`/campaigns/${BACKEND}`)
-    expect(backend.getByText("Active")).toBeTruthy()
-    const count = (label: string) => backend.getByText(label, { selector: "dt" }).nextElementSibling?.textContent
-    expect(count("New in 24 h")).toBe("5")
-    expect(count("Strong matches")).toBe("4")
-    expect(count("Processing")).toBe("21 failed")
-    expect(within(cards[1]).getByRole("link", { name: "Data team" }).getAttribute("href")).toBe(`/campaigns/${DATA}`)
+    expect(backend.getByText("Backend Engineer")).toBeTruthy()
+    expect(backend.getByText("9 applicants · 4 strong · 5 new today · 2 processing · 1 failed")).toBeTruthy()
+    expect(within(rows[1]).getByText("3 applicants")).toBeTruthy()
     expect(within(campaigns).getByRole("link", { name: "All campaigns" }).getAttribute("href")).toBe("/campaigns")
   })
 
-  it("lists uploads still processing, linking to each campaign's Uploads tab", async () => {
+  it("says how many resumes are processing, linking each to its campaign's Uploads tab", async () => {
     installHomeApi({ home: () => json(HOME) })
     renderHome()
     const processing = await screen.findByRole("region", { name: "Processing" })
 
-    expect(within(processing).getByText("12 resumes in progress.")).toBeTruthy()
+    expect(within(processing).getByText("12 resumes are being read and scored.")).toBeTruthy()
     const items = within(processing).getAllByRole("listitem")
     expect(items).toHaveLength(2)
     expect(within(items[0]).getByText("cv-ada.pdf")).toBeTruthy()
-    expect(within(items[0]).getByText("Analysing")).toBeTruthy()
+    expect(within(items[0]).getByText("· Scoring")).toBeTruthy()
     expect(within(items[0]).getByRole("link", { name: "Backend hire, Q1: uploads" }).getAttribute("href")).toBe(
       `/campaigns/${BACKEND}?tab=uploads`,
     )
-    expect(within(items[1]).getByText("Queued")).toBeTruthy()
+    expect(within(items[1]).getByText("· Queued")).toBeTruthy()
     expect(within(items[1]).getByRole("link", { name: "Data team: uploads" }).getAttribute("href")).toBe(
       `/campaigns/${DATA}?tab=uploads`,
     )
-    expect(within(processing).getByText("Showing the 2 newest of 12.")).toBeTruthy()
+    expect(within(processing).getByText("Showing the 2 newest.")).toBeTruthy()
   })
 
-  it("lists recent strong matches, linking to the candidate in their campaign", async () => {
+  it("queues the strong matches nobody has looked at yet, best first, linking to each in their campaign", async () => {
     installHomeApi({ home: () => json(HOME) })
     renderHome()
-    const matches = await screen.findByRole("region", { name: "Recent strong matches" })
+    const queue = await screen.findByRole("region", { name: "Ready for review" })
 
-    const rows = within(matches).getAllByRole("row").slice(1)
+    const rows = within(queue).getAllByRole("listitem")
+    // Grace Hopper is already at Phone screen: not in the queue.
     expect(rows).toHaveLength(2)
-    const ada = within(rows[0])
+    expect(within(queue).queryByText("Grace Hopper")).toBeNull()
+    const unnamed = within(rows[0])
+    expect(unnamed.getByRole("link", { name: "Unnamed candidate" }).getAttribute("href")).toBe(`/campaigns/${DATA}?open=app-2`)
+    expect(unnamed.getByText("93")).toBeTruthy()
+    const ada = within(rows[1])
     expect(ada.getByRole("link", { name: "Ada Lovelace" }).getAttribute("href")).toBe(`/campaigns/${DATA}?open=app-1`)
-    expect(ada.getByText("Data team")).toBeTruthy()
+    expect(ada.getAllByText(/Data team/).length).toBeGreaterThan(0)
     expect(ada.getByText("91")).toBeTruthy()
-    expect(ada.getByText("Unreviewed")).toBeTruthy()
-    const unnamed = within(rows[1])
-    expect(unnamed.getByRole("link", { name: "Unnamed candidate" }).getAttribute("href")).toBe(
-      `/campaigns/${DATA}?open=app-2`,
-    )
-    expect(unnamed.getByText("Phone call")).toBeTruthy()
   })
 
-  it("says so quietly when a section is empty", async () => {
+  it("says so quietly when there is nothing to review or process", async () => {
     installHomeApi({
       home: () => json({ ...HOME, processing: { total: 0, items: [] }, recent_strong_matches: [] }),
     })
     renderHome()
 
-    expect(await screen.findByText("Nothing is processing. Every upload is done.")).toBeTruthy()
+    expect(await screen.findByText("All uploads are processed.")).toBeTruthy()
     expect(screen.getByText(/No strong matches yet/)).toBeTruthy()
-    expect(within(section("Active campaigns")).getAllByRole("article")).toHaveLength(2)
+    expect(within(section("Open campaigns")).getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("tells when every recent strong match has been looked at", async () => {
+    installHomeApi({
+      home: () => json({ ...HOME, recent_strong_matches: [makeMatch("app-9", { pipeline_stage: "screened" })] }),
+    })
+    renderHome()
+
+    expect(await screen.findByText(/You have looked at every recent strong match/)).toBeTruthy()
   })
 
   it("invites creating the first campaign on a first run", async () => {
-    const calls = installHomeApi({ home: () => json(EMPTY_HOME), stats: () => json(stats(0)) })
+    const calls = installHomeApi({
+      home: () => json(EMPTY_HOME),
+      stats: () => json(stats({ total: 0, active: 0, unreviewed: 0 })),
+    })
     renderHome()
 
     expect(await screen.findByText("Create your first campaign")).toBeTruthy()
     const links = screen.getAllByRole("link", { name: "New campaign" })
     expect(links).toHaveLength(2)
     expect(links.every((link) => link.getAttribute("href") === "/campaigns/new")).toBe(true)
-    expect(screen.queryByRole("region", { name: "Active campaigns" })).toBeNull()
-    expect(calls.map((call) => call.path)).toEqual(["/home", "/stats"])
+    expect(screen.queryByRole("region", { name: "Open campaigns" })).toBeNull()
+    expect(calls.map((call) => call.path).sort()).toEqual(["/home", "/stats"])
   })
 
   it("points to the campaign list when every campaign is closed", async () => {
-    installHomeApi({ home: () => json(EMPTY_HOME), stats: () => json(stats(3)) })
+    installHomeApi({ home: () => json(EMPTY_HOME), stats: () => json(stats({ total: 3, active: 0, unreviewed: 0 })) })
     renderHome()
 
-    const campaigns = await screen.findByRole("region", { name: "Active campaigns" })
-    expect(within(campaigns).getByText(/No active campaigns/)).toBeTruthy()
+    const campaigns = await screen.findByRole("region", { name: "Open campaigns" })
+    expect(within(campaigns).getByText(/No open campaigns/)).toBeTruthy()
+    expect(screen.getByText("No campaigns are open.")).toBeTruthy()
     expect(screen.queryByText("Create your first campaign")).toBeNull()
   })
 
-  it("only asks for the workspace counts when there is nothing to show", async () => {
-    const calls = installHomeApi({ home: () => json(HOME) })
+  it("still shows the day without its sentence when the counts fail to load", async () => {
+    installHomeApi({ home: () => json(HOME), stats: () => problem(503, "Service Unavailable") })
     renderHome()
-    await screen.findByRole("region", { name: "Active campaigns" })
 
-    expect(calls.map((call) => call.path)).toEqual(["/home"])
+    expect(await screen.findByRole("region", { name: "Ready for review" })).toBeTruthy()
+    expect(screen.queryByText(/waiting for a first look/)).toBeNull()
   })
 
   it("shows the problem on error, and retries", async () => {
@@ -254,7 +289,48 @@ describe("Home", () => {
 
     expect(await screen.findByText("The database is starting.")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
-    expect(await screen.findByRole("region", { name: "Active campaigns" })).toBeTruthy()
+    expect(await screen.findByRole("region", { name: "Ready for review" })).toBeTruthy()
+  })
+})
+
+describe("summarySentence", () => {
+  const home = (newToday: number[]): HomeData => ({
+    ...EMPTY_HOME,
+    active_campaigns: newToday.map((n, index) =>
+      makeCampaign({ id: `c${index}`, counts: { ...makeCampaign().counts, new_resumes_24h: n } }),
+    ),
+  })
+  const text = (parts: ReturnType<typeof summarySentence>) => (parts ? parts.lead + parts.rest : null)
+
+  it("leads with the candidates waiting for a first look", () => {
+    expect(text(summarySentence(home([0, 0]), stats({ active: 2, unreviewed: 1 })))).toBe(
+      "1 candidate is waiting for a first look across 2 open campaigns.",
+    )
+    expect(text(summarySentence(home([2, 1]), stats({ active: 2, unreviewed: 1200 })))).toBe(
+      "1,200 candidates are waiting for a first look across 2 open campaigns, and 3 resumes came in over the last day.",
+    )
+  })
+
+  it("leaves out the new resumes when Home does not list every open campaign", () => {
+    expect(text(summarySentence(home([4]), stats({ total: 12, active: 11, unreviewed: 3 })))).toBe(
+      "3 candidates are waiting for a first look across 11 open campaigns.",
+    )
+  })
+
+  it("covers a clear desk, no open campaigns and a first run", () => {
+    expect(text(summarySentence(home([0]), stats({ active: 1, unreviewed: 0 })))).toBe(
+      "Every candidate has had a first look across 1 open campaign.",
+    )
+    expect(summarySentence(EMPTY_HOME, stats({ total: 3, active: 0 }))?.lead).toBe("No campaigns are open.")
+    expect(summarySentence(EMPTY_HOME, stats({ total: 0, active: 0 }))).toBeNull()
+  })
+})
+
+describe("greeting", () => {
+  it("follows the hour", () => {
+    expect(greeting(6)).toBe("Good morning")
+    expect(greeting(12)).toBe("Good afternoon")
+    expect(greeting(18)).toBe("Good evening")
   })
 })
 

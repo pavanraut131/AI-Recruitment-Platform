@@ -1,64 +1,94 @@
 "use client"
 
-import { formatDistanceToNow } from "date-fns"
-import { ArrowRightIcon, BriefcaseIcon, CheckCircle2Icon, Loader2Icon, PlusIcon, SparklesIcon } from "lucide-react"
+import { formatDistanceToNowStrict } from "date-fns"
+import { BriefcaseIcon, LoaderCircleIcon, PlusIcon } from "lucide-react"
 import Link from "next/link"
+import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
 
-import { ScoreCell } from "@/components/application/score"
-import { CampaignStatusBadge } from "@/components/campaign/status-badge"
+import { ScoreCell, categoryBarClass } from "@/components/application/score"
 import { EmptyState, ErrorState } from "@/components/data-states"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Schema } from "@/lib/api/client"
-import { displayName, stageLabel } from "@/lib/applications"
+import { displayName } from "@/lib/applications"
 import { applicationHref, campaignHref } from "@/lib/routes"
 import { cn } from "@/lib/utils"
 
 import { useHome, useWorkspaceStats, type Home as HomeData, type ProcessingResume, type RecentMatch } from "./queries"
+import { greeting, longDate, plural, summarySentence } from "./summary"
 
 type Campaign = Schema<"Campaign">
 
 /** A processing resume's status, in the Uploads tab's words. */
 const RESUME_STATUS_LABELS: Record<Schema<"ResumeStatus">, string> = {
   pending: "Queued",
-  extracting: "Extracting",
-  processing: "Analysing",
+  extracting: "Reading",
+  processing: "Scoring",
   done: "Done",
   failed: "Failed",
   quota_exceeded: "Quota limit",
 }
 
-function isEmpty(home: HomeData): boolean {
-  return home.active_campaigns.length === 0 && home.processing.total === 0 && home.recent_strong_matches.length === 0
+/*
+ * The greeting and date follow the reader's clock, which the server does not
+ * know: the server renders a neutral heading and the client fills it in right
+ * after hydration (no mismatch), then keeps it current each minute.
+ */
+function subscribeToMinutes(onChange: () => void) {
+  const timer = setInterval(onChange, 60_000)
+  return () => clearInterval(timer)
+}
+function readClock(): string {
+  const now = new Date()
+  return `${greeting(now.getHours())}|${longDate(now)}`
+}
+function useClock(): { greeting: string; date: string } | null {
+  const value = useSyncExternalStore(subscribeToMinutes, readClock, () => null)
+  if (value === null) return null
+  const [hello, date] = value.split("|")
+  return { greeting: hello, date }
 }
 
 /**
- * `/` (spec §4): what needs attention across campaigns. Active campaigns with
- * their new uploads and strong matches, resumes still processing, and the
- * latest strong matches, from `GET /home`. A first run (no campaigns at all)
- * invites creating one.
+ * `/` (spec §4), a calm "today" page: a greeting and one sentence about the
+ * day's numbers, then the focal point, the strong matches nobody has looked
+ * at yet (from `GET /home`, best first), the open campaigns as compact rows,
+ * and a quiet line about uploads still processing. A first run (no campaigns
+ * at all) invites creating one.
  */
 export function Home() {
   const home = useHome()
-  const empty = home.data !== undefined && isEmpty(home.data)
-  const stats = useWorkspaceStats({ enabled: empty })
+  const stats = useWorkspaceStats()
+  const clock = useClock()
+
+  const firstRun = stats.data?.campaigns.total === 0 && home.data !== undefined && isEmpty(home.data)
+  const summary = home.data && stats.data ? summarySentence(home.data, stats.data) : null
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
-          <p className="text-muted-foreground">What needs your attention across campaigns.</p>
+    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-10 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
+      <header className="flex flex-wrap items-end gap-4">
+        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-1.5">
+          <p className="min-h-5 text-dense text-muted-foreground">{clock?.date}</p>
+          <h1 className="text-3xl leading-tight font-semibold tracking-tight">{clock?.greeting ?? "Today"}</h1>
+          <div className="mt-1 min-h-6 max-w-[620px] text-base text-ink-2">
+            {summary ? (
+              <p>
+                <span className="font-medium text-foreground">{summary.lead}</span>
+                {summary.rest}
+              </p>
+            ) : (stats.isPending || home.isPending) && !home.isError ? (
+              <Skeleton className="mt-1 h-4 w-96 max-w-full" />
+            ) : null}
+          </div>
         </div>
         <NewCampaignButton />
       </header>
 
-      {home.isPending || (empty && stats.isPending) ? (
+      {home.isPending || stats.isPending ? (
         <HomeSkeleton />
       ) : home.isError ? (
         <ErrorState error={home.error} onRetry={() => void home.refetch()} retrying={home.isFetching} />
-      ) : empty && stats.data?.campaigns.total === 0 ? (
+      ) : firstRun ? (
         <EmptyState
           icon={BriefcaseIcon}
           title="Create your first campaign"
@@ -66,19 +96,25 @@ export function Home() {
           action={<NewCampaignButton />}
         />
       ) : (
-        <div className="grid gap-8 lg:grid-cols-3">
-          <ActiveCampaigns campaigns={home.data.active_campaigns} className="lg:col-span-3" />
-          <StrongMatches matches={home.data.recent_strong_matches} className="lg:col-span-2" />
-          <Processing processing={home.data.processing} />
+        <div className="flex flex-wrap items-start gap-x-12 gap-y-10">
+          <ReadyForReview matches={home.data.recent_strong_matches} className="flex-[999_1_520px]" />
+          <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
+            <OpenCampaigns campaigns={home.data.active_campaigns} />
+            <Processing processing={home.data.processing} />
+          </div>
         </div>
       )}
     </div>
   )
 }
 
+function isEmpty(home: HomeData): boolean {
+  return home.active_campaigns.length === 0 && home.processing.total === 0 && home.recent_strong_matches.length === 0
+}
+
 function NewCampaignButton() {
   return (
-    <Button asChild>
+    <Button asChild size="lg">
       <Link href="/campaigns/new">
         <PlusIcon data-icon="inline-start" />
         New campaign
@@ -87,249 +123,208 @@ function NewCampaignButton() {
   )
 }
 
-function Section({
+function SectionHeading({
+  id,
   title,
-  description,
+  hint,
   action,
-  className,
-  children,
 }: {
+  id: string
   title: string
-  description?: React.ReactNode
-  action?: React.ReactNode
-  className?: string
-  children: React.ReactNode
+  hint?: ReactNode
+  action?: ReactNode
 }) {
-  const id = `home-${title.toLowerCase().replace(/\W+/g, "-")}`
   return (
-    <section aria-labelledby={id} className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
-          <h2 id={id} className="text-base font-medium">
-            {title}
-          </h2>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h2 id={id} className="text-section font-semibold">
+        {title}
+      </h2>
+      {hint && <span className="text-dense text-muted-foreground">{hint}</span>}
+      {action && <span className="ml-auto">{action}</span>}
+    </div>
+  )
+}
+
+function initials(name: string | null): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return "?"
+  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase()
+}
+
+/** Strong matches with no stage yet, best first: the screen's focal point. */
+function ReadyForReview({ matches, className }: { matches: RecentMatch[]; className?: string }) {
+  const waiting = matches
+    .filter((match) => match.pipeline_stage === null)
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+  return (
+    <section aria-labelledby="home-ready" className={cn("flex min-w-0 flex-col gap-3", className)}>
+      <SectionHeading id="home-ready" title="Ready for review" hint={waiting.length > 0 ? "Strong matches nobody has looked at yet, best first" : undefined} />
+      {waiting.length === 0 ? (
+        <p className="border-t py-6 text-ink-2">
+          {matches.length === 0
+            ? "No strong matches yet. They show up here as resumes are scored."
+            : "You have looked at every recent strong match. Other candidates wait in each campaign's Candidates tab."}
+        </p>
+      ) : (
+        <ul className="border-t">
+          {waiting.map((match) => (
+            <QueueItem key={match.id} match={match} />
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
 
-/** A section with nothing to list: one quiet line, not a full empty state. */
-function Quiet({ icon: Icon, children }: { icon: typeof CheckCircle2Icon; children: React.ReactNode }) {
+function QueueItem({ match }: { match: RecentMatch }) {
+  const name = displayName(match.person.name)
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
-      <p>{children}</p>
-    </div>
+    // The name's link covers the row (its ::after), so the whole row is one target with one name.
+    <li className="relative flex items-center gap-3.5 border-b px-1 py-3.5 transition-colors focus-within:bg-muted/60 hover:bg-muted/60 sm:gap-4">
+      <span
+        aria-hidden="true"
+        className="hidden size-9 shrink-0 place-items-center rounded-full bg-muted text-dense font-semibold text-ink-2 sm:grid"
+      >
+        {initials(match.person.name)}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <Link
+          href={applicationHref(match.campaign.id, match.id)}
+          className="truncate font-semibold outline-none after:absolute after:inset-0 focus-visible:underline"
+        >
+          {name}
+        </Link>
+        <span className="truncate text-dense text-muted-foreground">
+          <span className="md:hidden">{match.campaign.title} · </span>
+          scored <RelativeTime iso={match.created_at} />
+        </span>
+      </div>
+      <span className="hidden w-44 shrink-0 truncate text-dense text-muted-foreground md:block" title={match.campaign.title}>
+        {match.campaign.title}
+      </span>
+      <span className="shrink-0">
+        <ScoreCell score={match.score} category={match.category} size="md" />
+      </span>
+      <span
+        aria-hidden="true"
+        className="hidden h-8 shrink-0 items-center rounded-md border border-input px-3 text-dense font-medium sm:inline-flex"
+      >
+        Review
+      </span>
+    </li>
   )
 }
 
-function SeeAll({ href, children }: { href: string; children: React.ReactNode }) {
+function OpenCampaigns({ campaigns }: { campaigns: Campaign[] }) {
   return (
-    <Button asChild variant="link" size="sm" className="h-auto px-0">
-      <Link href={href}>
-        {children}
-        <ArrowRightIcon data-icon="inline-end" />
-      </Link>
-    </Button>
-  )
-}
-
-function ActiveCampaigns({ campaigns, className }: { campaigns: Campaign[]; className?: string }) {
-  return (
-    <Section
-      title="Active campaigns"
-      description="The most recently active ones."
-      action={<SeeAll href="/campaigns">All campaigns</SeeAll>}
-      className={className}
-    >
+    <section aria-labelledby="home-campaigns" className="flex min-w-0 flex-col gap-3">
+      <SectionHeading
+        id="home-campaigns"
+        title="Open campaigns"
+        action={
+          <Link href="/campaigns" className="text-link text-dense">
+            All campaigns
+          </Link>
+        }
+      />
       {campaigns.length === 0 ? (
-        <Quiet icon={BriefcaseIcon}>
-          No active campaigns. Closed and archived ones are on the{" "}
-          <Link href="/campaigns" className="text-primary underline-offset-4 hover:underline">
+        <p className="border-t py-6 text-ink-2">
+          No open campaigns. Closed and archived ones are on the{" "}
+          <Link href="/campaigns" className="text-link">
             Campaigns
           </Link>{" "}
           page.
-        </Quiet>
+        </p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="-mx-3 flex flex-col gap-0.5">
           {campaigns.map((campaign) => (
-            <li key={campaign.id}>
-              <CampaignCard campaign={campaign} />
-            </li>
+            <CampaignRow key={campaign.id} campaign={campaign} />
           ))}
         </ul>
       )}
-    </Section>
+    </section>
   )
 }
 
-function CampaignCard({ campaign }: { campaign: Campaign }) {
+/** "94 applicants · 4 strong · 2 new today": what the API counts, nothing more. */
+function campaignSummary(counts: Campaign["counts"]): string {
+  const parts = [plural(counts.applications, "applicant")]
+  if (counts.strong_matches > 0) parts.push(`${counts.strong_matches} strong`)
+  if (counts.new_resumes_24h > 0) parts.push(`${counts.new_resumes_24h} new today`)
+  if (counts.in_progress > 0) parts.push(`${counts.in_progress} processing`)
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  return parts.join(" · ")
+}
+
+function CampaignRow({ campaign }: { campaign: Campaign }) {
   const { counts } = campaign
+  const strongShare = counts.applications > 0 ? (counts.strong_matches / counts.applications) * 100 : 0
   return (
-    // The title link covers the card (its ::after), so the whole card is one target.
-    <article className="relative flex h-full flex-col gap-3 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-muted/40 motion-reduce:transition-none">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 className="truncate font-medium" title={campaign.title}>
-            <Link href={campaignHref(campaign.id)} className="outline-none after:absolute after:inset-0 after:rounded-lg">
-              {campaign.title}
-            </Link>
-          </h3>
-          <p className="truncate text-sm text-muted-foreground">{campaign.role}</p>
-        </div>
-        <CampaignStatusBadge status={campaign.status} className="shrink-0" />
-      </div>
-      <dl className="grid grid-cols-3 gap-2">
-        <Count label="New in 24 h" value={counts.new_resumes_24h} />
-        <Count label="Strong matches" value={counts.strong_matches} tone={counts.strong_matches > 0 ? "strong" : undefined} />
-        <Count
-          label="Processing"
-          value={counts.in_progress}
-          tone={counts.in_progress > 0 ? "active" : undefined}
-          hint={counts.failed > 0 ? `${counts.failed} failed` : undefined}
+    <li className="relative flex flex-col gap-2 rounded-xl px-3 py-3 transition-colors focus-within:bg-muted/60 hover:bg-muted/60">
+      <span className="flex min-w-0 items-baseline gap-2">
+        <Link
+          href={campaignHref(campaign.id)}
+          className="truncate font-semibold outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:underline"
+          title={campaign.title}
+        >
+          {campaign.title}
+        </Link>
+        <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">{campaign.role}</span>
+      </span>
+      {/* Strong matches as a share of the applicants (the sentence below says the numbers). */}
+      <span aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-border">
+        <span
+          className={cn("h-full w-(--share) rounded-full", categoryBarClass("strong_match"))}
+          style={{ "--share": `${strongShare}%` } as CSSProperties}
         />
-      </dl>
-      <p className="mt-auto text-xs text-muted-foreground">
-        Last activity <RelativeTime iso={campaign.last_activity_at} />
-      </p>
-    </article>
-  )
-}
-
-function Count({
-  label,
-  value,
-  tone,
-  hint,
-}: {
-  label: string
-  value: number
-  tone?: "strong" | "active"
-  hint?: string
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd
-        className={cn(
-          "text-lg font-semibold tabular-nums",
-          value === 0 && "text-muted-foreground",
-          tone === "strong" && "text-category-strong-foreground",
-          tone === "active" && "text-primary",
-        )}
-      >
-        {value}
-        {hint && <span className="ml-1.5 text-xs font-normal text-destructive">{hint}</span>}
-      </dd>
-    </div>
-  )
-}
-
-function StrongMatches({ matches, className }: { matches: RecentMatch[]; className?: string }) {
-  return (
-    <Section title="Recent strong matches" description="The newest candidates the AI rated a strong match." className={className}>
-      {matches.length === 0 ? (
-        <Quiet icon={SparklesIcon}>No strong matches yet. They appear here as resumes are scored.</Quiet>
-      ) : (
-        <div className="rounded-lg border">
-          <Table className="text-dense">
-            <TableCaption className="sr-only">Recent strong matches, newest first. Open a candidate by their name.</TableCaption>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Candidate</TableHead>
-                <TableHead>Campaign</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead className="pr-4">Scored</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {matches.map((match) => (
-                <TableRow key={match.id}>
-                  <TableCell className="max-w-48 pl-4">
-                    <Link
-                      href={applicationHref(match.campaign.id, match.id)}
-                      className="block truncate rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {displayName(match.person.name)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="max-w-48 truncate text-muted-foreground" title={match.campaign.title}>
-                    {match.campaign.title}
-                  </TableCell>
-                  <TableCell>
-                    <ScoreCell score={match.score} category={match.category} />
-                  </TableCell>
-                  <TableCell className={cn(match.pipeline_stage === null && "text-muted-foreground")}>
-                    {stageLabel(match.pipeline_stage)}
-                  </TableCell>
-                  <TableCell className="pr-4 whitespace-nowrap text-muted-foreground">
-                    <RelativeTime iso={match.created_at} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </Section>
+      </span>
+      <span className="text-dense text-ink-2">{campaignSummary(counts)}</span>
+    </li>
   )
 }
 
 function Processing({ processing }: { processing: HomeData["processing"] }) {
   const { total, items } = processing
   return (
-    <Section
-      title="Processing"
-      description={total === 0 ? "Uploads still being read and scored." : `${total} ${total === 1 ? "resume" : "resumes"} in progress.`}
-    >
+    <section aria-label="Processing" className="flex flex-col gap-2 text-dense text-muted-foreground">
       {total === 0 ? (
-        <Quiet icon={CheckCircle2Icon}>Nothing is processing. Every upload is done.</Quiet>
+        <p className="flex items-center gap-2">
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-primary" />
+          All uploads are processed.
+        </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          <ul className="divide-y rounded-lg border">
+        <>
+          <p className="flex items-center gap-2">
+            <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
+            {plural(total, "resume")} {total === 1 ? "is" : "are"} being read and scored.
+          </p>
+          <ul className="flex flex-col gap-1 pl-5.5">
             {items.map((resume) => (
               <ProcessingItem key={resume.id} resume={resume} />
             ))}
           </ul>
-          {total > items.length && (
-            <p className="text-xs text-muted-foreground">
-              Showing the {items.length} newest of {total}.
-            </p>
-          )}
-        </div>
+          {total > items.length && <p className="pl-5.5">Showing the {items.length} newest.</p>}
+        </>
       )}
-    </Section>
+    </section>
   )
 }
 
 function ProcessingItem({ resume }: { resume: ProcessingResume }) {
   return (
-    <li className="flex items-center justify-between gap-3 px-3 py-2.5 text-dense">
-      <div className="flex min-w-0 flex-col">
-        <span className="truncate font-medium" title={resume.filename}>
-          {resume.filename}
-        </span>
-        {resume.campaign ? (
-          <Link
-            href={campaignHref(resume.campaign.id, "uploads")}
-            className="truncate text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            {resume.campaign.title}
-            <span className="sr-only">: uploads</span>
-          </Link>
-        ) : (
-          <span className="text-xs text-muted-foreground">Deleted campaign</span>
-        )}
-      </div>
-      <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2Icon className="size-3.5 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
-        {RESUME_STATUS_LABELS[resume.status]}
+    <li className="flex min-w-0 items-baseline gap-1.5">
+      <span className="truncate text-ink-2" title={resume.filename}>
+        {resume.filename}
       </span>
+      <span className="shrink-0">· {RESUME_STATUS_LABELS[resume.status]}</span>
+      {resume.campaign ? (
+        <Link href={campaignHref(resume.campaign.id, "uploads")} className="ml-auto shrink-0 truncate hover:text-foreground hover:underline">
+          {resume.campaign.title}
+          <span className="sr-only">: uploads</span>
+        </Link>
+      ) : (
+        <span className="ml-auto shrink-0">Deleted campaign</span>
+      )}
     </li>
   )
 }
@@ -338,29 +333,40 @@ function RelativeTime({ iso }: { iso: string }) {
   const date = new Date(iso)
   return (
     <time dateTime={iso} title={date.toLocaleString()}>
-      {formatDistanceToNow(date, { addSuffix: true })}
+      {formatDistanceToNowStrict(date, { addSuffix: true })}
     </time>
   )
 }
 
+/** The final layout's shape: queue rows on the left, campaign rows on the right. */
 function HomeSkeleton() {
   return (
-    <div className="grid gap-8 lg:grid-cols-3" aria-busy="true" aria-label="Loading home">
-      <div className="flex flex-col gap-3 lg:col-span-3">
-        <Skeleton className="h-5 w-40" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton key={index} className="h-36 w-full rounded-lg" />
+    <div className="flex flex-wrap items-start gap-x-12 gap-y-10" aria-busy="true" aria-label="Loading home">
+      <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-3">
+        <Skeleton className="h-5 w-36" />
+        <div className="border-t">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div key={index} className="flex items-center gap-4 border-b px-1 py-3.5">
+              <Skeleton className="size-9 rounded-full" />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+              <Skeleton className="hidden h-3 w-32 md:block" />
+              <Skeleton className="h-4 w-20" />
+            </div>
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-3 lg:col-span-2">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-56 w-full rounded-lg" />
-      </div>
-      <div className="flex flex-col gap-3">
+      <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
         <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-56 w-full rounded-lg" />
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="flex flex-col gap-2 py-3">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-1.5 w-full" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+        ))}
       </div>
     </div>
   )

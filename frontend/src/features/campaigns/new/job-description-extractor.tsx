@@ -51,15 +51,15 @@ export function JobDescriptionExtractor({
     <section
       aria-labelledby={`${id}-heading`}
       aria-busy={parse.isPending}
-      className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4"
+      className="flex flex-col gap-3 rounded-xl bg-canvas p-5"
     >
       <div className="flex flex-col gap-1">
-        <h2 id={`${id}-heading`} className="text-sm font-medium">
+        <h2 id={`${id}-heading`} className="text-section font-semibold">
           Start from a job description
         </h2>
-        <p id={hintId} className="text-sm text-muted-foreground">
-          Paste the job ad and let the AI fill in the role and the required skills. You can edit everything
-          afterwards.
+        <p id={hintId} className="text-ink-2">
+          Paste the job ad and we fill in the role and the must-have skills for you to check. You can change
+          everything afterwards.
         </p>
       </div>
       <Label htmlFor={`${id}-jd`} className="sr-only">
@@ -73,7 +73,7 @@ export function JobDescriptionExtractor({
           setText(event.target.value)
           if (validationError) setValidationError(null)
         }}
-        placeholder="Paste a job description…"
+        placeholder="Paste the job ad here"
         disabled={disabled || parse.isPending}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${hintId} ${errorId}` : hintId}

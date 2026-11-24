@@ -8,7 +8,8 @@ export const WORKSPACE_TAB_LABELS: Record<WorkspaceTab, string> = {
   candidates: "Candidates",
   uploads: "Uploads",
   insights: "Insights",
-  settings: "Settings",
+  // The campaign's brief: role, must-haves, description, status (the URL keeps `settings`).
+  settings: "Brief",
 }
 
 /**

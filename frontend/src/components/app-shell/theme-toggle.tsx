@@ -14,13 +14,13 @@ import {
 import { SidebarMenuButton } from "@/components/ui/sidebar"
 
 /** Sidebar footer item: choose system, light or dark. */
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <SidebarMenuButton tooltip="Theme">
+        <SidebarMenuButton tooltip="Theme" className={className}>
           {/* Icons switch by CSS so server and client markup match. */}
           <SunIcon className="dark:hidden" />
           <MoonIcon className="hidden dark:block" />

@@ -23,8 +23,8 @@ export default async function DevCandidatesPage({
   const count = Number(Array.isArray(rows) ? rows[0] : rows)
   const rowCount = Number.isInteger(count) && count > 0 ? Math.min(count, MAX_FIXTURE_ROWS) : 500
   return (
-    <div className="flex w-full flex-col gap-4 px-6 py-6">
-      <h1 className="text-xl font-semibold tracking-tight">Candidates table · fixture</h1>
+    <div className="flex w-full flex-col gap-4 px-4 pt-6 pb-10 sm:px-8">
+      <h1 className="text-title font-semibold tracking-tight">Candidates table · fixture</h1>
       <CandidatesFixtureView rowCount={rowCount} />
     </div>
   )

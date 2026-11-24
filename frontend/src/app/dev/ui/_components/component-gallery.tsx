@@ -18,6 +18,8 @@ import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
 
+import { MustHaveChips, ScoreBreakdown } from "@/components/application/evaluation"
+import { MatchLabel, ScoreCell, ScoreHeadline } from "@/components/application/score"
 import { Badge } from "@/components/ui/badge"
 import {
   Breadcrumb,
@@ -150,15 +152,15 @@ import { cn } from "@/lib/utils"
 
 export function ComponentGallery() {
   return (
-    <div className="flex flex-col gap-6 px-6 py-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">UI gallery</h1>
-        <p className="max-w-3xl text-muted-foreground">
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-14 sm:px-8">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="text-title font-semibold tracking-tight">UI gallery</h1>
+        <p className="max-w-3xl text-ink-2">
           Every primitive in <code className="font-mono">src/components/ui</code>{" "}
-          in each state, rendered in a light and a dark pane. Overlays
-          (dialog, sheet, popover, menus, tooltips, toasts) open in a portal and
-          follow the app theme: switch it from the sidebar or with ⌘K. Development
-          builds only.
+          and the score display in each state, rendered in a light and a dark
+          pane (docs/design/README.md has the rules). Overlays (dialog, sheet,
+          popover, menus, tooltips, toasts) open in a portal and follow the app
+          theme: switch it from the sidebar or with ⌘K. Development builds only.
         </p>
       </header>
       <div className="grid gap-6 2xl:grid-cols-2">
@@ -175,7 +177,7 @@ function ThemePane({ theme }: { theme: "light" | "dark" }) {
       aria-label={`${theme === "light" ? "Light" : "Dark"} theme`}
       className={cn(
         theme,
-        "flex min-w-0 flex-col gap-10 rounded-xl border bg-background p-6 text-foreground"
+        "flex min-w-0 flex-col gap-10 rounded-xl border bg-background p-4 text-foreground sm:p-6"
       )}
     >
       <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">
@@ -185,7 +187,7 @@ function ThemePane({ theme }: { theme: "light" | "dark" }) {
       <TypographySection />
       <ButtonsSection />
       <BadgesSection />
-      <ScoreBarsSection />
+      <ScoreDisplaySection />
       <InputsSection />
       <SelectSection />
       <CheckboxSection />
@@ -214,7 +216,7 @@ function Section({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="text-section font-semibold">{title}</h2>
         {description && (
           <p className="text-xs text-muted-foreground">{description}</p>
         )}
@@ -250,12 +252,18 @@ function Row({
 // Literal class names so Tailwind generates them.
 const swatches: { name: string; className: string }[] = [
   { name: "background", className: "bg-background" },
+  { name: "canvas", className: "bg-canvas" },
+  { name: "foreground", className: "bg-foreground" },
+  { name: "ink-2", className: "bg-ink-2" },
+  { name: "muted-fg", className: "bg-muted-foreground" },
   { name: "card", className: "bg-card" },
   { name: "popover", className: "bg-popover" },
   { name: "muted", className: "bg-muted" },
   { name: "secondary", className: "bg-secondary" },
   { name: "accent", className: "bg-accent" },
   { name: "primary", className: "bg-primary" },
+  { name: "primary-soft", className: "bg-primary-soft" },
+  { name: "row-active", className: "bg-row-active" },
   { name: "ring", className: "bg-ring" },
   { name: "destructive", className: "bg-destructive" },
   { name: "border", className: "bg-border" },
@@ -299,7 +307,7 @@ function ColorsSection() {
   return (
     <Section
       title="Colour tokens"
-      description="src/styles/tokens.css: shadcn convention plus --category-*. No hex in components."
+      description="src/styles/tokens.css: paper and ink greys, one forest-green accent, shadcn names plus ink-2, canvas, primary-soft, row-active and --category-*. No hex in components."
     >
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
         {swatches.map((swatch) => (
@@ -338,19 +346,23 @@ function ColorsSection() {
 
 function TypographySection() {
   return (
-    <Section title="Typography" description="Geist Sans / Geist Mono via next/font.">
+    <Section title="Typography" description="Instrument Sans via next/font, tabular figures everywhere.">
       <div className="flex flex-col gap-2">
-        <p className="text-2xl font-semibold tracking-tight">Page title 24px</p>
-        <p className="text-xl font-semibold tracking-tight">Section title 20px</p>
-        <p className="text-[15px]">Body 15px: calm, data-dense, pitch-ready.</p>
+        <p className="text-3xl font-semibold tracking-tight">Greeting 30px (text-3xl)</p>
+        <p className="text-title font-semibold tracking-tight">Screen title 26px (text-title)</p>
+        <p className="text-xl font-semibold tracking-tight">Panel name 20px (text-xl)</p>
+        <p className="text-section font-semibold">Section heading 15px (text-section)</p>
+        <p className="text-base text-ink-2">Summary 16px in ink-2: one sentence under the title.</p>
         <p className="text-sm">Body 14px (default): the review panel and forms.</p>
-        <p className="text-dense">Table 13px (text-dense): rows in the candidates table.</p>
-        <p className="text-sm text-muted-foreground">Muted 14px: secondary text.</p>
+        <p className="text-dense">Meta and tables 13px (text-dense).</p>
+        <p className="text-sm text-muted-foreground">Muted (ink-3): dates, captions, hints.</p>
         <p className="font-mono text-sm">Mono: resume_id 4f9c2a1e</p>
         <p className="text-sm">
-          <a href="#" className="text-primary underline-offset-4 hover:underline">
-            Link text
+          A sentence with a{" "}
+          <a href="#" className="text-link">
+            link in it
           </a>
+          .
         </p>
         <div className="flex gap-6 text-sm">
           <div className="numeric flex flex-col items-end">
@@ -386,7 +398,7 @@ const buttonVariants = [
 
 function ButtonsSection() {
   return (
-    <Section title="Button" description="Tab through to see the teal focus ring.">
+    <Section title="Button" description="Tab through to see the accent focus ring. One primary per screen.">
       <Row label="Variants">
         {buttonVariants.map((variant) => (
           <Button key={variant} variant={variant}>
@@ -433,7 +445,7 @@ function ButtonsSection() {
 
 function BadgesSection() {
   return (
-    <Section title="Badge" description="Category badges use the muted tint plus foreground tokens.">
+    <Section title="Badge" description="Rare in the app: scores read as words, statuses as a dot and a word.">
       <Row label="Variants">
         <Badge>Default</Badge>
         <Badge variant="secondary">Secondary</Badge>
@@ -453,38 +465,50 @@ function BadgesSection() {
 }
 
 const scores = [
-  { score: 91, bar: "w-[91%] bg-category-strong", badge: "strong" },
-  { score: 68, bar: "w-[68%] bg-category-moderate", badge: "moderate" },
-  { score: 42, bar: "w-[42%] bg-category-weak", badge: "weak" },
-  { score: 12, bar: "w-[12%] bg-category-rejected", badge: "rejected" },
+  { score: 91, category: "strong_match" },
+  { score: 64, category: "moderate_match" },
+  { score: 38, category: "weak_match" },
+  { score: 12, category: "rejected" },
 ] as const
 
-function ScoreBarsSection() {
+const breakdown = {
+  score_breakdown: {
+    skills_match: 40,
+    experience_match: 30,
+    project_relevance: 10,
+    education_bonus: 7,
+    communication_quality: 3,
+  },
+  category: "strong_match",
+} as const
+
+function ScoreDisplaySection() {
   return (
     <Section
-      title="Score bar (pattern)"
-      description="Not a primitive: how E1-05 combines numeric text, a thin category bar and a badge."
+      title="Score display"
+      description="components/application/score.tsx: a number, a 5-segment meter (one per 20 points) and a plain-word label. Strong and possible are coloured; unlikely and not-a-match are grey."
     >
-      <div className="flex max-w-sm flex-col gap-2">
-        {scores.map(({ score, bar, badge }) => (
-          <div key={score} className="flex items-center gap-3 text-dense">
-            <span className="numeric w-7 text-right font-medium">{score}</span>
-            <div
-              className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
-              role="meter"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={score}
-              aria-label="Score"
-            >
-              <div className={cn("h-full rounded-full", bar)} />
-            </div>
-            <Badge variant={badge} className="w-20">
-              {badge.charAt(0).toUpperCase() + badge.slice(1)}
-            </Badge>
-          </div>
+      <div className="flex flex-col gap-2 text-dense">
+        {scores.map(({ score, category }) => (
+          <ScoreCell key={score} score={score} category={category} withLabel />
         ))}
+        <ScoreCell score={null} category={null} withLabel />
       </div>
+      <Row label="Review panel headline">
+        <ScoreHeadline score={91} category="strong_match" />
+      </Row>
+      <Row label="Labels on their own">
+        <MatchLabel category="strong_match" />
+        <MatchLabel category="moderate_match" />
+        <MatchLabel category="weak_match" />
+        <MatchLabel category="rejected" />
+      </Row>
+      <Row label="Must-haves (required skills against the resume)">
+        <MustHaveChips required={["Python", "FastAPI", "PostgreSQL", "AWS"]} skills={["python", "PostgreSQL", "FastAPI"]} />
+      </Row>
+      <Row label="How the score adds up" className="block">
+        <ScoreBreakdown application={breakdown} />
+      </Row>
     </Section>
   )
 }
@@ -646,15 +670,15 @@ function TabsSection() {
 }
 
 const rows = [
-  { name: "Asha Verma", email: "asha@example.com", score: 91, badge: "strong", years: 7, selected: true },
-  { name: "Daniel Okafor", email: "daniel@example.com", score: 68, badge: "moderate", years: 4, selected: false },
-  { name: "Mei Lin", email: "mei@example.com", score: 42, badge: "weak", years: 2, selected: false },
+  { name: "Asha Verma", email: "asha@example.com", score: 91, category: "strong_match", years: 7, selected: true },
+  { name: "Daniel Okafor", email: "daniel@example.com", score: 68, category: "moderate_match", years: 4, selected: false },
+  { name: "Mei Lin", email: "mei@example.com", score: 42, category: "weak_match", years: 2, selected: false },
 ] as const
 
 function TableSection() {
   return (
-    <Section title="Table" description="Selected row, numeric column, 13px dense text.">
-      <div className="overflow-hidden rounded-lg border">
+    <Section title="Table" description="Under a hairline, no box. Selected row: tinted with an accent inset edge. 13px dense text.">
+      <div className="overflow-x-auto border-t">
         <Table className="text-dense">
           <TableCaption className="pb-3">Sample applications</TableCaption>
           <TableHeader>
@@ -663,26 +687,26 @@ function TableSection() {
                 <Checkbox aria-label="Select all" />
               </TableHead>
               <TableHead>Name</TableHead>
-              <TableHead className="text-right">Score</TableHead>
-              <TableHead>Category</TableHead>
+              <TableHead>Score</TableHead>
               <TableHead className="text-right">Experience</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.email} data-state={row.selected ? "selected" : undefined}>
+              <TableRow
+                key={row.email}
+                data-state={row.selected ? "selected" : undefined}
+                className="data-[state=selected]:shadow-[inset_2px_0_0_var(--primary)]"
+              >
                 <TableCell>
                   <Checkbox aria-label={`Select ${row.name}`} defaultChecked={row.selected} />
                 </TableCell>
                 <TableCell>
-                  <div className="font-medium">{row.name}</div>
+                  <div className="text-sm font-semibold">{row.name}</div>
                   <div className="text-muted-foreground">{row.email}</div>
                 </TableCell>
-                <TableCell className="numeric text-right font-medium">{row.score}</TableCell>
                 <TableCell>
-                  <Badge variant={row.badge}>
-                    {row.badge.charAt(0).toUpperCase() + row.badge.slice(1)}
-                  </Badge>
+                  <ScoreCell score={row.score} category={row.category} withLabel />
                 </TableCell>
                 <TableCell className="numeric text-right">{row.years} yrs</TableCell>
               </TableRow>

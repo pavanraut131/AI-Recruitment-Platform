@@ -72,12 +72,12 @@ export function bulkResultMessage(input: BulkInput, result: BulkResult): { title
   const title =
     input.action === "stage"
       ? `Moved ${plural(affected, "candidate")} to ${STAGE_LABELS[input.stage]}`
-      : `Rejected ${plural(affected, "candidate")}`
+      : `Marked ${plural(affected, "candidate")} not a fit`
   const missing = result.not_found.length
   if (missing === 0) return { title }
   return {
     title,
-    description: `${plural(missing, "candidate")} ${missing === 1 ? "was" : "were"} not found in this campaign (deleted meanwhile?) and ${missing === 1 ? "was" : "were"} skipped.`,
+    description: `${plural(missing, "candidate")} ${missing === 1 ? "was" : "were"} not in this campaign any more, so ${missing === 1 ? "was" : "were"} skipped.`,
   }
 }
 

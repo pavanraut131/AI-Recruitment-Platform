@@ -24,9 +24,11 @@ export type FixtureViewProps = {
  * and saves (stage, notes) fail against a real backend; the table is what this
  * view measures.
  */
+const REQUIRED_SKILLS = ["React", "TypeScript", "PostgreSQL"]
+
 export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) {
   const rows = useMemo(() => makeApplications(rowCount), [rowCount])
-  const requiredSkills = useMemo(() => new Set(["react", "typescript", "postgresql"]), [])
+  const requiredSkills = useMemo(() => new Set(REQUIRED_SKILLS.map((skill) => skill.toLowerCase())), [])
   const [sort, setSort] = useState<ApplicationSort>(DEFAULT_SORT)
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -65,7 +67,7 @@ export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) 
       <p className="text-sm text-muted-foreground">
         {rows.length} synthetic rows · last React commit <span ref={readout} className="font-mono tabular-nums" />
       </p>
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto border-t">
         <Profiler id="candidates-table" onRender={onRender}>
           <CandidatesTable
             rows={rows}
@@ -85,7 +87,7 @@ export function CandidatesFixtureView({ rowCount, onCommit }: FixtureViewProps) 
         application={rows.find((row) => row.id === openId)}
         loading={false}
         onClose={() => setOpenId(null)}
-        requiredSkills={requiredSkills}
+        requiredSkills={REQUIRED_SKILLS}
       />
     </div>
   )

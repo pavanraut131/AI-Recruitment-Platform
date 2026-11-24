@@ -122,7 +122,7 @@ describe("CandidatesTab: filters, sort and pages in the URL", () => {
     expect(query.get("page_size")).toBe("25")
     expect((screen.getByRole("searchbox", { name: /Search candidates/ }) as HTMLInputElement).value).toBe("ada")
     expect((screen.getByRole("textbox", { name: "Filter by skill" }) as HTMLInputElement).value).toBe("react")
-    expect(screen.getByRole("button", { name: /Category · 2 selected/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Match · 2 selected/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Score · 60–95/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Stage · Screened/ })).toBeTruthy()
   })
@@ -146,8 +146,8 @@ describe("CandidatesTab: filters, sort and pages in the URL", () => {
     const api = installFakeApi({ applications: people })
     const { lastQuery } = renderTab()
     await screen.findByText("Ada Lovelace")
-    const menu = await openMenu(/^Category/)
-    fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: "Moderate match" }))
+    const menu = await openMenu(/^Match/)
+    fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: "Possible match" }))
     await waitFor(() => expect(lastQuery()).toBe("?cat=moderate"))
     fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: "Strong match" }))
     // Kept in display order, whatever the click order.
@@ -234,11 +234,11 @@ describe("CandidatesTab: bulk actions", () => {
     renderTab()
     await selectTwo()
     const menu = await openMenu("Move to stage")
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Phone call" }))
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Phone screen" }))
 
     // Shown before the server answers.
-    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Phone call"))
-    expect(stageOf("Alan Turing")).toBe("Phone call")
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Phone screen"))
+    expect(stageOf("Alan Turing")).toBe("Phone screen")
     expect(stageOf("Grace Hopper")).toBe("Screened")
     const [bulk] = api.callsTo("POST", /\/bulk$/)
     expect(bulk.body).toEqual({ action: "stage", ids: [people[0].id, people[2].id], stage: "phone_call" })
@@ -247,8 +247,8 @@ describe("CandidatesTab: bulk actions", () => {
       response.resolve(json({ action: "stage", affected: [people[0].id], not_found: [people[2].id] }))
     })
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("Moved 1 candidate to Phone call", {
-        description: expect.stringContaining("1 candidate was not found"),
+      expect(toast.success).toHaveBeenCalledWith("Moved 1 candidate to Phone screen", {
+        description: expect.stringContaining("1 candidate was not in this campaign"),
       }),
     )
     // The selection is cleared, and the list refetched.
@@ -264,15 +264,15 @@ describe("CandidatesTab: bulk actions", () => {
     })
     renderTab()
     await selectTwo()
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }))
-    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Rejected"))
-    expect(stageOf("Alan Turing")).toBe("Rejected")
+    fireEvent.click(screen.getByRole("button", { name: "Not a fit" }))
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Not a fit"))
+    expect(stageOf("Alan Turing")).toBe("Not a fit")
 
     await act(async () => {
       response.resolve(problem(500, "Internal Server Error", "Something broke"))
     })
-    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Unreviewed"))
-    expect(stageOf("Alan Turing")).toBe("Unreviewed")
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("New"))
+    expect(stageOf("Alan Turing")).toBe("New")
     expect(toast.error).toHaveBeenCalledWith("Internal Server Error", expect.objectContaining({ description: "Something broke" }))
     // The selection stays, so the action can be retried.
     expect(screen.getByRole("toolbar", { name: "Bulk actions" })).toBeTruthy()

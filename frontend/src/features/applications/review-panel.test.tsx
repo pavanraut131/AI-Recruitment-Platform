@@ -73,6 +73,14 @@ const grace = makeApplication(1, {
 })
 const adaPerson = makePerson({
   id: ADA_PERSON_ID,
+  profile: {
+    ...makePerson().profile,
+    work_experience: [
+      { title: "Lead engineer", company: "Analytical Engines Ltd", duration: "2021 to now", description: "Built the mill." },
+      { role: "Engineer", company: "Babbage & Co" },
+      { company: "Third place, not shown" },
+    ],
+  },
   applications: [
     makePersonApplication("app-elsewhere", { id: OTHER_CAMPAIGN_ID, title: "Data platform lead" }, {
       score: 64,
@@ -110,40 +118,79 @@ async function chooseStage(label: string) {
 }
 
 describe("ReviewPanel: content", () => {
-  it("shows contact, breakdown, recommendation, strengths, gaps and skills", async () => {
-    installFakeApi({ applications: [ada, grace], people: [adaPerson] })
+  it("shows contact, the decision, the score, must-haves, breakdown, experience and notes", async () => {
+    installFakeApi({ applications: [ada, grace], people: [adaPerson], requiredSkills: ["React", "Kubernetes"] })
     await openPanel()
     const view = within(panel())
 
     expect(view.getByRole("link", { name: /ada@example.com/ }).getAttribute("href")).toBe("mailto:ada@example.com")
+    // The current role (the latest work entry) under the name, and again in Recent experience.
+    expect(await view.findAllByText("Lead engineer at Analytical Engines Ltd")).toHaveLength(2)
     expect(view.getByRole("link", { name: /Open full profile/ }).getAttribute("href")).toBe(
       `/people/${ADA_PERSON_ID}?application=${ada.id}`,
     )
+    // Screened: the next stage is Phone screen.
+    expect(view.getByRole("button", { name: "Move to phone screen" })).toBeTruthy()
+    expect(view.getByRole("button", { name: "Not a fit" })).toBeTruthy()
 
-    const breakdown = view.getByRole("region", { name: "Score breakdown" })
+    const score = view.getByRole("region", { name: "Score" })
+    expect(score.textContent).toContain("82Strong match")
+    // The recommendation, then the summary, as one paragraph.
+    expect(within(score).getByText(/analytical engines/).textContent).toBe(
+      "Proceed to technical interview. Ada builds analytical engines.",
+    )
+
+    const musts = within(view.getByRole("region", { name: "Must-haves" })).getAllByRole("listitem")
+    expect(musts.map((chip) => [chip.textContent, chip.dataset.has])).toEqual([
+      ["React (has it)", "true"],
+      ["Kubernetes (missing)", undefined],
+    ])
+
+    const breakdown = view.getByRole("region", { name: "How the score adds up" })
     const parts = breakdown.querySelectorAll("[data-slot='score-part']")
     expect([...parts].map((part) => part.textContent)).toEqual([
-      "Skills match32/40",
-      "Experience match25/30",
-      "Project relevance12/15",
-      "Education8/10",
-      "Resume quality5/5",
+      "Skills32 / 40",
+      "Experience25 / 30",
+      "Relevant projects12 / 15",
+      "Education8 / 10",
+      "Resume quality5 / 5",
     ])
     // Bars are as wide as the share of the part's maximum (a CSS variable, no other inline style).
     const bar = parts[0].querySelector<HTMLElement>("[data-slot='score-bar']")
     expect(bar?.style.getPropertyValue("--bar")).toBe("80%")
 
-    expect(view.getByRole("region", { name: "Recommendation" }).textContent).toContain("Proceed to technical interview")
-    expect(view.getByRole("region", { name: "Summary" }).textContent).toContain("analytical engines")
-    expect(within(view.getByRole("region", { name: "Strengths" })).getAllByRole("listitem")).toHaveLength(2)
-    expect(view.getByRole("region", { name: "Weaknesses" }).textContent).toContain("No Kubernetes")
-    expect(within(view.getByRole("region", { name: "Missing skills" })).getByText("Kubernetes")).toBeTruthy()
-    // The campaign's required skills are highlighted.
-    const skills = within(view.getByRole("region", { name: "Skills" }))
-    expect(skills.getByText("React").closest("li")?.getAttribute("data-required")).toBe("true")
-    expect(skills.getByText("TypeScript").closest("li")?.getAttribute("data-required")).toBeNull()
-    expect(view.getByText("6 yrs")).toBeTruthy()
+    // The two latest roles, read defensively (`title` or `role`).
+    const experience = within(view.getByRole("region", { name: "Recent experience" })).getAllByRole("listitem")
+    expect(experience.map((item) => item.textContent)).toEqual([
+      "Lead engineer at Analytical Engines Ltd2021 to now · Built the mill.",
+      "Engineer at Babbage & Co",
+    ])
     expect((notesField() as HTMLTextAreaElement).value).toBe("Called on Monday.")
+  })
+
+  it("moves to the next stage, or marks not a fit, with an undo", async () => {
+    const api = installFakeApi({ applications: [ada, grace], people: [adaPerson] })
+    await openPanel()
+
+    fireEvent.click(within(panel()).getByRole("button", { name: "Move to phone screen" }))
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Phone screen"))
+    expect(api.callsTo("PATCH", /^\/applications\//)[0].body).toEqual({ pipeline_stage: "phone_call" })
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Ada Lovelace moved to Phone screen", expect.anything()),
+    )
+    // The next step follows the new stage.
+    expect(within(panel()).getByRole("button", { name: "Move to technical" })).toBeTruthy()
+
+    // Undo puts the previous stage back.
+    const undo = toast.success.mock.calls[0][1] as { action: { onClick: () => void } }
+    act(() => undo.action.onClick())
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Screened"))
+
+    fireEvent.click(within(panel()).getByRole("button", { name: "Not a fit" }))
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Not a fit"))
+    expect(api.callsTo("PATCH", /^\/applications\//).at(-1)?.body).toEqual({ pipeline_stage: "rejected_manual" })
+    expect(await within(panel()).findByText(/Marked not a fit/)).toBeTruthy()
+    expect(within(panel()).queryByRole("button", { name: "Not a fit" })).toBeNull()
   })
 
   it("lists the Person's other applications, linking into their campaigns", async () => {
@@ -170,7 +217,7 @@ describe("ReviewPanel: content", () => {
     installFakeApi({ applications: [pending], people: [makePerson({ id: ADA_PERSON_ID })] })
     await openPanel()
     expect(within(panel()).getByText(/Not scored yet/)).toBeTruthy()
-    expect(within(panel()).queryByRole("region", { name: "Score breakdown" })).toBeNull()
+    expect(within(panel()).queryByRole("region", { name: "How the score adds up" })).toBeNull()
     expect(await within(panel()).findByText("No other applications.")).toBeTruthy()
   })
 
@@ -230,11 +277,11 @@ describe("ReviewPanel: stage", () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
-  it("can move a candidate back to unreviewed", async () => {
+  it("can move a candidate back to new (no stage)", async () => {
     const api = installFakeApi({ applications: [ada, grace], people: [adaPerson] })
     await openPanel()
-    await chooseStage("Unreviewed")
-    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("Unreviewed"))
+    await chooseStage("New")
+    await waitFor(() => expect(stageOf("Ada Lovelace")).toBe("New"))
     expect(api.callsTo("PATCH", /^\/applications\//)[0].body).toEqual({ pipeline_stage: null })
   })
 
@@ -288,7 +335,7 @@ describe("ReviewPanel: notes autosave", () => {
     async () => {
       const api = installFakeApi({ applications: [ada, grace], people: [adaPerson] })
       await openPanel()
-      expect(notesStatus().textContent).toBe("Saved automatically as you type")
+      expect(notesStatus().textContent).toBe("Saves as you type")
 
       fireEvent.change(notesField(), { target: { value: "Called on Monday. Strong" } })
       fireEvent.change(notesField(), { target: { value: "Called on Monday. Strong yes." } })

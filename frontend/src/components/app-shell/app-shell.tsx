@@ -1,15 +1,17 @@
 import { cookies } from "next/headers"
 
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { CommandPaletteProvider } from "./command-palette"
+import { ShellSidebarProvider } from "./shell-sidebar-provider"
 import { TopBar } from "./top-bar"
 
 /**
  * The HireFlow AI shell (EPIC-01 §4): sidebar, top bar and ⌘K palette around
  * every page. A Server Component; the interactive parts are client
  * components. The sidebar's collapsed state persists in a cookie (written by
- * SidebarProvider) so the first render already matches it.
+ * SidebarProvider) so the first render already matches it; a campaign
+ * workspace collapses it to an icon rail (`ShellSidebarProvider`).
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies()
@@ -17,7 +19,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <CommandPaletteProvider>
-      <SidebarProvider defaultOpen={defaultOpen}>
+      <ShellSidebarProvider defaultOpen={defaultOpen}>
         <AppSidebar />
         <SidebarInset>
           <TopBar />
@@ -25,7 +27,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </SidebarInset>
-      </SidebarProvider>
+      </ShellSidebarProvider>
     </CommandPaletteProvider>
   )
 }

@@ -92,6 +92,13 @@ Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenan
 
 ---
 
+### D1 · Redesign rollout
+**Status:** in review  ·  **Branch:** `d1-redesign`
+
+The approved direction (three mock-ups, `docs/design/source`) across the whole frontend, with no API change: paper and ink greys with one forest-green accent (light and dark, `check:contrast` green), Instrument Sans with tabular figures, hairlines instead of boxed cards, no KPI grids, scores as a number, a 5-segment meter and a plain word (Strong, Possible, Unlikely, Not a match), recruiter words for stages (New, Phone screen, Not a fit). Home is a "today" page with one sentence and a review queue; the workspace collapses the sidebar to an icon rail and its review panel leads with the next-stage action. Style guide and voice rules: [`docs/design/README.md`](../design/README.md); standalone mock-ups in `docs/design/mockups/`. Data the mock-ups use that the API lacks (a cross-campaign queue, current role, stage counts per campaign, median score, last-processed time) went to the [backlog](../backlog.md) as D1 items. README screenshots refreshed from a friendly-names E2E run.
+
+---
+
 ## Sprint review & retro
 
 *(To be filled in at the end of the sprint.)*

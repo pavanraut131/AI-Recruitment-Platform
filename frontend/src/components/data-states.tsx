@@ -7,7 +7,9 @@ import { cn } from "@/lib/utils"
 
 /*
  * Empty and error states for data views (spec §8: every view has designed
- * states). Shared by every feature's screens.
+ * states). Shared by every feature's screens. No box around them: a quiet
+ * icon, one line that says what happened, one that says what to do next,
+ * and the action that does it (docs/design/README.md, voice).
  */
 
 export function EmptyState({
@@ -26,18 +28,18 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-14 text-center",
+        "flex flex-col items-center gap-3 border-t px-6 py-16 text-center",
         className,
       )}
     >
-      <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="size-5" aria-hidden="true" />
       </div>
       <div className="flex max-w-sm flex-col gap-1">
-        <h2 className="font-medium">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <h2 className="text-section font-semibold">{title}</h2>
+        {description && <p className="text-ink-2">{description}</p>}
       </div>
-      {action}
+      {action && <div className="mt-1">{action}</div>}
     </div>
   )
 }
@@ -61,18 +63,18 @@ export function ErrorState({
     <div
       role="alert"
       className={cn(
-        "flex flex-col items-center gap-3 rounded-lg border border-destructive/30 px-6 py-14 text-center",
+        "flex flex-col items-center gap-3 border-t px-6 py-16 text-center",
         className,
       )}
     >
-      <div className="flex size-10 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+      <div className="flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
         <AlertCircleIcon className="size-5" aria-hidden="true" />
       </div>
       <div className="flex max-w-md flex-col gap-1">
-        <h2 className="font-medium">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <h2 className="text-section font-semibold">{title}</h2>
+        {description && <p className="text-ink-2">{description}</p>}
       </div>
-      <div className="flex gap-2">
+      <div className="mt-1 flex gap-2">
         {onRetry && (
           <Button variant="outline" onClick={onRetry} disabled={retrying}>
             <RotateCwIcon data-icon="inline-start" className={cn(retrying && "animate-spin motion-reduce:animate-none")} />

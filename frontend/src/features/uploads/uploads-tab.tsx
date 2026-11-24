@@ -48,7 +48,7 @@ function plural(count: number, noun: string): string {
 
 /**
  * The Uploads tab of a campaign workspace (spec §5.3): a dropzone for PDFs and
- * every file's progress, Queued → Uploading → Extracting → Analysing → Done /
+ * every file's progress, Queued → Uploading → Reading → Scoring → Done /
  * Failed / Quota limit.
  *
  * - Files this session has not turned into resumes yet (queued, uploading,
@@ -132,7 +132,7 @@ export function UploadsTab({ campaignId }: { campaignId: string }) {
       {pending.length > 0 && (
         <section aria-labelledby="uploads-this-session" className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <h2 id="uploads-this-session" className="text-sm font-medium">
+            <h2 id="uploads-this-session" className="text-section font-semibold">
               This upload
             </h2>
             {finishedPending && (
@@ -141,7 +141,7 @@ export function UploadsTab({ campaignId }: { campaignId: string }) {
               </Button>
             )}
           </div>
-          <ul className="divide-y rounded-lg border" aria-label="Files of this upload">
+          <ul className="border-t" aria-label="Files of this upload">
             {pending.map((row) => (
               <PendingRowItem key={row.key} row={row} onRetryBatch={onRetryBatch} />
             ))}
@@ -193,11 +193,11 @@ function ResumesSection({
   return (
     <section aria-labelledby="uploads-resumes" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="uploads-resumes" className="text-sm font-medium">
+        <h2 id="uploads-resumes" className="text-section font-semibold">
           Resumes
         </h2>
         {counts && counts.resumes > 0 && (
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <p className="text-dense text-muted-foreground">
             {plural(counts.resumes, "resume")}
             {counts.in_progress > 0 && ` · ${counts.in_progress} processing`}
             {counts.failed > 0 && ` · ${counts.failed} failed or quota-limited`}
@@ -207,7 +207,7 @@ function ResumesSection({
 
       {failed > 0 && (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-destructive/10 px-4 py-3"
           data-testid="partial-state"
         >
           <p className="flex items-start gap-2 text-sm">
@@ -229,15 +229,15 @@ function ResumesSection({
       )}
 
       {resumes.isPending ? (
-        <ul className="divide-y rounded-lg border" aria-busy="true" aria-label="Loading resumes">
+        <ul className="border-t" aria-busy="true" aria-label="Loading resumes">
           {Array.from({ length: 3 }, (_, index) => (
-            <li key={index} className="flex items-center gap-3 px-4 py-3">
+            <li key={index} className="flex items-center gap-3 border-b px-1 py-3">
               <Skeleton className="size-4" />
               <div className="flex flex-1 flex-col gap-1.5">
                 <Skeleton className="h-4 w-56" />
                 <Skeleton className="h-3 w-32" />
               </div>
-              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-3.5 w-16" />
             </li>
           ))}
         </ul>
@@ -245,24 +245,24 @@ function ResumesSection({
         <LoadError error={resumes.error} onRetry={() => void resumes.refetch()} retrying={resumes.isFetching} />
       ) : total === 0 ? (
         hasPending ? null : (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center">
+          <div className="flex flex-col items-center gap-2 border-t px-6 py-10 text-center">
             <InboxIcon className="size-5 text-muted-foreground" aria-hidden="true" />
-            <p className="font-medium">No resumes yet</p>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Drop PDFs above. Each one is read, analysed and scored, then appears under Candidates.
+            <p className="text-section font-semibold">No resumes yet</p>
+            <p className="max-w-sm text-ink-2">
+              Drop PDFs above. Each one is read and scored, then shows up under Candidates.
             </p>
           </div>
         )
       ) : (
         <>
-          <ul className="divide-y rounded-lg border" aria-label="Resumes of this campaign">
+          <ul className="border-t" aria-label="Resumes of this campaign">
             {items.map((resume) => (
               <ResumeRowItem key={resume.id} resume={resume} campaignId={campaignId} now={now} />
             ))}
           </ul>
           {pages > 1 && (
-            <nav aria-label="Resume pages" className="flex items-center justify-end gap-2 text-sm">
-              <span className="text-muted-foreground tabular-nums">
+            <nav aria-label="Resume pages" className="flex items-center justify-end gap-2 text-dense">
+              <span className="text-muted-foreground">
                 Page {page} of {pages}
               </span>
               <Button
@@ -296,14 +296,14 @@ function LoadError({ error, onRetry, retrying }: { error: unknown; onRetry: () =
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 px-6 py-10 text-center"
+      className="flex flex-col items-center gap-3 border-t px-6 py-10 text-center"
     >
       <AlertTriangleIcon className="size-5 text-destructive" aria-hidden="true" />
       <div className="flex max-w-md flex-col gap-1">
-        <p className="font-medium">Could not load the resumes: {title}</p>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <p className="text-section font-semibold">Could not load the resumes: {title}</p>
+        {description && <p className="text-ink-2">{description}</p>}
       </div>
-      <Button variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
+      <Button variant="outline" onClick={onRetry} disabled={retrying}>
         {retrying ? "Retrying…" : "Try again"}
       </Button>
     </div>

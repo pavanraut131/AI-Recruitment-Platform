@@ -14,7 +14,7 @@
   * {
     @apply border-border outline-ring;
   }
-  /* Teal focus ring for anything without its own (links, custom widgets).
+  /* Accent focus ring for anything without its own (links, custom widgets).
      Components that draw a ring set outline-none, which wins over this. */
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -23,14 +23,31 @@
   html {
     @apply font-sans;
   }
+  /* Figures line up everywhere (scores, counts, dates), as in the mock-ups. */
   body {
     @apply bg-background text-sm text-foreground antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Text selection in the accent tint. */
+  ::selection {
+    background-color: var(--primary-soft);
+    color: var(--foreground);
   }
 }
 
-/* Scores and counts: digits of equal width so columns line up. */
+/* Scores and counts: digits of equal width so columns line up (the body's default). */
 @utility numeric {
   font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* A link inside a sentence: accent text, underline on hover (the mock-ups' links). */
+@utility text-link {
+  color: var(--primary);
+  font-weight: 500;
+  text-underline-offset: 3px;
+  &:hover {
+    text-decoration-line: underline;
+  }
 }
 
 /* Motion is for state changes only, and respects the user's preference. */

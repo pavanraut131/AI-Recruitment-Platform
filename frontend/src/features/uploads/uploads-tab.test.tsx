@@ -67,7 +67,7 @@ describe("UploadsTab", () => {
   })
 
   it(
-    "moves an uploaded file through Uploading → Queued → Extracting → Analysing → Done, live from the events",
+    "moves an uploaded file through Uploading → Queued → Reading → Scoring → Done, live from the events",
     async () => {
       const { server, callsTo } = installFakeApi()
       renderWithProviders(<Workspace />)
@@ -104,14 +104,14 @@ describe("UploadsTab", () => {
       server.resumes[0].status = "extracting"
       act(() => MockEventSource.latest().resumeUpdate("r-ada", "extracting", { filename: "ada.pdf" }))
       await waitFor(() => expect(stepOf("ada.pdf")).toBe("extracting"))
-      expect(within(row("ada.pdf")).getByText("Extracting")).toBeTruthy()
+      expect(within(row("ada.pdf")).getByText("Reading")).toBeTruthy()
 
       // (The backend does not publish `processing` today, see the PR's API gaps;
       // the cache patch shows it as soon as it does.)
       server.resumes[0].status = "processing"
       act(() => MockEventSource.latest().resumeUpdate("r-ada", "processing"))
       await waitFor(() => expect(stepOf("ada.pdf")).toBe("analysing"))
-      expect(within(row("ada.pdf")).getByText("Analysing")).toBeTruthy()
+      expect(within(row("ada.pdf")).getByText("Scoring")).toBeTruthy()
       expect(listCalls()).toBe(before) // patched in place, not refetched
 
       Object.assign(server.resumes[0], { status: "done", processing_step: "save", application_id: "app-ada" })

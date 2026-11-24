@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 
 /**
- * HireFlow AI mark: a teal tile with three ranked bars (a shortlist).
+ * HireFlow AI mark: an accent tile with three ranked bars (a shortlist).
  * Colours come from tokens; src/app/icon.svg is the same mark for the favicon.
  */
 export function LogoMark({ className }: { className?: string }) {

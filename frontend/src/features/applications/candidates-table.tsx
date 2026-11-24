@@ -89,7 +89,7 @@ export function CandidatesTable({
       data-slot="candidates-table"
       aria-label="Candidates"
       aria-busy={isFetching || undefined}
-      className={cn("text-dense transition-opacity", isFetching && "opacity-70")}
+      className={cn("min-w-[760px] text-dense transition-opacity", isFetching && "opacity-70")}
     >
       <TableHeader className="sticky top-0 z-10 bg-background">
         {table.getHeaderGroups().map((group) => (
@@ -100,7 +100,7 @@ export function CandidatesTable({
               return (
                 <TableHead
                   key={header.id}
-                  className={cn("h-9 text-xs text-muted-foreground", className)}
+                  className={cn("h-9 text-xs font-medium text-muted-foreground", className)}
                   aria-sort={sortColumn ? (sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none") : undefined}
                   aria-label={label}
                 >
@@ -227,11 +227,12 @@ const CandidateRow = memo(function CandidateRow({
         if (event.target === event.currentTarget && !active) onActiveChange(id)
       }}
       data-slot="table-row"
-      className="cursor-pointer border-b outline-none hover:bg-muted/50 data-[state=selected]:bg-muted focus-visible:bg-muted/50 focus-visible:shadow-[inset_2px_0_0_var(--ring)] data-active:bg-muted/60 data-active:shadow-[inset_2px_0_0_var(--primary)]"
+      // The active row (J/K, the open panel) is tinted with an accent inset edge; checked rows are grey.
+      className="cursor-pointer border-b outline-none hover:bg-muted/60 data-[state=selected]:bg-muted focus-visible:bg-muted/60 focus-visible:shadow-[inset_2px_0_0_var(--ring)] data-active:bg-row-active data-active:shadow-[inset_2px_0_0_var(--primary)]"
     >
       {row.getVisibleCells().map((cell) =>
         cell.column.id === SELECT_COLUMN ? (
-          <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-1.5", cell.column.columnDef.meta?.className)}>
+          <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-2", cell.column.columnDef.meta?.className)}>
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </TableCell>
         ) : null,
@@ -258,19 +259,19 @@ const DataCells = memo(function DataCells({
     .getVisibleCells()
     .filter((cell) => cell.column.id !== SELECT_COLUMN)
     .map((cell) => (
-      <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-1.5", cell.column.columnDef.meta?.className)}>
+      <TableCell key={cell.id} data-column={cell.column.id} className={cn("py-2", cell.column.columnDef.meta?.className)}>
         {flexRender(cell.column.columnDef.cell, cell.getContext())}
       </TableCell>
     ))
 }, (previous, next) => sameRow(previous.row, next.row) && previous.requiredSkills === next.requiredSkills)
 
-/** Skeleton rows while the first page loads (spec §5.1: designed, not blank). */
+/** Skeleton rows while the first page loads (spec §5.1: designed, not blank), in the table's columns. */
 export function CandidatesTableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
-    <Table aria-label="Candidates" aria-busy="true" className="text-dense">
+    <Table aria-label="Candidates" aria-busy="true" className="min-w-[760px] text-dense">
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          {["w-8", "min-w-48", "w-32", "w-36", "min-w-56", "w-24", "w-28", "w-32"].map((width, index) => (
+          {["w-9 pl-3", "min-w-52", "w-56", "w-28", "w-24", "w-32", "w-28"].map((width, index) => (
             <TableHead key={index} className={cn("h-9", width)}>
               <Skeleton className="h-3 w-12" />
             </TableHead>
@@ -280,30 +281,27 @@ export function CandidatesTableSkeleton({ rows = 8 }: { rows?: number }) {
       <TableBody>
         {Array.from({ length: rows }, (_, index) => (
           <TableRow key={index} data-slot="skeleton-row" className="hover:bg-transparent">
-            <TableCell className="py-2.5">
+            <TableCell className="py-3 pl-3">
               <Skeleton className="size-4" />
             </TableCell>
             <TableCell>
-              <Skeleton className="mb-1 h-3.5 w-32" />
-              <Skeleton className="h-3 w-40" />
+              <Skeleton className="mb-1.5 h-4 w-32" />
+              <Skeleton className="h-3 w-44" />
             </TableCell>
             <TableCell>
-              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3.5 w-40" />
             </TableCell>
             <TableCell>
-              <Skeleton className="h-4 w-24 rounded-full" />
+              <Skeleton className="h-3.5 w-12" />
             </TableCell>
             <TableCell>
-              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3.5 w-12" />
             </TableCell>
             <TableCell>
-              <Skeleton className="ml-auto h-3 w-10" />
+              <Skeleton className="h-3.5 w-20" />
             </TableCell>
-            <TableCell>
-              <Skeleton className="h-3 w-16" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-3 w-16" />
+            <TableCell className="pr-3">
+              <Skeleton className="ml-auto h-3.5 w-16" />
             </TableCell>
           </TableRow>
         ))}

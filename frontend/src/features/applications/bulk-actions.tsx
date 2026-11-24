@@ -37,14 +37,14 @@ export function BulkActionsBar({
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1"
+      className="flex flex-wrap items-center gap-2 rounded-lg bg-primary-soft px-2 py-1.5"
     >
-      <span className="px-1 text-sm font-medium tabular-nums" aria-live="polite">
+      <span className="px-1.5 text-sm font-semibold" aria-live="polite">
         {count} selected
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={pending}>
+          <Button variant="outline" size="sm" disabled={pending} className="bg-background">
             <ArrowRightIcon aria-hidden="true" />
             Move to stage
             <ChevronDownIcon className="opacity-60" aria-hidden="true" />
@@ -59,9 +59,9 @@ export function BulkActionsBar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button variant="destructive" size="sm" disabled={pending} onClick={onReject}>
+      <Button variant="outline" size="sm" disabled={pending} onClick={onReject} className="bg-background">
         <BanIcon aria-hidden="true" />
-        Reject
+        Not a fit
       </Button>
       <Button variant="ghost" size="sm" onClick={onClear}>
         <XIcon aria-hidden="true" />
@@ -84,7 +84,7 @@ export function ExportButton({
   onExport: () => void
 }) {
   return (
-    <Button variant="outline" size="sm" disabled={pending || disabled} onClick={onExport}>
+    <Button variant="ghost" disabled={pending || disabled} onClick={onExport} className="text-ink-2">
       <DownloadIcon aria-hidden="true" />
       {pending ? "Exporting…" : selectedCount > 0 ? `Export ${selectedCount} selected` : "Export CSV"}
     </Button>

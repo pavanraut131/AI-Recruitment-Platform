@@ -10,9 +10,9 @@ A recruiter at an agency opens a new role, drops in a batch of resumes and has a
 shortlist a few minutes later. Every candidate is one **person** with their history across the
 agency's campaigns. Light and dark themes, keyboard-first, built for long sessions.
 
-1. **Home.** What needs attention today: active campaigns with new uploads and strong matches,
-   resumes still processing, and the newest strong matches across campaigns, each one click from
-   its review.
+1. **Home.** A calm "today" page: one sentence on how many candidates wait for a first look,
+   the strong matches nobody has reviewed yet (best first, each one click from its review), the
+   open campaigns with their counts, and a quiet line about uploads still processing.
 
    | Light | Dark |
    |---|---|
@@ -24,15 +24,16 @@ agency's campaigns. Light and dark themes, keyboard-first, built for long sessio
    ![New campaign after Extract with AI](docs/screenshots/new-campaign-light.png)
 
 3. **Uploads with live progress.** Drop up to 50 PDFs. Each file moves through Uploading →
-   Extracting → Analysing → Done live (Server-Sent Events, no polling); failures say which step
+   Reading → Scoring → Done live (Server-Sent Events, no polling); failures say which step
    failed and can be retried.
 
    ![Uploads tab with three processed resumes](docs/screenshots/uploads-light.png)
 
-4. **Ranked candidates and the review panel.** Candidates ranked by score, with filters, sorting
-   and bulk actions that live in the URL. The side panel shows the score breakdown, the AI's
-   recommendation, strengths, gaps and missing skills; change the stage and take notes without
-   leaving the table (J/K to move, S for the stage).
+4. **Ranked candidates and the review panel.** Candidates ranked by score (a number, a
+   five-segment meter and a plain word: strong, possible, unlikely), with must-haves counted, and
+   filters, sorting and bulk actions that live in the URL. The side panel leads with the decision
+   ("Move to phone screen" or "Not a fit"), then the recommendation, the must-haves, how the score
+   adds up, recent experience and notes, without leaving the table (J/K to move, S for the stage).
 
    | Light | Dark |
    |---|---|
@@ -57,7 +58,8 @@ agency's campaigns. Light and dark themes, keyboard-first, built for long sessio
    categories, stages and notes, for the client or the ATS.
 
 The screenshots come from the end-to-end test run (fake AI, generated resumes); see
-[End-to-end tests](#end-to-end-tests) to refresh them.
+[End-to-end tests](#end-to-end-tests) to refresh them. The look and the voice are written down in
+the [design guide](docs/design/README.md).
 
 ---
 
@@ -357,7 +359,8 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 - **README screenshots:** `E2E_SCREENSHOT_DIR=docs/screenshots make e2e` (a path from the repo
   root) also writes the product tour's screenshots, cropped to the 1440 × 900 viewport, over the
   ones in `docs/screenshots/`. Which screens and themes go there is the `docs` option of
-  `checkScreen` in `frontend/e2e/hero-flow.spec.ts`.
+  `checkScreen` in `frontend/e2e/hero-flow.spec.ts`. That run uses friendly demo names (no run
+  id in the campaign title, e-mails or file names), so run it on a fresh stack, the default.
 
 ---
 

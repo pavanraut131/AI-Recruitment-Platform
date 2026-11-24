@@ -76,7 +76,7 @@ describe("InsightsTab", () => {
     expect(await screen.findByRole("heading", { name: "Category distribution" })).toBeTruthy()
     expect(
       within(panel("Category distribution")).getByText(
-        "9 applications: 4 strong, 3 moderate and 1 weak matches, 1 rejected.",
+        "9 applications: 4 strong, 3 possible, 1 unlikely and 1 not a match.",
       ),
     ).toBeTruthy()
     expect(
@@ -97,9 +97,9 @@ describe("InsightsTab", () => {
 
     expect(tableRows("Category distribution")).toEqual([
       ["Strong match", "4 (44%)"],
-      ["Moderate match", "3 (33%)"],
-      ["Weak match", "1 (11%)"],
-      ["Rejected", "1 (11%)"],
+      ["Possible match", "3 (33%)"],
+      ["Unlikely match", "1 (11%)"],
+      ["Not a match", "1 (11%)"],
     ])
     const scores = tableRows("Score histogram")
     expect(scores).toHaveLength(10)
@@ -117,7 +117,7 @@ describe("InsightsTab", () => {
       ["Scored", "9 (75%)"],
       ["Reviewed", "0 (0%)"],
       ["Resumes: queued", "1"],
-      ["Resumes: analysing", "1"],
+      ["Resumes: scoring", "1"],
       ["Resumes: failed", "1"],
     ])
 
@@ -193,7 +193,7 @@ describe("InsightsTab", () => {
     expect(within(panel("Score histogram")).getByText("No scores yet.")).toBeTruthy()
     expect(within(panel("Top skills")).getByText("No skills extracted yet.")).toBeTruthy()
     expect(
-      within(panel("Processing funnel")).getByText("Not processed yet: 1 queued, 1 extracting, 1 analysing."),
+      within(panel("Processing funnel")).getByText("Not processed yet: 1 queued, 1 reading, 1 scoring."),
     ).toBeTruthy()
   })
 

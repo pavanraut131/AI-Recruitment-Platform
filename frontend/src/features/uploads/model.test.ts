@@ -15,8 +15,8 @@ describe("RESUME_STATUS_STEP", () => {
     const labels = Object.fromEntries(RESUME_STATUSES.map((status) => [status, STEP_META[RESUME_STATUS_STEP[status]].label]))
     expect(labels).toEqual({
       pending: "Queued",
-      extracting: "Extracting",
-      processing: "Analysing",
+      extracting: "Reading",
+      processing: "Scoring",
       done: "Done",
       failed: "Failed",
       quota_exceeded: "Quota limit",

@@ -38,10 +38,10 @@ import {
 
 const FIELDS = ["title", "role", "description", "required_skills", "status"] as const
 
-/** The workspace's Settings tab: edit the campaign, change its status, delete it. */
+/** The workspace's Brief tab (`?tab=settings`): edit the campaign, change its status, delete it. */
 export function SettingsTab({ campaign }: { campaign: Campaign }) {
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex max-w-3xl flex-col gap-10 pt-1">
       <CampaignSettingsForm campaign={campaign} />
       <DeleteCampaignSection campaign={campaign} />
     </div>
@@ -72,11 +72,12 @@ function CampaignSettingsForm({ campaign }: { campaign: Campaign }) {
   return (
     <section aria-labelledby="campaign-settings-heading" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 id="campaign-settings-heading" className="text-base font-semibold">
-          Campaign details
+        <h2 id="campaign-settings-heading" className="text-section font-semibold">
+          The brief
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Changing the role or skills applies to resumes scored from now on.
+        <p className="text-ink-2">
+          What resumes are scored against. A change applies to resumes scored from now on, not to the ones already
+          ranked.
         </p>
       </div>
       <Form {...form}>
@@ -108,7 +109,7 @@ function CampaignSettingsForm({ campaign }: { campaign: Campaign }) {
             )}
           />
           <FormServerError message={form.formState.errors.root?.server?.message} />
-          <div className="flex items-center justify-end gap-2 border-t pt-4">
+          <div className="flex items-center justify-end gap-2 border-t pt-5">
             <Button
               type="button"
               variant="ghost"
@@ -150,13 +151,13 @@ function DeleteCampaignSection({ campaign }: { campaign: Campaign }) {
   return (
     <section
       aria-labelledby="delete-campaign-heading"
-      className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 p-4"
+      className="flex flex-wrap items-center justify-between gap-4 border-t pt-6"
     >
       <div className="flex max-w-lg flex-col gap-1">
-        <h2 id="delete-campaign-heading" className="text-base font-semibold">
+        <h2 id="delete-campaign-heading" className="text-section font-semibold">
           Delete campaign
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-ink-2">
           Removes the campaign with its applications, resumes and stored PDFs. People stay in Talent. This cannot be
           undone.
         </p>

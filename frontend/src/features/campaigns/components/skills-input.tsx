@@ -81,7 +81,7 @@ export function SkillsInput({
   return (
     <div
       className={cn(
-        "flex min-h-8 w-full flex-wrap items-center gap-1.5 rounded-lg border border-input px-1.5 py-1 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring has-aria-invalid:border-destructive has-aria-invalid:ring-3 has-aria-invalid:ring-destructive/20 dark:bg-input/30",
+        "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-lg border border-input px-1.5 py-1 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 has-aria-invalid:border-destructive has-aria-invalid:ring-3 has-aria-invalid:ring-destructive/20 dark:bg-input/30",
         disabled && "pointer-events-none opacity-50",
         className,
       )}
@@ -90,7 +90,7 @@ export function SkillsInput({
         {value.map((skill) => (
           <li
             key={skill}
-            className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary pr-0.5 pl-2 text-xs font-medium text-secondary-foreground"
+            className="inline-flex h-6 items-center gap-1 rounded-full border border-input pr-0.5 pl-2.5 text-dense font-medium"
           >
             {skill}
             <button
@@ -98,7 +98,7 @@ export function SkillsInput({
               onClick={() => remove(skill)}
               disabled={disabled}
               aria-label={`Remove ${skill}`}
-              className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <XIcon className="size-3" aria-hidden="true" />
             </button>

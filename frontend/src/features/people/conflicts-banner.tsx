@@ -16,7 +16,7 @@ export function ConflictsBanner({ person }: { person: Person }) {
   return (
     <aside
       aria-label="Identity conflicts"
-      className="flex gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm"
+      className="flex gap-3 rounded-xl bg-canvas px-4 py-3.5 text-sm"
     >
       <InfoIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
       <div className="flex flex-col gap-1.5">
@@ -25,14 +25,14 @@ export function ConflictsBanner({ person }: { person: Person }) {
           {open.map((conflict) => (
             <li key={conflict.id}>
               {conflictMessage(conflict, person.applications)}{" "}
-              <Link href={personHref(conflict.other_person_id)} className="font-medium text-primary hover:underline">
+              <Link href={personHref(conflict.other_person_id)} className="text-link">
                 View the other person
               </Link>
             </li>
           ))}
         </ul>
         <p className="text-xs text-muted-foreground">
-          Shown for information: reviewing and merging people is not available yet.
+          For your information. Merging people is not available yet.
         </p>
       </div>
     </aside>

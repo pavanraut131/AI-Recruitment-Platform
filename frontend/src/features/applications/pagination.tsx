@@ -35,8 +35,8 @@ export function CandidatesPagination({
 }) {
   const pages = pageCount(total, pageSize)
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-between gap-4 text-sm">
-      <p className="text-muted-foreground tabular-nums" aria-live="polite">
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-dense">
+      <p className="text-muted-foreground" aria-live="polite">
         {rangeLabel(page, pageSize, shown, total)}
       </p>
       <div className="flex items-center gap-3">
@@ -57,7 +57,7 @@ export function CandidatesPagination({
             </SelectContent>
           </Select>
         </div>
-        <span className="text-muted-foreground tabular-nums">
+        <span className="text-muted-foreground">
           Page {Math.min(page, pages)} of {pages}
         </span>
         <div className="flex items-center gap-1">

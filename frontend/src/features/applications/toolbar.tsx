@@ -92,11 +92,11 @@ function FacetFilter<Value extends string>({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={cn(count > 0 && "border-primary/40")}>
+        <Button variant="outline" className={cn("font-normal text-ink-2", count > 0 && "border-primary/50 text-foreground")}>
           {label}
-          {/* A space for the accessible name ("Category · 2 selected"); flex layout ignores it. */}
+          {/* A space for the accessible name ("Match · 2 selected"); flex layout ignores it. */}
           {summary && " "}
-          {summary && <span className="font-normal text-muted-foreground">· {summary}</span>}
+          {summary && <span className="text-muted-foreground">· {summary}</span>}
           <ChevronDownIcon className="opacity-60" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
@@ -218,11 +218,11 @@ function ScoreRangeFilter({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn(active && "border-primary/40")}>
+        <Button variant="outline" className={cn("font-normal text-ink-2", active && "border-primary/50 text-foreground")}>
           Score
           {active && " "}
           {active && (
-            <span className="font-normal text-muted-foreground tabular-nums">
+            <span className="text-muted-foreground">
               · {min ?? 0}–{max ?? 100}
             </span>
           )}
@@ -251,7 +251,7 @@ const CATEGORY_OPTIONS = CATEGORIES.map((category) => ({
 
 const STAGE_OPTIONS = STAGES.map((stage) => ({ value: stage, label: STAGE_LABELS[stage] }))
 
-/** Search, category, score range, skill and stage filters, plus "Clear filters" (spec §5.1). */
+/** Search, match, score range, skill and stage filters, plus "Clear filters" (spec §5.1). */
 export function CandidatesToolbar({
   state,
   onFiltersChange,
@@ -265,27 +265,27 @@ export function CandidatesToolbar({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2" role="search" aria-label="Filter candidates">
-      <InputGroup className="h-7 w-64">
+      <InputGroup className="w-full sm:w-72">
         <InputGroupAddon>
           <SearchIcon aria-hidden="true" />
         </InputGroupAddon>
         <DebouncedInput
           type="search"
           aria-label="Search candidates by name or email"
-          placeholder="Search name or email"
+          placeholder="Name or email"
           value={state.q}
           maxLength={200}
           onCommit={(q) => onFiltersChange({ q })}
         />
       </InputGroup>
       <FacetFilter
-        label="Category"
+        label="Match"
         options={CATEGORY_OPTIONS}
         selected={state.cat}
         onChange={(cat) => onFiltersChange({ cat })}
       />
       <ScoreRangeFilter min={state.min} max={state.max} onChange={(range) => onFiltersChange(range)} />
-      <InputGroup className="h-7 w-40">
+      <InputGroup className="w-36">
         <DebouncedInput
           aria-label="Filter by skill"
           placeholder="Skill"
@@ -301,7 +301,7 @@ export function CandidatesToolbar({
         onChange={(stage) => onFiltersChange({ stage })}
       />
       {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={onClearFilters}>
+        <Button variant="ghost" className="text-muted-foreground" onClick={onClearFilters}>
           <XIcon aria-hidden="true" />
           Clear filters
         </Button>

@@ -3,7 +3,15 @@ import { readFile } from "node:fs/promises"
 import { expect, test, type Page } from "@playwright/test"
 
 import { checkScreen } from "./support/checks"
-import { EXTRACTED_ROLE, EXTRACTED_SKILLS, heroCandidates, JOB_DESCRIPTION, newRunId } from "./support/hero-data"
+import {
+  campaignTitle,
+  EXTRACTED_ROLE,
+  EXTRACTED_SKILLS,
+  heroCandidates,
+  JOB_DESCRIPTION,
+  newRunId,
+  searchTerm,
+} from "./support/hero-data"
 
 /*
  * The hero flow (EPIC-01 §9), as a recruiter does it: create a campaign from a
@@ -35,7 +43,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
   page,
 }, testInfo) => {
   const runId = newRunId()
-  const title = `E2E ${runId} Python platform`
+  const title = campaignTitle(runId)
   const candidates = heroCandidates(runId)
   const [strong, moderate, weak] = candidates
   // The strong candidate's application and its campaign, read from the URL in step 4.
@@ -98,21 +106,42 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
       await expect(row).toContainText(candidate.category)
     }
 
-    // Filter by category: Moderate match only.
-    await page.getByRole("button", { name: "Category" }).click()
-    await page.getByRole("menuitemcheckbox", { name: "Moderate match" }).click()
+    // Filter by match: possible matches only (the API's `moderate_match`).
+    await page.getByRole("button", { name: "Match" }).click()
+    await page.getByRole("menuitemcheckbox", { name: "Possible match" }).click()
     await page.keyboard.press("Escape")
     await expect(page).toHaveURL(/[?&]cat=moderate/)
     await expect(candidateRows(page)).toHaveCount(1)
     await expect(candidateRows(page).first()).toContainText(moderate.name)
 
-    // Filters combine: searching for the strong candidate within Moderate matches finds no one.
+    // Filters combine: searching for the strong candidate within possible matches finds no one.
     await page.getByRole("searchbox", { name: "Search candidates by name or email" }).fill(strong.name)
     await expect(page.getByText("No candidates match these filters")).toBeVisible()
 
     await page.getByRole("search", { name: "Filter candidates" }).getByRole("button", { name: "Clear filters" }).click()
     await expect(page).not.toHaveURL(/[?&](cat|q)=/)
     await expect(candidateRows(page)).toHaveCount(3)
+  })
+
+  await test.step("3b. Home queues the new strong match, and opens its review", async () => {
+    await sidebarLink(page, "Home").click()
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
+    await expect(page.getByText(/waiting for a first look/)).toBeVisible()
+    const campaign = page.getByRole("region", { name: "Open campaigns" }).getByRole("listitem").filter({ hasText: title })
+    await expect(campaign.getByRole("link", { name: title })).toBeVisible()
+    await expect(campaign).toContainText("3 applicants · 1 strong")
+    // Only the strong match is queued (possible and unlikely ones are not); it has no stage yet.
+    const queue = page.getByRole("region", { name: "Ready for review" })
+    const item = queue.getByRole("listitem").filter({ hasText: title })
+    await expect(item).toHaveCount(1)
+    await expect(item).toContainText(strong.name)
+    await expect(item).toContainText(String(strong.score))
+    await checkScreen(page, testInfo, "08-home", { docs: ["light", "dark"] })
+
+    // The queue opens the candidate in their campaign, review panel open.
+    await item.getByRole("link", { name: strong.name }).click()
+    await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}\?open=[0-9a-f-]{36}$/)
+    await expect(page.getByRole("dialog", { name: strong.name })).toBeVisible()
   })
 
   await test.step("4. open the review panel and change the stage", async () => {
@@ -125,20 +154,25 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     applicationId = url.searchParams.get("open") ?? ""
     await expect(panel.getByRole("link", { name: strong.email })).toBeVisible()
     await expect(panel.getByText("Proceed to technical interview")).toBeVisible()
+    // The must-haves are the campaign's required skills, checked against the resume.
+    await expect(panel.getByRole("list", { name: "Must-haves" }).getByRole("listitem")).toHaveCount(5)
+    // New candidate: the primary action is the pipeline's next stage.
+    await expect(panel.getByRole("button", { name: "Mark as screened" })).toBeVisible()
 
     const stage = panel.getByRole("combobox", { name: "Stage" })
-    await expect(stage).toHaveText("Unreviewed")
+    await expect(stage).toHaveText("New")
     await checkScreen(page, testInfo, "03-candidates-panel", { docs: ["light", "dark"] })
 
     await stage.click()
-    await page.getByRole("option", { name: "Phone call" }).click()
-    await expect(stage).toHaveText("Phone call")
+    await page.getByRole("option", { name: "Phone screen" }).click()
+    await expect(stage).toHaveText("Phone screen")
+    await expect(panel.getByRole("button", { name: "Move to technical" })).toBeVisible()
     // Optimistic in the table too …
-    await expect(candidateRows(page).filter({ hasText: strong.name })).toContainText("Phone call")
+    await expect(candidateRows(page).filter({ hasText: strong.name })).toContainText("Phone screen")
     // … and saved: a reload reads it back from the API (the panel reopens from the URL).
     await page.reload()
     await expect(page.getByRole("dialog", { name: strong.name }).getByRole("combobox", { name: "Stage" })).toHaveText(
-      "Phone call",
+      "Phone screen",
     )
   })
 
@@ -150,7 +184,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
       .getByRole("table", { name: "Applications" })
       .getByRole("row")
       .filter({ hasText: title })
-    await expect(application).toContainText("Phone call")
+    await expect(application).toContainText("Phone screen")
     await expect(application).toContainText(strong.category)
     await checkScreen(page, testInfo, "05-person-profile", { docs: ["light"] })
   })
@@ -181,7 +215,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     await page.getByRole("tab", { name: "Insights" }).click()
     await expect(page).toHaveURL(/[?&]tab=insights/)
     const categories = page.getByRole("region", { name: "Category distribution" })
-    await expect(categories).toContainText("3 applications: 1 strong, 1 moderate and 1 weak matches, 0 rejected.")
+    await expect(categories).toContainText("3 applications: 1 strong, 1 possible, 1 unlikely and 0 not a match.")
     await expect(page.getByRole("region", { name: "Processing funnel" })).toContainText(
       "3 uploaded, 3 processed, 3 scored, 1 reviewed.",
     )
@@ -215,8 +249,8 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     await expect(page.getByRole("heading", { level: 1, name: "Talent" })).toBeVisible()
     await checkScreen(page, testInfo, "07-talent", { docs: ["light"] })
 
-    await page.getByRole("searchbox", { name: "Search people by name or email" }).fill(runId)
-    await expect(page).toHaveURL(new RegExp(`[?&]q=${runId}`))
+    await page.getByRole("searchbox", { name: "Search people by name or email" }).fill(searchTerm(runId))
+    await expect(page).toHaveURL(/[?&]q=/)
     const people = page.getByRole("table", { name: /^People/ }).locator("tbody").getByRole("row")
     await expect(people).toHaveCount(3)
     await expect(people.filter({ hasText: strong.email })).toContainText(strong.name)
@@ -226,20 +260,18 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     await expect(page.getByRole("heading", { level: 1, name: strong.name })).toBeVisible()
   })
 
-  await test.step("9. Home shows the campaign and its strong match", async () => {
+  await test.step("9. Home again: the reviewed candidate has left the queue", async () => {
     await sidebarLink(page, "Home").click()
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible()
-    await expect(page.getByRole("region", { name: "Active campaigns" }).getByRole("link", { name: title })).toBeVisible()
-    // The row of this run's campaign (earlier runs on a kept stack have their own Asha Verma).
-    const match = page
-      .getByRole("region", { name: "Recent strong matches" })
-      .getByRole("row")
-      .filter({ hasText: title })
-    await expect(match).toContainText(strong.name)
-    await expect(match.getByRole("link", { name: strong.name })).toHaveAttribute(
-      "href",
-      `/campaigns/${campaignId}?open=${applicationId}`,
-    )
-    await checkScreen(page, testInfo, "08-home", { docs: ["light", "dark"] })
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
+    await expect(page.getByText(/waiting for a first look|has had a first look/)).toBeVisible()
+    const campaign = page.getByRole("region", { name: "Open campaigns" }).getByRole("listitem").filter({ hasText: title })
+    await expect(campaign.getByRole("link", { name: title })).toHaveAttribute("href", `/campaigns/${campaignId}`)
+    await expect(campaign).toContainText("3 applicants · 1 strong")
+    // The strong candidate is at Phone screen now, so not in the review queue
+    // (the queue lists strong matches with no stage; the seed's may be there).
+    const queue = page.getByRole("region", { name: "Ready for review" })
+    await expect(queue).toBeVisible()
+    await expect(queue.locator(`a[href="/campaigns/${campaignId}?open=${applicationId}"]`)).toHaveCount(0)
+    await checkScreen(page, testInfo, "09-home-reviewed")
   })
 })

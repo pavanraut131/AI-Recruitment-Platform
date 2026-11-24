@@ -1,60 +1,24 @@
 import type { Schema } from "@/lib/api/client"
 
 /**
- * The Person profile's vocabulary (spec §5.4): API types and readers for the
- * profile's free-form entries. Work experience, education and projects are
- * JSON from the AI's extraction (the API types them as open objects), so every
- * field is read defensively and missing ones are left out.
+ * The Person profile's vocabulary (spec §5.4): API types, contacts and
+ * identity conflicts. The profile's free-form entries (work experience,
+ * education, projects) are read defensively in `@/lib/profile`.
  */
 
 export type Person = Schema<"Person">
 export type PersonApplication = Schema<"PersonApplication">
 export type ConflictFlag = Schema<"IdentityConflictFlag">
 
-export type WorkEntry = { role: string | null; company: string | null; duration: string | null; description: string | null }
-export type EducationEntry = { degree: string | null; institution: string | null; year: string | null }
-export type ProjectEntry = { name: string | null; description: string | null; technologies: string[] }
-
-function text(value: unknown): string | null {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value)
-  if (typeof value !== "string") return null
-  const trimmed = value.trim()
-  return trimmed === "" ? null : trimmed
-}
-
-function entries(list: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(list)) return []
-  return list.filter((item): item is Record<string, unknown> => item !== null && typeof item === "object" && !Array.isArray(item))
-}
-
-export function workEntries(list: unknown): WorkEntry[] {
-  return entries(list)
-    .map((item) => ({
-      role: text(item.role) ?? text(item.title),
-      company: text(item.company),
-      duration: text(item.duration),
-      description: text(item.description),
-    }))
-    .filter((entry) => entry.role || entry.company)
-}
-
-export function educationEntries(list: unknown): EducationEntry[] {
-  return entries(list)
-    .map((item) => ({ degree: text(item.degree), institution: text(item.institution), year: text(item.year) }))
-    .filter((entry) => entry.degree || entry.institution)
-}
-
-export function projectEntries(list: unknown): ProjectEntry[] {
-  return entries(list)
-    .map((item) => ({
-      name: text(item.name),
-      description: text(item.description),
-      technologies: Array.isArray(item.technologies)
-        ? item.technologies.map(text).filter((value): value is string => value !== null)
-        : [],
-    }))
-    .filter((entry) => entry.name || entry.description)
-}
+// The profile's free-form entries are read in `@/lib/profile` (the review panel reads them too).
+export {
+  educationEntries,
+  projectEntries,
+  workEntries,
+  type EducationEntry,
+  type ProjectEntry,
+  type WorkEntry,
+} from "@/lib/profile"
 
 /** The Person's emails and phones, as first written, in API order. */
 export function contacts(person: Pick<Person, "identifiers">): { emails: string[]; phones: string[] } {

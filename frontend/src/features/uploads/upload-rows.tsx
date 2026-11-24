@@ -15,7 +15,6 @@ import {
 import Link from "next/link"
 import type { CSSProperties } from "react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -24,26 +23,26 @@ import type { Resume } from "./queries"
 import { nextQuotaReset } from "./quota"
 import { formatBytes } from "./validate"
 
-const TONE_BADGE: Record<StepTone, { variant: "secondary" | "strong" | "destructive" | "moderate" | "outline"; icon: LucideIcon }> = {
-  progress: { variant: "secondary", icon: LoaderCircleIcon },
-  done: { variant: "strong", icon: CheckIcon },
-  failed: { variant: "destructive", icon: XIcon },
-  warning: { variant: "moderate", icon: ClockIcon },
-  muted: { variant: "outline", icon: ClockIcon },
+/** A step as an icon and a word in its colour: no pill, the word carries it. */
+const TONE: Record<StepTone, { className: string; icon: LucideIcon }> = {
+  progress: { className: "text-ink-2", icon: LoaderCircleIcon },
+  done: { className: "text-category-strong-foreground", icon: CheckIcon },
+  failed: { className: "text-destructive", icon: XIcon },
+  warning: { className: "text-category-moderate-foreground", icon: ClockIcon },
+  muted: { className: "text-muted-foreground", icon: ClockIcon },
 }
 
 export function StepBadge({ step }: { step: UploadStep }) {
   const { label, tone } = STEP_META[step]
-  const { variant, icon: Icon } = TONE_BADGE[tone]
+  const { className, icon: Icon } = TONE[tone]
   return (
-    <Badge variant={variant} data-step={step}>
+    <span data-step={step} className={cn("inline-flex shrink-0 items-center gap-1.5 text-dense font-medium", className)}>
       <Icon
-        data-icon="inline-start"
         aria-hidden="true"
-        className={cn(tone === "progress" && "animate-spin motion-reduce:animate-none")}
+        className={cn("size-3.5", tone === "progress" && "animate-spin text-primary motion-reduce:animate-none")}
       />
       {label}
-    </Badge>
+    </span>
   )
 }
 
@@ -57,14 +56,14 @@ function ProgressBar({ value, label }: { value: number; label: string }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        className="h-1.5 w-40 overflow-hidden rounded-full bg-muted"
+        className="h-1.5 w-40 overflow-hidden rounded-full bg-border"
       >
         <div
           className="h-full w-(--progress) rounded-full bg-primary transition-[width]"
           style={{ "--progress": `${percent}%` } as CSSProperties}
         />
       </div>
-      <span className="text-xs tabular-nums text-muted-foreground">{percent}%</span>
+      <span className="text-xs text-muted-foreground">{percent}%</span>
     </div>
   )
 }
@@ -81,11 +80,11 @@ function RowFrame({
   children?: React.ReactNode
 }) {
   return (
-    <li className="flex items-start gap-3 px-4 py-3" data-step={step}>
+    <li className="flex items-start gap-3 border-b px-1 py-3" data-step={step}>
       <FileTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <p className="truncate text-sm font-medium" title={filename}>
+          <p className="truncate text-sm font-semibold" title={filename}>
             {filename}
           </p>
           <StepBadge step={step} />
@@ -140,12 +139,12 @@ export function ResumeRowItem({ resume, campaignId, now }: { resume: Resume; cam
 }
 
 function DoneDetail({ applicationId, campaignId }: { applicationId: string | null; campaignId: string }) {
-  if (applicationId === null) return <p className="text-sm text-muted-foreground">Scored. Opening the candidate…</p>
+  if (applicationId === null) return <p className="text-sm text-muted-foreground">Scored. The candidate appears in a moment.</p>
   const query = new URLSearchParams({ tab: "candidates", open: applicationId })
   return (
     <Link
       href={`/campaigns/${encodeURIComponent(campaignId)}?${query}`}
-      className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+      className="text-link inline-flex w-fit items-center gap-1 text-sm"
     >
       View candidate
       <ArrowRightIcon className="size-3.5" aria-hidden="true" />
@@ -170,7 +169,7 @@ function QuotaDetail({ now }: { now: Date }) {
     <p className="flex items-start gap-1.5 text-sm text-category-moderate-foreground">
       <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
       <span>
-        The AI provider&apos;s daily quota is used up. Retry after it resets:{" "}
+        The scoring service&apos;s daily quota is used up. Retry after it resets:{" "}
         <time dateTime={reset.toISOString()} className="font-medium">
           {at}
         </time>{" "}

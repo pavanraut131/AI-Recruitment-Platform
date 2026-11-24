@@ -23,13 +23,13 @@ export function CampaignList() {
   const query = useCampaigns(params.apiParams)
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
-          <p className="text-muted-foreground">One campaign per opening: its resumes, ranked candidates and pipeline.</p>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-title font-semibold tracking-tight">Campaigns</h1>
+          <p className="text-ink-2">One campaign per opening, with its resumes, ranked candidates and pipeline.</p>
         </div>
-        <Button asChild>
+        <Button asChild size="lg">
           <Link href="/campaigns/new">
             <PlusIcon data-icon="inline-start" />
             New campaign
@@ -48,7 +48,7 @@ type ListParams = ReturnType<typeof useCampaignListParams>
 
 function Toolbar({ params }: { params: ListParams }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-2">
       <InputGroup className="w-full max-w-xs">
         <InputGroupAddon>
           <SearchIcon aria-hidden="true" />
@@ -56,7 +56,7 @@ function Toolbar({ params }: { params: ListParams }) {
         <InputGroupInput
           type="search"
           aria-label="Search campaigns by title or role"
-          placeholder="Search title or role…"
+          placeholder="Title or role"
           value={params.q}
           onChange={(event) => params.setSearch(event.target.value)}
           maxLength={200}
@@ -70,10 +70,13 @@ function Toolbar({ params }: { params: ListParams }) {
               key={status}
               type="button"
               size="sm"
-              variant={pressed ? "secondary" : "ghost"}
+              variant="ghost"
               aria-pressed={pressed}
               onClick={() => params.toggleStatus(status)}
-              className={cn(pressed ? "text-foreground" : "text-muted-foreground")}
+              className={cn(
+                "rounded-full border border-transparent",
+                pressed ? "border-input bg-muted text-foreground" : "text-muted-foreground",
+              )}
             >
               {CAMPAIGN_STATUS_LABELS[status]}
             </Button>
@@ -81,7 +84,7 @@ function Toolbar({ params }: { params: ListParams }) {
         })}
       </div>
       {params.hasFilters && (
-        <Button type="button" size="sm" variant="link" onClick={params.clearFilters}>
+        <Button type="button" size="sm" variant="link" onClick={params.clearFilters} className="px-1">
           Clear filters
         </Button>
       )}
@@ -118,7 +121,7 @@ function Results({ params, query }: { params: ListParams; query: ReturnType<type
         <EmptyState
           icon={SearchXIcon}
           title="No campaigns match"
-          description="Try another search or status."
+          description="Try part of the title or role, or another status."
           action={
             <Button variant="outline" onClick={params.clearFilters}>
               Clear filters
@@ -133,7 +136,7 @@ function Results({ params, query }: { params: ListParams; query: ReturnType<type
         title="No campaigns yet"
         description="Create a campaign for an opening, then upload resumes to get a ranked shortlist."
         action={
-          <Button asChild>
+          <Button asChild size="lg">
             <Link href="/campaigns/new">
               <PlusIcon data-icon="inline-start" />
               New campaign
@@ -152,11 +155,11 @@ function Results({ params, query }: { params: ListParams; query: ReturnType<type
     <div className="flex flex-col gap-3">
       <div
         aria-busy={updating}
-        className={cn("rounded-lg border transition-opacity motion-reduce:transition-none", updating && "opacity-60")}
+        className={cn("border-t transition-opacity motion-reduce:transition-none", updating && "opacity-60")}
       >
         <CampaignTable campaigns={items} />
       </div>
-      <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+      <div className="flex items-center justify-between gap-4 text-dense text-muted-foreground">
         <p aria-live="polite" className="tabular-nums">
           {total === 1 ? "1 campaign" : `${first === last ? first : `${first}–${last}`} of ${total} campaigns`}
         </p>
@@ -182,17 +185,16 @@ const NUMERIC = "text-right tabular-nums"
 function CampaignTable({ campaigns }: { campaigns: Campaign[] }) {
   const router = useRouter()
   return (
-    <Table className="text-[13px]">
+    <Table className="min-w-[720px] text-dense">
       <TableCaption className="sr-only">Campaigns, newest first. Open a campaign by its title.</TableCaption>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="pl-4">Title</TableHead>
-          <TableHead>Role</TableHead>
+          <TableHead className="pl-1">Campaign</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead className={NUMERIC}>Applications</TableHead>
+          <TableHead className={NUMERIC}>Applicants</TableHead>
           <TableHead className={NUMERIC}>Strong matches</TableHead>
           <TableHead className={NUMERIC}>Processing</TableHead>
-          <TableHead className="pr-4">Last activity</TableHead>
+          <TableHead className="pr-1 text-right">Last activity</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -209,22 +211,22 @@ function CampaignTable({ campaigns }: { campaigns: Campaign[] }) {
               }}
               className="cursor-pointer"
             >
-              <TableCell className="max-w-72 pl-4 font-medium">
+              <TableCell className="max-w-80 pl-1">
                 <Link
                   href={href}
-                  className="block truncate rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  className="block truncate rounded-sm text-sm font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {campaign.title}
                 </Link>
+                <span className="block truncate text-muted-foreground">{campaign.role}</span>
               </TableCell>
-              <TableCell className="max-w-56 truncate text-muted-foreground">{campaign.role}</TableCell>
               <TableCell>
                 <CampaignStatusBadge status={campaign.status} />
               </TableCell>
               <TableCell className={NUMERIC}>{campaign.counts.applications}</TableCell>
               <TableCell className={NUMERIC}>
                 {campaign.counts.strong_matches > 0 ? (
-                  <span className="font-medium text-category-strong-foreground">{campaign.counts.strong_matches}</span>
+                  <span className="font-semibold text-category-strong-foreground">{campaign.counts.strong_matches}</span>
                 ) : (
                   <span className="text-muted-foreground">0</span>
                 )}
@@ -232,7 +234,7 @@ function CampaignTable({ campaigns }: { campaigns: Campaign[] }) {
               <TableCell className={NUMERIC}>
                 <ProcessingCount inProgress={campaign.counts.in_progress} failed={campaign.counts.failed} />
               </TableCell>
-              <TableCell className="pr-4 whitespace-nowrap text-muted-foreground">
+              <TableCell className="pr-1 text-right whitespace-nowrap text-muted-foreground">
                 <RelativeTime iso={campaign.last_activity_at} />
               </TableCell>
             </TableRow>
@@ -277,17 +279,19 @@ function RelativeTime({ iso }: { iso: string }) {
 
 function CampaignTableSkeleton() {
   return (
-    <div className="rounded-lg border" aria-busy="true" aria-label="Loading campaigns">
-      <div className="flex h-10 items-center gap-6 border-b px-4">
-        <Skeleton className="h-3 w-24" />
+    <div className="border-t" aria-busy="true" aria-label="Loading campaigns">
+      <div className="flex h-9 items-center gap-6 border-b px-1">
         <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-3 w-14" />
         <Skeleton className="ml-auto h-3 w-40" />
       </div>
       {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className="flex h-11 items-center gap-6 border-b px-4 last:border-0">
-          <Skeleton className="h-3.5 w-48" />
-          <Skeleton className="h-3.5 w-32" />
-          <Skeleton className="h-5 w-16 rounded-full" />
+        <div key={index} className="flex h-[58px] items-center gap-6 border-b px-1">
+          <div className="flex flex-col gap-1.5">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+          <Skeleton className="h-3.5 w-14" />
           <Skeleton className="ml-auto h-3.5 w-10" />
           <Skeleton className="h-3.5 w-10" />
           <Skeleton className="h-3.5 w-20" />

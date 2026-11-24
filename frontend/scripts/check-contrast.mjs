@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // WCAG 2.2 contrast check for the design tokens in src/styles/tokens.css.
 //
-// Parses the `:root` (light) and `.dark` blocks, converts OKLCH to sRGB,
+// Parses the `:root` (light) and `.dark` blocks, reads hex or OKLCH colours,
 // alpha-blends translucent tokens over the surface they sit on, and checks the
 // key pairs against AA: 4.5:1 for text, 3:1 for UI components and graphics.
 //
@@ -25,8 +25,15 @@ function block(selector) {
   return vars
 }
 
-// OKLCH -> linear sRGB -> gamma-encoded sRGB in [0, 1].
-function parseOklch(value) {
+// A token's colour as gamma-encoded sRGB in [0, 1] plus alpha: hex
+// (#rgb, #rrggbb, #rrggbbaa) or OKLCH (-> linear sRGB -> gamma-encoded).
+function parseColor(value) {
+  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
+  if (hex) {
+    const digits = hex[1].length === 3 ? [...hex[1]].map((d) => d + d).join("") : hex[1]
+    const channels = digits.match(/../g).map((pair) => parseInt(pair, 16) / 255)
+    return { rgb: channels.slice(0, 3), alpha: channels[3] ?? 1 }
+  }
   const m = value.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/)
   if (!m) throw new Error(`Unsupported colour: ${value}`)
   const [L, C, H] = [Number(m[1]), Number(m[2]), (Number(m[3]) * Math.PI) / 180]
@@ -70,13 +77,23 @@ const TEXT = 4.5
 const UI = 3
 const pairs = [
   ["foreground / background", "foreground", "background", TEXT],
+  ["foreground / canvas", "foreground", "canvas", TEXT],
+  ["ink-2 (sentences) / background", "ink-2", "background", TEXT],
+  ["ink-2 / canvas", "ink-2", "canvas", TEXT],
   ["card-foreground / card", "card-foreground", "card", TEXT],
   ["popover-foreground / popover", "popover-foreground", "popover", TEXT],
   ["muted-foreground / background", "muted-foreground", "background", TEXT],
+  ["muted-foreground / canvas", "muted-foreground", "canvas", TEXT],
   ["muted-foreground / card", "muted-foreground", "card", TEXT],
   ["muted-foreground / muted", "muted-foreground", "muted", TEXT],
+  ["muted-foreground / row-active (selected row)", "muted-foreground", "row-active", TEXT],
+  ["muted-foreground / accent (hovered row, menu)", "muted-foreground", "accent", TEXT],
+  ["ink-2 / row-active", "ink-2", "row-active", TEXT],
   ["primary-foreground / primary", "primary-foreground", "primary", TEXT],
   ["primary (link text) / background", "primary", "background", TEXT],
+  ["primary (link text) / canvas", "primary", "canvas", TEXT],
+  ["primary (link text) / row-active", "primary", "row-active", TEXT],
+  ["primary / primary-soft (chip, avatar)", "primary", "primary-soft", TEXT],
   ["secondary-foreground / secondary", "secondary-foreground", "secondary", TEXT],
   ["accent-foreground / accent", "accent-foreground", "accent", TEXT],
   ["destructive (text) / background", "destructive", "background", TEXT],
@@ -84,24 +101,27 @@ const pairs = [
   ["destructive / destructive 10% tint", "destructive", "destructive@0.1>background", TEXT],
   ["destructive / destructive 20% tint", "destructive", "destructive@0.2>background", TEXT],
   ["sidebar-foreground / sidebar", "sidebar-foreground", "sidebar", TEXT],
-  ["sidebar-accent-fg / sidebar-accent", "sidebar-accent-foreground", "sidebar-accent", TEXT],
+  ["muted-foreground / sidebar (nav counts)", "muted-foreground", "sidebar", TEXT],
+  ["sidebar-accent-fg / sidebar-accent (active nav)", "sidebar-accent-foreground", "sidebar-accent", TEXT],
   ["sidebar-primary-fg / sidebar-primary", "sidebar-primary-foreground", "sidebar-primary", TEXT],
-  ["sidebar-primary / sidebar-accent (active nav)", "sidebar-primary", "sidebar-accent", TEXT],
   ["ring / background", "ring", "background", UI],
   ["ring / card", "ring", "card", UI],
   ["sidebar-ring / sidebar", "sidebar-ring", "sidebar", UI],
   ["primary (button fill) / background", "primary", "background", UI],
+  ["primary (row edge) / row-active", "primary", "row-active", UI],
 ]
 for (const c of ["strong", "moderate", "weak", "rejected"]) {
   pairs.push(
     [`category-${c}-foreground / -muted (badge)`, `category-${c}-foreground`, `category-${c}-muted`, TEXT],
     [`category-${c}-foreground / background`, `category-${c}-foreground`, "background", TEXT],
+    [`category-${c}-foreground / row-active`, `category-${c}-foreground`, "row-active", TEXT],
     [`category-${c} (bar) / background`, `category-${c}`, "background", UI],
     [`category-${c} (bar) / muted track`, `category-${c}`, "muted", UI]
   )
 }
-// Reported for information, not gated: shadcn's hairline borders are
-// decorative; inputs are identified by their labels, not the border alone.
+// Reported for information, not gated: hairline borders are decorative;
+// inputs are identified by their labels, not the border alone; a meter's
+// empty segments (border) sit next to filled ones, which carry the value.
 const info = [
   ["border / background (info)", "border", "background"],
   ["input / background (info)", "input", "background"],
@@ -113,11 +133,11 @@ function resolve(vars, spec) {
   // "token" or "token@alpha>surfaceToken"
   const [token, rest] = spec.split("@")
   if (!rest) {
-    const c = parseOklch(vars[token])
+    const c = parseColor(vars[token])
     return c.alpha === 1 ? c.rgb : over(c, resolve(vars, "background"))
   }
   const [alpha, surface] = rest.split(">")
-  const c = parseOklch(vars[token])
+  const c = parseColor(vars[token])
   return over({ rgb: c.rgb, alpha: Number(alpha) * c.alpha }, resolve(vars, surface))
 }
 
@@ -127,7 +147,7 @@ for (const [label, fg, bg, min] of [...pairs, ...info.map((p) => [...p, null])])
   const cells = { label, min }
   for (const [name, vars] of Object.entries(themes)) {
     const surface = resolve(vars, bg)
-    const fgParsed = parseOklch(vars[fg.split("@")[0]])
+    const fgParsed = parseColor(vars[fg.split("@")[0]])
     const fore = fgParsed.alpha === 1 ? fgParsed.rgb : over(fgParsed, surface)
     const r = ratio(fore, surface)
     const pass = min === null ? null : r >= min

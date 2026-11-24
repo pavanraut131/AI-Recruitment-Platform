@@ -10,7 +10,7 @@ export default function SettingsPage() {
     <ComingSoon
       title="Settings"
       icon={SettingsIcon}
-      description="Workspace and account settings arrive with agencies and sign-in (E2)."
+      description="Agency and account settings arrive with sign-in. Until then, edit a campaign from its Brief tab."
     />
   )
 }
