@@ -39,6 +39,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // Sonner's own description grey (#7b7b7b on white) is 4.2:1, under AA: use our
+          // secondary ink, which the contrast check covers in both themes.
+          description: "text-ink-2!",
         },
       }}
       {...props}
