@@ -72,6 +72,10 @@ Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenan
 
 Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenancy.md#e2-03--tenant-context). Design: spec §6.3, §6.5 and §6.6.
 
+**Notes:**
+- **Overlap with E2-02** (whichever merges second rebases): `talent.service` (the four `agency_id=` lines in `_resolve_locked` / `_attach` read `agency_id_of(session)`; E2-02's explicit agency parameter replaces them), `talent.repository` (E2-03 filters the people reads and `get_person_resume`, and leaves `find_identifiers`, `lock_person` and the lock keys to E2-02), the test fixtures that now bind their sessions (`tests/conftest.py`, `tests/talent/conftest.py`, `tests/ingestion/conftest.py`, the concurrency test's workers), and `reset_stuck_sync`, which now returns each row's agency. E2-03 adds no migration and does not touch `verify_people_applications`.
+- After E2-02's contract, the `agency_id IS NULL` branch of `tenancy.tenant_filter` is dead; E2-04 removes it (backlog).
+
 ---
 
 ### E2-04 · Row-level security
