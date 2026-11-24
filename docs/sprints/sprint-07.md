@@ -12,12 +12,13 @@
 
 | Ticket | Title | Size | Status |
 |---|---|---|---|
-| S3 | Backend dependency security upgrades (Pillow, pdfminer.six, pydantic, the rest of `pip-audit`) | M | todo |
-| E2-01 | Tenancy expand: `agencies`, `clients`, nullable `agency_id` / `client_id`, writes set them | M | todo |
-| E2-02 | Tenancy backfill, verify and contract: NOT NULL, per-agency uniques and matching | M | todo |
-| E2-03 | Tenant context: bound sessions, repository filters, Celery, SSE channels and storage keys | L | todo |
-| E2-04 | Row-level security: roles, policies, the app role everywhere, the isolation suite | L | todo |
-| E2-05 | Identity core: users, sessions, login, CSRF, rate limits, audit; v2 requires a session | L | todo |
+| S3 | Backend dependency security upgrades (Pillow, pdfminer.six, pydantic, the rest of `pip-audit`) | M | done ([#51](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/51)) |
+| E2-01 | Tenancy expand: `agencies`, `clients`, nullable `agency_id` / `client_id`, writes set them | M | done ([#50](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/50)) |
+| E2-02 | Tenancy backfill, verify and contract: NOT NULL, per-agency uniques and matching | M | done ([#54](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/54)) |
+| E2-03 | Tenant context: bound sessions, repository filters, Celery, SSE channels and storage keys | L | done ([#52](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/52)) |
+| E2-04 | Row-level security: roles, policies, the app role everywhere, the isolation suite | L | doing |
+| E2-05 | Identity core: users, sessions, login, CSRF, rate limits, audit; v2 requires a session | L | doing |
+| D1 | Redesign rollout: the approved direction (calm recruiter desk) across the frontend | L | done ([#53](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/53)) |
 
 **Order** (spec §12):
 - **Wave 1:** E2-01 and S3 in parallel.
@@ -28,6 +29,8 @@
   - E2-04 owns the database roles, the RLS migration and the test harness's switch to the app role.
   - E2-05 owns the `identity` tables and the auth endpoints, and it adds `argon2-cffi`.
   - Whichever merges second rebases on the other. Expect overlap in the test fixtures.
+  - **Migrations:** both start from E2-02's head (`e2b02c7a4d19`). The PR that merges second re-points its `down_revision` at the other's revision, so Alembic keeps a single head.
+- **Added mid-sprint: D1, the redesign rollout** (2026-11-24). The owner found the E1 UI generic ("feels AI-generated"). A direction was mocked up, approved and built across the frontend in parallel with wave 2. It is frontend-only, so the E2 waves were unaffected. Design work stays local in `docs/design/` (style guide, mock-ups).
 
 **Working agreements** (from the [Sprint 6 retro](sprint-06.md#sprint-review--retro)):
 - **Only a sprint docs PR edits the board, the roadmap and other tickets' sections.** A ticket PR ticks its own acceptance criteria in the spec (§12), may add notes under its own section here, and adds backlog items next to related ones.
@@ -39,7 +42,7 @@
 ---
 
 ### S3 · Backend dependency security upgrades
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `s3-backend-security-deps`
+**Status:** done ([#51](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/51))  ·  **Size:** M  ·  **Branch:** `s3-backend-security-deps`
 
 **Goal:** Close the backend's known advisories before E5 ([backlog](../backlog.md#platform-and-tooling)). Uploaded PDFs are untrusted input, so the PDF parsing stack comes first.
 
@@ -54,14 +57,14 @@
 ---
 
 ### E2-01 · Tenancy expand
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e2-01-tenancy-expand`
+**Status:** done ([#50](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/50))  ·  **Size:** M  ·  **Branch:** `e2-01-tenancy-expand`
 
 Goal and acceptance criteria: [spec §12, E2-01](../specs/EPIC-02-identity-tenancy.md#e2-01--tenancy-expand). Design: spec §3 (tables, module ownership) and §7.1 (phase 1).
 
 ---
 
 ### E2-02 · Tenancy backfill, verify and contract
-**Status:** todo  ·  **Size:** M  ·  **Branch:** `e2-02-tenancy-contract`
+**Status:** done ([#54](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/54))  ·  **Size:** M  ·  **Branch:** `e2-02-tenancy-contract`
 
 Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenancy.md#e2-02--tenancy-backfill-verify-and-contract). Design: spec §3.3, §7.1 (phases 2–4) and §7.3. Takes the `resumes (agency_id, campaign_id)` index from the backlog.
 
@@ -73,7 +76,7 @@ Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenan
 ---
 
 ### E2-03 · Tenant context
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-03-tenant-context`
+**Status:** done ([#52](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/52))  ·  **Size:** L  ·  **Branch:** `e2-03-tenant-context`
 
 Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenancy.md#e2-03--tenant-context). Design: spec §6.3, §6.5 and §6.6.
 
@@ -84,21 +87,21 @@ Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenan
 ---
 
 ### E2-04 · Row-level security
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-04-rls`
+**Status:** doing  ·  **Size:** L  ·  **Branch:** `e2-04-rls`
 
 Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenancy.md#e2-04--row-level-security). Design: spec §6, §7.2 and §11.1–11.2; [ADR 0009](../adr/0009-tenant-isolation-row-level-security.md) is accepted in this ticket.
 
 ---
 
 ### E2-05 · Identity core
-**Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
+**Status:** doing  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
 
 Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenancy.md#e2-05--identity-core). Design: spec §4, §5.4, §8 and §10; [ADR 0010](../adr/0010-server-side-sessions.md) is accepted in this ticket.
 
 ---
 
 ### D1 · Redesign rollout
-**Status:** in review  ·  **Branch:** `d1-redesign`
+**Status:** done ([#53](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/53))  ·  **Size:** L  ·  **Branch:** `d1-redesign`
 
 The approved direction (three mock-ups, `docs/design/source`) across the whole frontend, with no API change: paper and ink greys with one forest-green accent (light and dark, `check:contrast` green), Instrument Sans with tabular figures, hairlines instead of boxed cards, no KPI grids, scores as a number, a 5-segment meter and a plain word (Strong, Possible, Unlikely, Not a match), recruiter words for stages (New, Phone screen, Not a fit). Home is a "today" page with one sentence and a review queue; the workspace collapses the sidebar to an icon rail and its review panel leads with the next-stage action. Style guide and voice rules: [`docs/design/README.md`](../design/README.md); standalone mock-ups in `docs/design/mockups/`. Data the mock-ups use that the API lacks (a cross-campaign queue, current role, stage counts per campaign, median score, last-processed time) went to the [backlog](../backlog.md) as D1 items. README screenshots refreshed from a friendly-names E2E run.
 
