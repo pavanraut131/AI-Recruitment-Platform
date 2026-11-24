@@ -5,8 +5,9 @@ Created by the E2-01 expand migration (``e2a01d5c8f36``), which also inserts the
 module: other modules use ``app.modules.identity.service``.
 
 ``agencies`` is referenced by ``agency_id`` on every tenant table of ``hiring``, ``talent`` and
-``ingestion``, always **without** a foreign key (ADR 0003); RLS (E2-04) and the verification
-(E2-02) keep those ids consistent instead.
+``ingestion``, always **without** a foreign key (ADR 0003); RLS (E2-04: a row's agency must be
+the transaction's) and the verification (E2-02) keep those ids consistent instead. ``agencies``
+itself is a global table (spec §6.4), not under agency RLS.
 """
 
 import enum
