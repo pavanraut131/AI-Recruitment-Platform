@@ -20,11 +20,23 @@ restart:
 migrate-gen:
 	docker compose exec backend alembic revision --autogenerate -m "$(msg)"
 
+# Alembic connects as hireflow_owner (MIGRATION_DATABASE_URL, built by docker-compose.yml).
 migrate-up:
 	docker compose exec backend alembic upgrade head
 
 migrate-down:
 	docker compose exec backend alembic downgrade -1
+
+# The row-level-security roles (EPIC-02 spec §7.2): creates hireflow_owner and hireflow_app if
+# missing, resets their attributes and passwords, and hands the schema and every existing table
+# to hireflow_owner. A new volume gets this from the init script; run it once on a volume
+# created before E2-04 (then `make migrate-up` and restart). Idempotent; changes no data.
+# Runbook: docs/runbooks/tenancy-rls.md.
+.PHONY: db-roles
+# (MSYS_NO_PATHCONV: Git Bash on Windows would rewrite the container path into a Windows one.)
+db-roles:
+	docker compose up -d --wait postgres
+	MSYS_NO_PATHCONV=1 docker compose exec -T postgres bash /docker-entrypoint-initdb.d/10-roles.sh
 
 # ── Seed data (dev only; refuses when APP_ENV=production) ────
 # Fake campaigns and processed resumes, run through the pipeline's matching and scoring
@@ -129,6 +141,7 @@ clean:
 # `--wait` blocks until every service with a healthcheck is healthy
 # (and the rest are running), failing if any becomes unhealthy.
 setup:
+	$(MAKE) db-roles
 	docker compose up --build -d --wait
 	$(MAKE) migrate-up
 	$(MAKE) seed SEED_FLAGS=--if-empty
