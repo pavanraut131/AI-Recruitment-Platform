@@ -44,7 +44,9 @@ Safety
       ``resolve_person`` holds transaction-level advisory locks until the commit, and one
       transaction for the whole seed would hold thousands of them. A failure part-way leaves a
       partial seed: run it again with ``--reset``.
-    * Uses ``settings.SYNC_DATABASE_URL``; the core ``generate(session, ...)`` takes any sync
+    * Uses ``settings.SYNC_DATABASE_URL``: the application role (E2-04), bound to the default
+      agency, so row-level security limits it (``--reset`` included) to that agency's rows. The
+      core ``generate(session, ...)`` takes any sync
       ``Session``, and only flushes unless given ``on_batch``, so the caller owns the
       transaction (tests use ``AsyncSession.run_sync`` inside their rolled-back transaction).
 

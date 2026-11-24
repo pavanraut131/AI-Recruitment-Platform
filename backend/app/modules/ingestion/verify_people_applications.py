@@ -67,8 +67,9 @@ from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
 from app.modules.identity import service as identity_service
-from app.modules.ingestion import repository, tasks
+from app.modules.ingestion import repository
 from app.modules.talent import service as talent_service
+from app.platform import maintenance
 from app.platform.config import settings
 
 PROG = "verify_people_applications"
@@ -362,7 +363,8 @@ def main(
             print(f"{PROG}: cannot read manifest {args.manifest}: {exc}", file=sys.stderr)
             return 2
 
-    with (session_factory or tasks.SyncSession)() as db:
+    # The owner role (spec §6.2): every agency's rows; the application role would see one.
+    with (session_factory or maintenance.owner_session)() as db:
         # One snapshot for every read: uploads committed while it runs can't make two reads
         # disagree (e.g. an application whose resume "does not exist" yet).
         db.connection(execution_options={"isolation_level": "REPEATABLE READ"})

@@ -14,7 +14,8 @@ the session is bound to (:func:`_campaigns_of` / :func:`_applications_of`, throu
 ``app.platform.tenancy.tenant_filter``), and raises ``TenantNotBound`` on an unbound session. The
 caller sets ``agency_id`` on what it inserts (``service._new_campaign``,
 ``service.upsert_application``) from the same binding. The verification reads at the end read
-**every agency** on purpose (an operator command, unbound session). ``legacy_candidate_map`` is
+**every agency** on purpose (an operator command: an unbound session as the owner role, which
+row-level security lets see every agency, ``app.platform.maintenance``). ``legacy_candidate_map`` is
 not a tenant table (spec §6.4): it holds only id pairs, and the applications it leads to are
 filtered.
 """
@@ -552,7 +553,7 @@ def upsert_application_sync(db: Session, values: dict[str, Any]) -> Application:
 
 
 # ── Verification (sync, ``app.modules.ingestion.verify_people_applications``) ──
-# Every agency on purpose: an operator command checks all rows (unbound session).
+# Every agency on purpose: an operator command checks all rows (unbound owner session).
 def legacy_map_rows_sync(db: Session) -> dict[uuid.UUID, uuid.UUID]:
     """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id``."""
     query = select(LegacyCandidateMap.candidate_id, LegacyCandidateMap.application_id)

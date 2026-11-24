@@ -15,9 +15,14 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
 
-    # Database
+    # Database (EPIC-02 spec §6.2, §7.2). The API (async) and the Celery workers (sync) connect
+    # as the application role, hireflow_app: under row-level security, owning nothing; they
+    # refuse to start as anything more (app.platform.rls.check_app_role).
     DATABASE_URL: str
     SYNC_DATABASE_URL: str
+    # The owner role, hireflow_owner: Alembic and the operator commands that span agencies
+    # (app.platform.maintenance). Optional for the API and the workers, which never use it.
+    MIGRATION_DATABASE_URL: str | None = None
 
     # Redis / Celery
     REDIS_URL: str = "redis://redis:6379/0"
@@ -61,6 +66,19 @@ class Settings(BaseSettings):
                 "without Gemini."
             )
         return self
+
+    @property
+    def migration_database_url(self) -> str:
+        """``MIGRATION_DATABASE_URL``; raises with what to set when it is missing."""
+        url = (self.MIGRATION_DATABASE_URL or "").strip()
+        if not url:
+            raise RuntimeError(
+                "MIGRATION_DATABASE_URL is not set. Migrations and the operator commands connect "
+                "as the owner role (hireflow_owner), e.g. "
+                "postgresql://hireflow_owner:<password>@postgres:5432/<db>; docker-compose.yml "
+                "sets it for the backend services (docs/runbooks/tenancy-rls.md)."
+            )
+        return url
 
     @property
     def cors_origins_list(self) -> list[str]:

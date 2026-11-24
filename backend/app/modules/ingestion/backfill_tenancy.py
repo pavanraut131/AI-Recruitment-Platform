@@ -70,8 +70,9 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
-from app.modules.ingestion import repository, tasks
+from app.modules.ingestion import repository
 from app.modules.talent import service as talent_service
+from app.platform import maintenance
 from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 logger = structlog.get_logger()
@@ -295,7 +296,7 @@ def main(argv: Sequence[str] | None = None, session_factory: SessionFactory | No
         "--status", action="store_true", help="only count the rows still missing (read-only)"
     )
     args = parser.parse_args(argv)
-    factory = session_factory or tasks.SyncSession
+    factory = session_factory or maintenance.owner_session  # every agency (spec §6.2)
 
     if args.status:
         remaining = status(factory, args.table)
