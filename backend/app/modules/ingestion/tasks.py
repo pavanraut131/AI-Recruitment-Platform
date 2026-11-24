@@ -50,6 +50,7 @@ from app.modules.talent.schemas import PersonProfile, ResolveResult
 from app.platform import storage
 from app.platform.celery_app import celery_app
 from app.platform.config import settings
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 logger = structlog.get_logger()
 
@@ -515,6 +516,7 @@ def _resolve_person(db: Session, resume: Resume, extraction: ExtractionResult) -
 
     result = talent_service.resolve_person(
         db,
+        agency_id=DEFAULT_AGENCY_ID,  # tenant context arrives with E2-03
         email=extraction.email,
         phone=extraction.phone,
         profile=person_profile(extraction),

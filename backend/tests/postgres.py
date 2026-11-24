@@ -181,8 +181,11 @@ def migrate_to_head() -> None:
 
 
 @contextlib.contextmanager
-def throwaway_database(prefix: str, **engine_options: Any) -> Iterator[Engine]:
-    """A new database in the session's container, migrated to ``head``, dropped afterwards.
+def throwaway_database(
+    prefix: str, revision: str = "head", **engine_options: Any
+) -> Iterator[Engine]:
+    """A new database in the session's container, migrated to ``revision`` (default ``head``),
+    dropped afterwards.
 
     For tests that must **commit** on several connections (concurrency, the seed served by the API), which the
     rolled-back ``db_session`` / ``sync_session`` cannot give. The session database is never
@@ -207,7 +210,7 @@ def throwaway_database(prefix: str, **engine_options: Any) -> Iterator[Engine]:
     try:
         cfg = Config()  # no ini file: env.py would reconfigure logging
         cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, revision)
     finally:
         settings.SYNC_DATABASE_URL = original
 

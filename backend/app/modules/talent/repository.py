@@ -8,12 +8,14 @@ request's ``AsyncSession``.
 
 import uuid
 from collections.abc import Iterable, Sequence
+from typing import cast
 
-from sqlalchemy import ColumnElement, any_, exists, func, or_, select, text, tuple_
+from sqlalchemy import ColumnElement, Table, any_, exists, func, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
+from app.platform import backfill
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 
@@ -51,14 +53,28 @@ def get_person_resume(session: Session, resume_id: uuid.UUID) -> PersonResume | 
 
 
 def find_identifiers(
-    session: Session, kind_values: Sequence[tuple[str, str]]
+    session: Session,
+    agency_id: uuid.UUID,
+    kind_values: Sequence[tuple[str, str]],
+    *,
+    include_unassigned: bool = False,
 ) -> dict[tuple[str, str], PersonIdentifier]:
-    """The stored identifiers among ``(kind, value_normalized)`` pairs, keyed by that pair."""
+    """The agency's stored identifiers among ``(kind, value_normalized)`` pairs, keyed by that
+    pair. ``include_unassigned`` also returns identifiers with no agency yet (stored before the
+    E2-01 expand and not yet backfilled): the service passes it for the default agency only,
+    which those rows belong to. Once ``agency_id`` is ``NOT NULL`` (the E2-02 contract) there
+    are none."""
     if not kind_values:
         return {}
+    agency = PersonIdentifier.agency_id == agency_id
+    if include_unassigned:
+        agency = or_(agency, PersonIdentifier.agency_id.is_(None))
     rows = session.execute(
         select(PersonIdentifier)
-        .where(tuple_(PersonIdentifier.kind, PersonIdentifier.value_normalized).in_(kind_values))
+        .where(
+            agency,
+            tuple_(PersonIdentifier.kind, PersonIdentifier.value_normalized).in_(kind_values),
+        )
         .execution_options(populate_existing=True)
     ).scalars()
     return {(row.kind, row.value_normalized): row for row in rows}
@@ -101,13 +117,17 @@ def resolutions(session: Session) -> dict[uuid.UUID, uuid.UUID]:
     return {resume_id: person_id for resume_id, person_id in rows}
 
 
-def duplicate_identifiers(session: Session) -> list[tuple[str, str, int]]:
+def duplicate_identifiers(session: Session) -> list[tuple[uuid.UUID | None, str, str, int]]:
+    columns = (PersonIdentifier.agency_id, PersonIdentifier.kind, PersonIdentifier.value_normalized)
     rows = session.execute(
-        select(PersonIdentifier.kind, PersonIdentifier.value_normalized, func.count())
-        .group_by(PersonIdentifier.kind, PersonIdentifier.value_normalized)
-        .having(func.count() > 1)
+        select(*columns, func.count()).group_by(*columns).having(func.count() > 1)
     ).tuples()
-    return [(kind, value, n) for kind, value, n in rows]
+    return [(agency_id, kind, value, n) for agency_id, kind, value, n in rows]
+
+
+def person_agencies(session: Session) -> dict[uuid.UUID, uuid.UUID | None]:
+    rows = session.execute(select(Person.id, Person.agency_id)).tuples()
+    return {person_id: agency_id for person_id, agency_id in rows}
 
 
 def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UUID]]:
@@ -127,6 +147,42 @@ def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UU
 
 def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
     return list(session.execute(select(IdentityConflict.resume_id)).scalars())
+
+
+# ── Tenancy backfill (``app.modules.ingestion.backfill_tenancy``, E2-02) ──
+_TENANT_TABLES = {
+    "people": cast(Table, Person.__table__),
+    "person_identifiers": cast(Table, PersonIdentifier.__table__),
+    "identity_conflicts": cast(Table, IdentityConflict.__table__),
+    "person_resumes": cast(Table, PersonResume.__table__),
+}
+# talent's tenant tables, in the order the backfill fills them.
+TENANCY_TABLES = tuple(_TENANT_TABLES)
+
+
+def fill_tenancy_batch(
+    session: Session, table: str, *, agency_id: uuid.UUID, after: uuid.UUID | None, limit: int
+) -> list[uuid.UUID]:
+    t = _TENANT_TABLES[table]
+    return backfill.update_next_batch(
+        session,
+        t,
+        missing=t.c.agency_id.is_(None),
+        values={"agency_id": agency_id},
+        after=after,
+        limit=limit,
+    )
+
+
+def count_tenancy_gaps(session: Session, table: str) -> int:
+    t = _TENANT_TABLES[table]
+    return backfill.count_missing(session, t, t.c.agency_id.is_(None))
+
+
+def agency_census(session: Session) -> dict[str, dict[uuid.UUID | None, int]]:
+    return {
+        table: backfill.agency_census(session, _TENANT_TABLES[table]) for table in TENANCY_TABLES
+    }
 
 
 # ── /api/v2 people (async, E1-02) ─────────────────────────────

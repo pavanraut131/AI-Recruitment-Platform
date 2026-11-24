@@ -9,11 +9,12 @@ caller decides where a unit of work ends.
 import uuid
 from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     ColumnElement,
     Row,
+    Table,
     and_,
     any_,
     column,
@@ -28,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.ingestion.models import Resume
+from app.platform import backfill
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
 
 FAILED_STATUSES = ("failed", "quota_exceeded")
@@ -308,9 +310,11 @@ def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, str]]:
 # ── Verification and devtools (sync) ──────────────────────────
 def resume_refs_sync(
     db: Session,
-) -> Sequence[Row[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID | None]]]:
-    """``(id, campaign_id, status, person_id)`` of every resume."""
-    return db.execute(select(Resume.id, Resume.campaign_id, Resume.status, Resume.person_id)).all()
+) -> Sequence[Row[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID | None, uuid.UUID]]]:
+    """``(id, campaign_id, status, person_id, agency_id)`` of every resume."""
+    return db.execute(
+        select(Resume.id, Resume.campaign_id, Resume.status, Resume.person_id, Resume.agency_id)
+    ).all()
 
 
 def extracted_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Any]:
@@ -324,3 +328,32 @@ def extracted_sync(db: Session, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.UU
 def storage_paths_sync(db: Session) -> set[str]:
     """The ``storage_path`` of every resume."""
     return set(db.execute(select(Resume.storage_path)).scalars())
+
+
+# ── Tenancy backfill (sync, ``backfill_tenancy``, E2-02) ──────
+_resumes = cast(Table, Resume.__table__)
+
+
+def fill_tenancy_batch_sync(
+    db: Session, *, agency_id: uuid.UUID, after: uuid.UUID | None, limit: int
+) -> list[uuid.UUID]:
+    """The next ``limit`` resumes after ``after`` (by id) without an agency get ``agency_id``
+    (``updated_at`` unchanged). Returns their ids, ascending; the caller commits."""
+    return backfill.update_next_batch(
+        db,
+        _resumes,
+        missing=_resumes.c.agency_id.is_(None),
+        values={"agency_id": agency_id},
+        after=after,
+        limit=limit,
+    )
+
+
+def count_tenancy_gaps_sync(db: Session) -> int:
+    """Resumes still without an agency."""
+    return backfill.count_missing(db, _resumes, _resumes.c.agency_id.is_(None))
+
+
+def agency_census_sync(db: Session) -> dict[uuid.UUID | None, int]:
+    """``agency_id -> resumes`` (``None``: no agency yet)."""
+    return backfill.agency_census(db, _resumes)

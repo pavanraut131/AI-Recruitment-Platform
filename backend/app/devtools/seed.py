@@ -730,6 +730,7 @@ def generate(
         extraction = ExtractionResult.model_validate(row["extracted"])
         resolution = talent_service.resolve_person(
             session,
+            agency_id=DEFAULT_AGENCY_ID,
             email=sub.email,
             phone=sub.phone,
             profile=person_profile(extraction),
