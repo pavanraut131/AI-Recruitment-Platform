@@ -112,7 +112,7 @@ export function ProfileHeader({
       </div>
 
       {selected && (
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-y py-3">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t pt-4">
           <div className="flex min-w-0 flex-col gap-1">
             <label htmlFor={switcherId} className="text-xs font-medium text-muted-foreground">
               Application{person.applications.length > 1 && ` (${person.applications.length})`}

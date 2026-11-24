@@ -4,6 +4,8 @@ import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { hashKey } from "@tanstack/react-query"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 
+import { cn } from "@/lib/utils"
+
 import { BulkActionsBar, ExportButton } from "./bulk-actions"
 import { CandidatesTable, CandidatesTableSkeleton, rowDomId } from "./candidates-table"
 import type { Application, Stage } from "./model"
@@ -172,7 +174,8 @@ export function CandidatesTab({
   }
 
   return (
-    <section aria-label="Candidates" className="flex flex-col gap-4">
+    // While the review panel is open on a wide screen, the table makes room for it (no rows hidden behind it).
+    <section aria-label="Candidates" className={cn("flex flex-col gap-4", openId !== null && "xl:pr-[400px]")}>
       {!noCandidatesAtAll && (
         <div className="flex flex-wrap items-start justify-between gap-2">
           <CandidatesToolbar
