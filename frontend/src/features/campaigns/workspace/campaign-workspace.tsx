@@ -144,10 +144,13 @@ function WorkspaceHeader({
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-title font-semibold tracking-tight break-words">{campaign.title}</h1>
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-dense text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-dense text-muted-foreground">
             <span className="text-ink-2">{campaign.role}</span>
+            <MetaSeparator />
             <CampaignStatusBadge status={campaign.status} />
+            <MetaSeparator />
             <span>Created {shortDate(campaign.created_at)}</span>
+            {live !== "idle" && <MetaSeparator />}
             <LiveIndicator status={live} />
           </p>
         </div>
@@ -163,6 +166,15 @@ function WorkspaceHeader({
       </div>
       <CampaignSummary campaign={campaign} onTab={onTab} />
     </header>
+  )
+}
+
+/** A quiet middle dot between the header's facts, so the status dots don't run together. */
+function MetaSeparator() {
+  return (
+    <span aria-hidden="true" className="text-muted-foreground/60">
+      ·
+    </span>
   )
 }
 

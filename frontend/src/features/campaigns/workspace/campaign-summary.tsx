@@ -2,7 +2,8 @@
 
 import type { ReactNode } from "react"
 
-import { CATEGORIES, CATEGORY_META } from "@/lib/applications"
+import { CATEGORIES, CATEGORY_META, SCORE_BAR_CLASS, type CategoryTone } from "@/lib/applications"
+import { cn } from "@/lib/utils"
 
 import { useCampaignStats, type Campaign, type CampaignStats } from "../api"
 import type { WorkspaceTab } from "./workspace-tabs"
@@ -11,66 +12,112 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`
 }
 
-/**
- * "3 strong, 9 possible and 12 unlikely": the categories that have anyone,
- * best first, plus the applications not scored yet. Leads with "No strong
- * matches yet" when there are none.
- */
-export function categoryBreakdown(stats: CampaignStats): string {
-  const byCategory = stats.applications.by_category
-  const parts = CATEGORIES.filter((category) => byCategory[category] > 0).map(
-    (category) => `${byCategory[category].toLocaleString("en-GB")} ${CATEGORY_META[category].short}`,
-  )
-  const scored = CATEGORIES.reduce((sum, category) => sum + byCategory[category], 0)
-  const unscored = stats.applications.total - scored
-  if (unscored > 0) parts.push(`${unscored.toLocaleString("en-GB")} not scored yet`)
-  if (parts.length === 0) return ""
-  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`
-  return byCategory.strong_match === 0 ? `No strong matches yet: ${list}.` : `${list[0].toUpperCase()}${list.slice(1)}.`
+export interface SummaryItem {
+  key: string
+  count: number
+  label: string
+  tone?: CategoryTone
 }
 
 /**
- * The workspace's numbers as one sentence under the title (no KPI cards):
- * applicants, how they split by match, the average score, and anything still
- * processing or failed, each linking to the tab that deals with it. Counts
- * come with the campaign, the split and the average from its stats; both
- * refresh as resumes finish (`useCampaignEvents`).
+ * How the scored applicants split by match, best first: "strong" always (a zero
+ * there is the news), the other categories only when someone is in them, then
+ * the applications not scored yet.
+ */
+export function categoryItems(stats: CampaignStats): SummaryItem[] {
+  const byCategory = stats.applications.by_category
+  const items: SummaryItem[] = CATEGORIES.filter(
+    (category) => category === "strong_match" || byCategory[category] > 0,
+  ).map((category) => ({
+    key: category,
+    count: byCategory[category],
+    label: CATEGORY_META[category].short,
+    tone: CATEGORY_META[category].tone,
+  }))
+  const scored = CATEGORIES.reduce((sum, category) => sum + byCategory[category], 0)
+  const unscored = stats.applications.total - scored
+  if (unscored > 0) items.push({ key: "unscored", count: unscored, label: "not scored yet" })
+  return items
+}
+
+function Count({ children }: { children: ReactNode }) {
+  return <span className="font-semibold text-foreground tabular-nums">{children}</span>
+}
+
+/**
+ * The workspace's numbers under the title, as one quiet row (no KPI cards):
+ * applicants, how they split by match (each with its colour dot), and the
+ * average score. Anything still processing or failed follows as a short note
+ * linking to the tab that deals with it. Counts come with the campaign, the
+ * split and the average from its stats; both refresh as resumes finish
+ * (`useCampaignEvents`).
  */
 export function CampaignSummary({ campaign, onTab }: { campaign: Campaign; onTab: (tab: WorkspaceTab) => void }) {
   const stats = useCampaignStats(campaign.id)
   const { applications, in_progress: inProgress, failed, resumes } = campaign.counts
 
-  const toTab = (tab: WorkspaceTab, label: ReactNode) => (
-    <button type="button" onClick={() => onTab(tab)} className="text-link cursor-pointer">
-      {label}
-    </button>
-  )
-
-  let lead: ReactNode
-  let rest: ReactNode = null
-  if (applications === 0) {
-    lead = resumes === 0 ? "No applicants yet." : "No applicants scored yet."
-    if (resumes === 0) rest = " Upload resumes to start the shortlist."
-  } else {
-    lead = `${plural(applications, "applicant")}.`
-    if (stats.data) {
-      const split = categoryBreakdown(stats.data)
-      const average = stats.data.avg_score === null ? "" : ` Average score ${Math.round(stats.data.avg_score)}.`
-      rest = ` ${split}${average}`
-    }
+  const notes: ReactNode[] = []
+  if (inProgress > 0) {
+    notes.push(`${plural(inProgress, "resume")} ${inProgress === 1 ? "is" : "are"} still being read and scored.`)
+  }
+  if (failed > 0) {
+    notes.push(
+      <>
+        {plural(failed, "resume")} could not be processed:{" "}
+        <button type="button" onClick={() => onTab("uploads")} className="text-link cursor-pointer">
+          see Uploads
+        </button>
+        .
+      </>,
+    )
   }
 
   return (
-    <p className="max-w-3xl text-ink-2" data-slot="campaign-summary">
-      <span className="font-semibold text-foreground">{lead}</span>
-      {rest}
-      {inProgress > 0 && ` ${plural(inProgress, "resume")} ${inProgress === 1 ? "is" : "are"} still being read and scored.`}
-      {failed > 0 && (
-        <>
-          {" "}
-          {plural(failed, "resume")} could not be processed: {toTab("uploads", "see Uploads")}.
-        </>
+    <div className="flex flex-col gap-1.5" data-slot="campaign-summary">
+      {applications === 0 ? (
+        <p className="text-ink-2">
+          <span className="font-semibold text-foreground">
+            {resumes === 0 ? "No applicants yet." : "No applicants scored yet."}
+          </span>
+          {resumes === 0 && " Upload resumes to start the shortlist."}
+        </p>
+      ) : (
+        <ul aria-label="Applicants" className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-ink-2">
+          <li>
+            <Count>{applications.toLocaleString("en-GB")}</Count> {applications === 1 ? "applicant" : "applicants"}
+          </li>
+          {stats.data &&
+            categoryItems(stats.data).map((item) => (
+              <li key={item.key} className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    item.tone ? SCORE_BAR_CLASS[item.tone] : "bg-muted-foreground/40",
+                  )}
+                />
+                <span>
+                  <Count>{item.count.toLocaleString("en-GB")}</Count> {item.label}
+                </span>
+              </li>
+            ))}
+          {stats.data && stats.data.avg_score !== null && (
+            <li className="border-l pl-5">
+              Average score <Count>{Math.round(stats.data.avg_score)}</Count>
+            </li>
+          )}
+        </ul>
       )}
-    </p>
+      {notes.length > 0 && (
+        <p className="text-dense text-muted-foreground">
+          {notes.map((note, index) => (
+            <span key={index}>
+              {index > 0 && " "}
+              {note}
+            </span>
+          ))}
+        </p>
+      )}
+    </div>
   )
 }
