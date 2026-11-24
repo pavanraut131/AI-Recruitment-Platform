@@ -7,6 +7,7 @@ import { EmptyState, ErrorState } from "@/components/data-states"
 import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CATEGORY_META } from "@/lib/applications"
 import { cn } from "@/lib/utils"
 
 import { useCampaignStats, type Campaign, type CampaignStats } from "../api"
@@ -24,19 +25,20 @@ import {
 } from "./model"
 
 /*
- * Colours are design tokens (EPIC-01 §3): the chart wrapper turns each config
- * entry into a `--color-<key>` variable on the chart, and bars fill with
- * `var(--color-<key>)`. Categories use their `--category-*` tokens; the rest
- * the teal chart ramp and its neutral (`--chart-1`, `--chart-4`), so dark
- * mode follows the theme with no extra code.
+ * Colours are design tokens (docs/design/README.md): the chart wrapper turns
+ * each config entry into a `--color-<key>` variable on the chart, and bars
+ * fill with `var(--color-<key>)`. Categories use their `--category-*` tokens
+ * (strong in the accent, possible in amber, the rest grey); everything else
+ * the accent and its neutral (`--chart-1`, `--chart-4`), so dark mode follows
+ * the theme with no extra code.
  */
 const CATEGORY_CONFIG = {
   count: { label: "Applications" },
-  strong_match: { label: "Strong match", color: "var(--category-strong)" },
-  moderate_match: { label: "Moderate match", color: "var(--category-moderate)" },
-  weak_match: { label: "Weak match", color: "var(--category-weak)" },
-  rejected: { label: "Rejected", color: "var(--category-rejected)" },
-  uncategorised: { label: "Not scored", color: "var(--muted-foreground)" },
+  strong_match: { label: CATEGORY_META.strong_match.label, color: "var(--category-strong)" },
+  moderate_match: { label: CATEGORY_META.moderate_match.label, color: "var(--category-moderate)" },
+  weak_match: { label: CATEGORY_META.weak_match.label, color: "var(--category-weak)" },
+  rejected: { label: CATEGORY_META.rejected.label, color: "var(--category-rejected)" },
+  uncategorised: { label: "Not scored", color: "var(--chart-5)" },
 } satisfies ChartConfig
 
 const HISTOGRAM_CONFIG = {
@@ -78,7 +80,7 @@ export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUplo
       <EmptyState
         icon={ChartColumnIcon}
         title="No insights yet"
-        description="Upload resumes to this campaign: as they are scored, you'll see how the candidates compare."
+        description="Upload resumes to this campaign. As they are scored, you see here how the candidates compare."
         action={
           <Button onClick={onUpload}>
             <UploadIcon data-icon="inline-start" />
@@ -90,7 +92,7 @@ export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUplo
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-x-12 gap-y-10 lg:grid-cols-2">
       <CategoryChart stats={data} />
       <ScoreHistogram stats={data} />
       <TopSkillsChart stats={data} requiredSkills={campaign.required_skills} />
@@ -106,9 +108,9 @@ function CategoryChart({ stats }: { stats: CampaignStats }) {
   const unscored = count("uncategorised")
   const summary =
     total === 0
-      ? "Applications by the AI's match category."
-      : `${plural(total, "application")}: ${count("strong_match")} strong, ${count("moderate_match")} moderate and ` +
-        `${count("weak_match")} weak matches, ${count("rejected")} rejected` +
+      ? "Applications by how well they match the brief."
+      : `${plural(total, "application")}: ${count("strong_match")} strong, ${count("moderate_match")} possible, ` +
+        `${count("weak_match")} unlikely and ${count("rejected")} not a match` +
         (unscored > 0 ? `, ${unscored} not scored yet.` : ".")
 
   return (
@@ -283,9 +285,9 @@ function ProcessingFunnel({ stats }: { stats: CampaignStats }) {
 
 function InsightsSkeleton() {
   return (
-    <div className="grid gap-4 lg:grid-cols-2" aria-busy="true" aria-label="Loading insights">
+    <div className="grid gap-x-12 gap-y-10 lg:grid-cols-2" aria-busy="true" aria-label="Loading insights">
       {Array.from({ length: 4 }, (_, index) => (
-        <div key={index} className="flex flex-col gap-3 rounded-lg border p-4">
+        <div key={index} className="flex flex-col gap-3 border-t pt-4">
           <Skeleton className="h-4 w-40" />
           <Skeleton className="h-3.5 w-64" />
           <Skeleton className="h-44 w-full" />

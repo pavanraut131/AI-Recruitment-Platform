@@ -87,8 +87,8 @@ export function unfinishedResumeRows(stats: CampaignStats): ResumeStatusRow[] {
   const { resumes } = stats
   return [
     { key: "pending", label: "Queued", count: resumes.pending },
-    { key: "extracting", label: "Extracting", count: resumes.extracting },
-    { key: "processing", label: "Analysing", count: resumes.processing },
+    { key: "extracting", label: "Reading", count: resumes.extracting },
+    { key: "processing", label: "Scoring", count: resumes.processing },
     { key: "failed", label: "Failed", count: resumes.failed },
     { key: "quota_exceeded", label: "Quota limit", count: resumes.quota_exceeded },
   ]

@@ -51,7 +51,7 @@ function mockCampaignApi(overrides: Parameters<typeof mockApi>[0] = {}) {
 }
 
 describe("CampaignWorkspace", () => {
-  it("shows the header, KPIs and the Candidates slot by default, and streams the campaign's events", async () => {
+  it("shows the header, the summary sentence and the Candidates slot by default, and streams the campaign's events", async () => {
     mockCampaignApi()
     renderWorkspace()
 
@@ -60,13 +60,17 @@ describe("CampaignWorkspace", () => {
     expect(screen.getByText(campaign.role)).toBeTruthy()
     expect(screen.getByRole("status").textContent).toBe("Live")
 
-    const kpi = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent
-    expect(kpi("Resumes")).toBe("12")
-    expect(kpi("Strong matches")).toBe("4")
-    expect(kpi("Processing")).toBe("2")
-    await waitFor(() => expect(kpi("Average score")).toBe("71"))
+    // The numbers read as one sentence (no KPI cards): counts at once, the split and average with the stats.
+    const summary = () => document.querySelector("[data-slot='campaign-summary']")?.textContent
+    await waitFor(() =>
+      expect(summary()).toBe(
+        "9 applicants. 4 strong, 3 possible, 1 unlikely and 1 not a match. Average score 71. " +
+          "2 resumes are still being read and scored. 1 resume could not be processed: see Uploads.",
+      ),
+    )
 
     expect(screen.getByRole("tab", { name: "Candidates", selected: true })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Brief" })).toBeTruthy()
     expect(screen.getByText("Candidates slot")).toBeTruthy()
     expect(useCampaignEvents).toHaveBeenLastCalledWith(CAMPAIGN_ID, { enabled: true })
   })
@@ -94,7 +98,7 @@ describe("CampaignWorkspace", () => {
     await waitFor(() => expect(view.lastUrl()).toBe(""))
 
     // The header's actions switch tabs too.
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit brief" }))
     await waitFor(() => expect(view.lastUrl()).toBe("?tab=settings"))
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveProperty("value", campaign.title)
   })

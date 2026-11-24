@@ -47,13 +47,13 @@ export function ChartPanel({
   const tableId = `${id}-table`
 
   return (
-    <section aria-labelledby={titleId} className={cn("flex flex-col gap-3 rounded-lg border p-4", className)}>
+    <section aria-labelledby={titleId} className={cn("flex min-w-0 flex-col gap-3 border-t pt-4", className)}>
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 id={titleId} className="text-sm font-medium">
+          <h2 id={titleId} className="text-section font-semibold">
             {title}
           </h2>
-          <p className="text-sm text-muted-foreground">{summary}</p>
+          <p className="text-ink-2">{summary}</p>
         </div>
         {!empty && (
           // A toggle with a fixed name ("Table for …"); aria-pressed says whether the table is shown.
@@ -74,7 +74,7 @@ export function ChartPanel({
       </header>
 
       {empty ? (
-        <div className="flex min-h-40 flex-1 items-center justify-center rounded-md bg-muted/40 px-4 text-center text-sm text-muted-foreground">
+        <div className="flex min-h-40 flex-1 items-center justify-center rounded-lg bg-canvas px-4 text-center text-sm text-muted-foreground">
           {empty}
         </div>
       ) : (
