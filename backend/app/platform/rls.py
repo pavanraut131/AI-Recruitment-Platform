@@ -57,6 +57,13 @@ GLOBAL_TABLES: Final[Mapping[str, str]] = {
     "legacy_candidate_map": "id pairs read only by /api/v1 (removed in E2-12); the "
     "applications they lead to are under RLS",
     "alembic_version": "migration bookkeeping; the application role has no grant on it",
+    # identity (E2-05): read before a tenant is known (login, session lookup, memberships), or
+    # written without one (failed logins). Private to identity; listings filter by agency.
+    "users": "global identities: one email, possibly several agencies (spec §3.1)",
+    "memberships": "read on every request to resolve the principal's agency and role",
+    "membership_clients": "part of the principal, read with its membership",
+    "user_sessions": "looked up by cookie hash before any agency is known",
+    "audit_events": "events before an agency is known (failed logins); append-only by grant",
 }
 
 TABLE_PRIVILEGES: Final = ("SELECT", "INSERT", "UPDATE", "DELETE")
@@ -204,8 +211,8 @@ def catalogue_problems(connection: Connection) -> list[str]:
             )
         ).tuples()
     }
-    for name in sorted(set(GLOBAL_TABLES) - set(tables)):
-        problems.append(f"{name} is on the global allowlist but does not exist")
+    # (An allowlisted table that does not exist yet is fine: E2-05's identity tables are listed
+    # whichever of E2-04 and E2-05 is migrated first.)
 
     # Ownership: the owner role owns every relation; the app role owns nothing.
     for name, owner in connection.execute(

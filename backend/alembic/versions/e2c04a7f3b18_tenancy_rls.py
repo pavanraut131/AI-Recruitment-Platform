@@ -17,8 +17,8 @@ What it does
     - Grants for ``hireflow_app``: ``SELECT, INSERT, UPDATE, DELETE`` on every table but
       ``alembic_version`` (nothing), ``USAGE`` on every sequence; ``ALTER DEFAULT PRIVILEGES FOR
       ROLE hireflow_owner`` gives tables and sequences the owner creates later the same grants
-      (E2-05's identity tables get them without a grant of their own; ``audit_events`` then
-      revokes ``UPDATE`` and ``DELETE``).
+      (E2-05's identity tables get them without a grant of their own). ``audit_events`` keeps
+      ``SELECT, INSERT`` only, and ``alembic_version`` nothing, also when E2-05 ran first.
     - On each tenant table (:data:`TENANT_TABLES`): ``ENABLE`` and ``FORCE ROW LEVEL
       SECURITY``, the policy ``tenant_isolation`` for ``hireflow_app`` (``USING`` and ``WITH
       CHECK`` ``agency_id = (SELECT app_current_agency())``: an unbound transaction reads and
@@ -32,7 +32,8 @@ What it does
 
 Downgrade
     Drops the policies, ``NO FORCE`` / ``DISABLE`` row-level security, revokes every grant and
-    default privilege it gave ``hireflow_app`` and drops the function. Point ``DATABASE_URL`` and
+    default privilege it gave ``hireflow_app`` (not those of E2-05's identity tables, which
+    their own migration gave) and drops the function. Point ``DATABASE_URL`` and
     ``SYNC_DATABASE_URL`` at the owner role **before** downgrading: afterwards the application
     role can read nothing (the runbook's rollback).
 
@@ -76,6 +77,12 @@ TENANT_TABLES = (
 )
 
 TABLE_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
+
+# Tables that keep narrower grants than TABLE_PRIVILEGES, if they exist when this runs: E2-05's
+# append-only audit_events may be migrated before this revision (spec §4.7, §6.2).
+NARROWER_GRANTS = {"alembic_version": "", "audit_events": "SELECT, INSERT"}
+# E2-05's global identity tables: granted by their own migration; the downgrade leaves them.
+IDENTITY_TABLES = ("users", "memberships", "membership_clients", "user_sessions", "audit_events")
 
 
 def _refuse_unless_ready(conn: sa.Connection) -> None:
@@ -123,7 +130,11 @@ def upgrade() -> None:
     # Grants on what exists now, then the same for what the owner creates later.
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
     op.execute(f"GRANT {TABLE_PRIVILEGES} ON ALL TABLES IN SCHEMA public TO {APP_ROLE}")
-    op.execute(f"REVOKE ALL ON alembic_version FROM {APP_ROLE}")
+    for table, privileges in NARROWER_GRANTS.items():
+        if conn.execute(sa.text("SELECT to_regclass(:t) IS NOT NULL"), {"t": table}).scalar_one():
+            op.execute(f"REVOKE ALL ON {table} FROM {APP_ROLE}")
+            if privileges:
+                op.execute(f"GRANT {privileges} ON {table} TO {APP_ROLE}")
     op.execute(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}")
     op.execute(
         f"ALTER DEFAULT PRIVILEGES FOR ROLE {OWNER_ROLE} IN SCHEMA public "
@@ -153,7 +164,22 @@ def downgrade() -> None:
         f"ALTER DEFAULT PRIVILEGES FOR ROLE {OWNER_ROLE} IN SCHEMA public "
         f"REVOKE {TABLE_PRIVILEGES} ON TABLES FROM {APP_ROLE}"
     )
-    op.execute(f"REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {APP_ROLE}")
-    op.execute(f"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {APP_ROLE}")
+    # The grants this revision gave: on every table and sequence except E2-05's identity tables,
+    # whose own migration grants (they exist below this revision only if E2-05 runs first).
+    conn = op.get_bind()
+    for kind, relkind in (("TABLE", "r"), ("SEQUENCE", "S")):
+        names = conn.execute(
+            sa.text(
+                "SELECT c.relname FROM pg_class c "
+                "LEFT JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = c.oid "
+                "AND d.deptype IN ('a', 'i') "
+                "LEFT JOIN pg_class owner ON owner.oid = d.refobjid "
+                "WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = :kind "
+                "AND coalesce(owner.relname, c.relname) <> ALL(:keep) ORDER BY 1"
+            ),
+            {"kind": relkind, "keep": list(IDENTITY_TABLES)},
+        ).scalars()
+        for name in names:
+            op.execute(f"REVOKE ALL ON {kind} {name} FROM {APP_ROLE}")
 
     op.execute(DROP_CURRENT_AGENCY_FUNCTION)

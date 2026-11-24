@@ -249,3 +249,41 @@ def test_roles_sql_hands_an_old_database_to_the_owner_and_is_idempotent(
             ("hireflow_owner", False, False, True, False, False),
         ]
     admin.dispose()
+
+
+def test_identity_tables_migrated_first_keep_their_grants(scratch_db: str) -> None:  # noqa: F811
+    """If E2-05's migration (global identity tables, its own grants) runs before this one:
+    ``audit_events`` stays append-only, the catalogue is clean, and the downgrade leaves the
+    identity tables' grants alone."""
+    cfg = _alembic_config()
+    command.upgrade(cfg, CONTRACT)
+    owner = create_engine(scratch_db)
+    privileges = text(
+        "SELECT string_agg(privilege_type, ',' ORDER BY privilege_type) "
+        "FROM information_schema.role_table_grants "
+        "WHERE grantee = 'hireflow_app' AND table_name = :t"
+    )
+    try:
+        with owner.begin() as conn:  # what E2-05's migration does, in short
+            conn.execute(text("CREATE TABLE users (id uuid PRIMARY KEY)"))
+            conn.execute(
+                text("CREATE TABLE audit_events (id bigint GENERATED ALWAYS AS IDENTITY, x text)")
+            )
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON users TO hireflow_app"))
+            conn.execute(text("GRANT SELECT, INSERT ON audit_events TO hireflow_app"))
+            conn.execute(text("GRANT USAGE ON SEQUENCE audit_events_id_seq TO hireflow_app"))
+
+        command.upgrade(cfg, RLS)
+        with owner.connect() as conn:
+            assert conn.execute(privileges, {"t": "audit_events"}).scalar() == "INSERT,SELECT"
+            assert rls.catalogue_problems(conn) == []
+
+        command.downgrade(cfg, CONTRACT)
+        with owner.connect() as conn:
+            assert conn.execute(privileges, {"t": "audit_events"}).scalar() == "INSERT,SELECT"
+            assert conn.execute(privileges, {"t": "users"}).scalar() == (
+                "DELETE,INSERT,SELECT,UPDATE"
+            )
+            assert conn.execute(privileges, {"t": "campaigns"}).scalar() is None
+    finally:
+        owner.dispose()

@@ -168,7 +168,7 @@ def test_catalogue_every_tenant_table_is_forced_with_both_policies(
         assert policies[(table, "tenant_isolation")] == ["hireflow_app"], table
         assert policies[(table, "maintenance")] == ["hireflow_owner"], table
     for table in rls.GLOBAL_TABLES:
-        assert not flags[table], table
+        assert not flags.get(table, False), table  # (E2-05's may not exist yet)
 
 
 async def test_catalogue_the_app_role_is_restricted(db_session: AsyncSession) -> None:
