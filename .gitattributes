@@ -5,3 +5,6 @@ frontend/src/lib/api/schema.d.ts linguist-generated=true eol=lf
 
 # Shell scripts run under bash on every OS (Git Bash too): LF, or bash trips over the CRs.
 *.sh text eol=lf
+
+# Run by psql inside the postgres container (Linux): LF, whatever the host checkout uses.
+docker/postgres/** text eol=lf
