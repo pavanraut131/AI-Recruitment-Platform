@@ -9,6 +9,10 @@ first. The session database is never touched.
 A deadlock would make Postgres abort one of the transactions (``deadlock_timeout`` is 1 s), and a
 lost race would surface as a unique violation: both are exceptions in a worker, and the tests fail
 on any worker exception.
+
+Matching is per agency (EPIC-02 spec §3.4, E2-02): the last tests run the same identities in two
+agencies at once (one Person per agency, never one shared) and prove that an agency never waits
+on another agency's advisory locks.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
 
 WORKERS = 20
@@ -82,6 +87,7 @@ class Call:
     resume_id: uuid.UUID
     uploaded_at: datetime
     name: str = "Asha Rao"
+    agency_id: uuid.UUID = DEFAULT_AGENCY_ID
 
 
 def run_concurrently(engine: Engine, calls: list[Call]) -> list[ResolveResult]:
@@ -97,6 +103,7 @@ def run_concurrently(engine: Engine, calls: list[Call]) -> list[ResolveResult]:
                 barrier.wait(timeout=30)
                 results[index] = service.resolve_person(
                     session,
+                    agency_id=call.agency_id,
                     email=call.email,
                     phone=call.phone,
                     profile=PersonProfile(full_name=call.name),
@@ -212,6 +219,7 @@ def _seed(engine: Engine, email: str, phone: str) -> uuid.UUID:
     with Session(engine) as session:
         result = service.resolve_person(
             session,
+            agency_id=DEFAULT_AGENCY_ID,
             email=email,
             phone=phone,
             profile=PersonProfile(full_name="seed"),
@@ -316,3 +324,88 @@ def test_cross_over_without_existing_people_never_deadlocks(engine: Engine) -> N
     ]
     assert len(state["links"]) == WORKERS
     assert {r.person_id for r in results} <= set(state["profiles"])
+
+
+# ── Two agencies at once (E2-02) ──────────────────────────────
+OTHER_AGENCY = uuid.UUID("00000000-0000-4000-8000-0000000000b2")
+
+
+def test_the_same_identity_in_two_agencies_creates_one_person_per_agency(engine: Engine) -> None:
+    # 20 workers, alternating agencies, every form of one email and phone.
+    batch = [
+        Call(
+            EMAIL_FORMS[i % len(EMAIL_FORMS)],
+            PHONE_FORMS[i % len(PHONE_FORMS)],
+            uuid.uuid4(),
+            T0 + timedelta(minutes=i),
+            name=f"v{i}",
+            agency_id=DEFAULT_AGENCY_ID if i % 2 == 0 else OTHER_AGENCY,
+        )
+        for i in range(WORKERS)
+    ]
+
+    results = run_concurrently(engine, batch)
+
+    with Session(engine) as session:
+        people = dict(session.execute(select(Person.id, Person.agency_id)).tuples().all())
+        identifiers = sorted(
+            session.execute(
+                select(
+                    PersonIdentifier.agency_id,
+                    PersonIdentifier.person_id,
+                    PersonIdentifier.kind,
+                    PersonIdentifier.value_normalized,
+                )
+            ).tuples(),
+            key=str,
+        )
+    assert sorted(people.values(), key=str) == sorted([DEFAULT_AGENCY_ID, OTHER_AGENCY], key=str)
+    person_of = {agency: person for person, agency in people.items()}
+    for call, result in zip(batch, results, strict=True):
+        assert result.person_id == person_of[call.agency_id]
+    assert identifiers == sorted(
+        (
+            (agency, person_of[agency], kind, value)
+            for agency in (DEFAULT_AGENCY_ID, OTHER_AGENCY)
+            for kind, value in (("email", "asharma@gmail.com"), ("phone", "+919876543210"))
+        ),
+        key=str,
+    )
+    # One "new person" per agency; every other call matched its own agency's Person.
+    assert sorted(r.matched_existing for r in results) == [False] * 2 + [True] * (WORKERS - 2)
+    assert snapshot(engine)["conflicts"] == []
+
+
+def _resolve_holding_locks(session: Session, agency_id: uuid.UUID) -> None:
+    service.resolve_person(
+        session,
+        agency_id=agency_id,
+        email="asha@example.com",
+        phone="+91 98765 43210",
+        profile=PersonProfile(full_name="Asha"),
+        resume_id=uuid.uuid4(),
+        uploaded_at=T0,
+        default_region="IN",
+    )
+
+
+def test_an_agency_never_waits_on_another_agencys_locks(engine: Engine) -> None:
+    """Agency A's resolution holds its advisory locks (not committed). The same identifiers in
+    agency B resolve at once; in agency A they would wait (the control)."""
+    from sqlalchemy.exc import OperationalError
+
+    with Session(engine) as holder:
+        _resolve_holding_locks(holder, DEFAULT_AGENCY_ID)  # locks held until rollback
+
+        with Session(engine) as other:
+            other.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            _resolve_holding_locks(other, OTHER_AGENCY)  # would raise if it had to wait
+            other.commit()
+
+        with Session(engine) as same, pytest.raises(OperationalError, match="lock timeout"):
+            same.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            _resolve_holding_locks(same, DEFAULT_AGENCY_ID)
+        holder.rollback()
+
+    with Session(engine) as session:
+        assert session.execute(select(Person.agency_id)).scalars().all() == [OTHER_AGENCY]

@@ -4,12 +4,14 @@ Two kinds of test, as for the E0 expand migrations:
 
 - **Schema, default rows and constraints** on the session database (at ``head``), each in the
   usual rolled-back transaction: ``agencies`` and ``clients`` exist with the default agency and
-  client (the ids of ``app.platform.tenancy``), and every existing tenant table has a nullable
-  ``agency_id`` with no foreign key (ADR 0003).
+  client (the ids of ``app.platform.tenancy``), and every existing tenant table has an
+  ``agency_id`` (``NOT NULL`` since the E2-02 contract) with no foreign key to ``agencies``
+  (ADR 0003).
 - **Upgrade -> downgrade -> upgrade** on a throwaway database (``scratch_db``): rows written at
   the previous head survive, their tables are **not rewritten** (same ``relfilenode``: the
   ``ADD COLUMN``s are catalog-only) and get ``agency_id`` ``NULL`` (the E2-02 backfill fills
-  it); the downgrade restores the previous schema; ``alembic check`` is clean at the end.
+  it); the downgrade restores the previous schema; back at ``head`` (through the backfill, which
+  the E2-02 contract requires) ``alembic check`` is clean.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.identity import service as identity_service
 from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests import postgres
+from tests.migrations.tenancy import upgrade_to_head_through_backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -92,7 +95,7 @@ async def test_the_default_agency_and_client_exist(db_session: AsyncSession) -> 
     ]
 
 
-async def test_new_columns_are_nullable_uuids(db_session: AsyncSession) -> None:
+async def test_new_columns_are_uuids(db_session: AsyncSession) -> None:
     def columns(i: Any) -> dict[tuple[str, str], tuple[str, bool]]:
         return {
             (table, c["name"]): (str(c["type"]), c["nullable"])
@@ -102,7 +105,10 @@ async def test_new_columns_are_nullable_uuids(db_session: AsyncSession) -> None:
 
     cols = await _inspect(db_session, columns)
     for key in NEW_COLUMNS:
-        assert cols[key] == ("UUID", True), key
+        # The expand adds them nullable (see the upgrade test below); since the E2-02 contract
+        # agency_id and client_id are NOT NULL at head, the user ids stay nullable.
+        required = key[1] in ("agency_id", "client_id")
+        assert cols[key] == ("UUID", not required), key
 
 
 async def test_new_tables_and_their_constraints(db_session: AsyncSession) -> None:
@@ -314,7 +320,8 @@ def test_upgrade_downgrade_upgrade_keeps_rows_and_rewrites_nothing(scratch_db: s
             assert _columns(conn) == columns_before
             assert _row_counts(conn) == counts_before
 
-        command.upgrade(cfg, "head")
+        # Through the tenancy backfill: the contract (E2-02) refuses rows without an agency.
+        upgrade_to_head_through_backfill(cfg, scratch_db)
         command.check(cfg)  # raises if the models and the migrated schema differ
     finally:
         engine.dispose()

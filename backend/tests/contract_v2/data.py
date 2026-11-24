@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application, Campaign
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.factories import BASE_TIME, at, make_campaign, make_candidate, make_resume
 
 V2 = "/api/v2"
@@ -92,6 +93,7 @@ async def add_identifier(
     person_id = person if isinstance(person, uuid.UUID) else person.id
     db.add(
         PersonIdentifier(
+            agency_id=DEFAULT_AGENCY_ID,
             person_id=person_id,
             kind=kind,
             value_normalized=raw.strip().lower(),
@@ -113,6 +115,7 @@ async def add_conflict(
 ) -> None:
     db.add(
         IdentityConflict(
+            agency_id=DEFAULT_AGENCY_ID,
             resume_id=resume_id,
             chosen_person_id=chosen,
             conflicting_person_id=conflicting,

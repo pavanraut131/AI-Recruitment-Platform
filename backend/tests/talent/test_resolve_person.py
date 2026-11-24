@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import repository, service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
@@ -37,9 +38,11 @@ def resolve(
     resume_id: uuid.UUID | None = None,
     uploaded_at: datetime = T0,
     region: str = "IN",
+    agency_id: uuid.UUID = DEFAULT_AGENCY_ID,
 ) -> ResolveResult:
     return service.resolve_person(
         session,
+        agency_id=agency_id,
         email=email,
         phone=phone,
         profile=profile or PersonProfile(full_name="Asha Rao"),
@@ -313,12 +316,16 @@ def test_a_person_whose_profile_source_is_unknown_takes_the_next_resume(
     sync_session: Session, source: uuid.UUID | None
 ) -> None:
     # A Person written outside resolve_person (no person_resumes row for its source).
-    existing = Person(full_name="Old", latest_resume_id=source)
+    existing = Person(full_name="Old", latest_resume_id=source, agency_id=DEFAULT_AGENCY_ID)
     sync_session.add(existing)
     sync_session.flush()
     sync_session.add(
         PersonIdentifier(
-            person_id=existing.id, kind="email", value_normalized="a@example.com", raw_value="a"
+            agency_id=DEFAULT_AGENCY_ID,
+            person_id=existing.id,
+            kind="email",
+            value_normalized="a@example.com",
+            raw_value="a",
         )
     )
     sync_session.flush()
@@ -490,9 +497,9 @@ def test_unique_violation_rolls_back_to_the_savepoint_and_retries(
     real_find = repository.find_identifiers
     calls = {"n": 0}
 
-    def stale_then_real(session: Session, kind_values: Any) -> Any:
+    def stale_then_real(session: Session, *args: Any, **kwargs: Any) -> Any:
         calls["n"] += 1
-        return {} if calls["n"] == 1 else real_find(session, kind_values)
+        return {} if calls["n"] == 1 else real_find(session, *args, **kwargs)
 
     monkeypatch.setattr(repository, "find_identifiers", stale_then_real)
 
@@ -505,7 +512,7 @@ def test_unique_violation_rolls_back_to_the_savepoint_and_retries(
     assert count(sync_session, PersonResume) == 2
     assert "resolve_person_unique_violation_retry" in log.names()
     retry = dict(log.events)["resolve_person_unique_violation_retry"]
-    assert retry["constraint"] == "uq_person_identifiers_kind_value_normalized"
+    assert retry["constraint"] == "uq_person_identifiers_agency_id_kind_value_normalized"
 
 
 def test_a_second_unique_violation_is_raised(
@@ -514,20 +521,28 @@ def test_a_second_unique_violation_is_raised(
     from sqlalchemy.exc import IntegrityError
 
     resolve(sync_session, email="a@example.com")
-    monkeypatch.setattr(repository, "find_identifiers", lambda session, kind_values: {})
+    monkeypatch.setattr(repository, "find_identifiers", lambda *args, **kwargs: {})
 
     with pytest.raises(IntegrityError):
         resolve(sync_session, email="a@example.com")
 
 
-def test_locks_are_taken_per_identifier_in_lock_id_order(sync_session: Session) -> None:
+def test_locks_are_taken_per_agency_and_identifier_in_lock_id_order(
+    sync_session: Session,
+) -> None:
     resume_id = uuid.uuid4()
     resolve(sync_session, email="a@example.com", phone="080 2222 3333", resume_id=resume_id)
 
     expected = sorted(
         sync_session.execute(
             text("SELECT hashtext(k) FROM unnest(CAST(:keys AS text[])) AS k"),
-            {"keys": [f"resume:{resume_id}", "email:a@example.com", f"phone:{IN_LANDLINE}"]},
+            {
+                "keys": [
+                    f"resume:{resume_id}",
+                    f"{DEFAULT_AGENCY_ID}:email:a@example.com",
+                    f"{DEFAULT_AGENCY_ID}:phone:{IN_LANDLINE}",
+                ]
+            },
         ).scalars()
     )
     held = sync_session.execute(
@@ -562,3 +577,51 @@ def test_get_resolution_returns_the_stored_result(sync_session: Session) -> None
 
     assert service.get_resolution(sync_session, resume_id) == mixed
     assert service.get_resolution(sync_session, uuid.uuid4()) is None
+
+
+# ── Per agency (EPIC-02 spec §3.4, E2-02) ─────────────────────
+OTHER_AGENCY = uuid.UUID("00000000-0000-4000-8000-0000000000b2")
+
+
+def test_the_same_identifiers_in_two_agencies_are_two_people(sync_session: Session) -> None:
+    ours = resolve(sync_session, email="asha@example.com", phone=IN_MOBILE)
+    theirs = resolve(
+        sync_session, email="Asha@Example.com", phone=IN_MOBILE, agency_id=OTHER_AGENCY
+    )
+    again = resolve(sync_session, email="asha@example.com", agency_id=OTHER_AGENCY)
+
+    assert theirs.person_id != ours.person_id
+    assert theirs.matched_existing is False and theirs.conflict_id is None
+    assert again == ResolveResult(person_id=theirs.person_id, matched_existing=True)
+    rows = sync_session.execute(
+        select(PersonIdentifier.agency_id, PersonIdentifier.person_id, PersonIdentifier.kind)
+    ).all()
+    assert sorted(rows, key=str) == sorted(
+        [
+            (DEFAULT_AGENCY_ID, ours.person_id, "email"),
+            (DEFAULT_AGENCY_ID, ours.person_id, "phone"),
+            (OTHER_AGENCY, theirs.person_id, "email"),
+            (OTHER_AGENCY, theirs.person_id, "phone"),
+        ],
+        key=str,
+    )
+
+    # Every row written for the other agency carries it.
+    def per_agency(model: Any) -> dict[uuid.UUID, int]:
+        rows = sync_session.execute(
+            select(model.agency_id, func.count()).group_by(model.agency_id)
+        ).tuples()
+        return dict(rows.all())
+
+    assert per_agency(Person) == {DEFAULT_AGENCY_ID: 1, OTHER_AGENCY: 1}
+    assert per_agency(PersonResume) == {DEFAULT_AGENCY_ID: 1, OTHER_AGENCY: 2}
+
+
+def test_a_conflict_is_recorded_within_one_agency_only(sync_session: Session) -> None:
+    resolve(sync_session, email="asha@example.com")
+    resolve(sync_session, phone=IN_MOBILE, agency_id=OTHER_AGENCY)
+    # The email is the default agency's, the phone the other agency's: no conflict in either.
+    mixed = resolve(sync_session, email="asha@example.com", phone=IN_MOBILE)
+
+    assert mixed.matched_existing is True and mixed.conflict_id is None
+    assert count(sync_session, IdentityConflict) == 0

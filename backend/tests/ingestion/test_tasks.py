@@ -21,6 +21,7 @@ from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
 from app.modules.ingestion.events import campaign_channel
 from app.modules.ingestion.models import Resume
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.conftest import Events
 
@@ -44,7 +45,11 @@ def make_pdf(text: str) -> bytes:
 
 def _arrange(db: Session, storage: InMemoryStorage, pdf_bytes: bytes) -> Resume:
     campaign = Campaign(
-        title="Backend Q1", role="Backend Engineer", required_skills=["Python", "Go"]
+        title="Backend Q1",
+        role="Backend Engineer",
+        required_skills=["Python", "Go"],
+        agency_id=DEFAULT_AGENCY_ID,
+        client_id=DEFAULT_CLIENT_ID,
     )
     db.add(campaign)
     db.flush()
@@ -57,6 +62,7 @@ def _arrange(db: Session, storage: InMemoryStorage, pdf_bytes: bytes) -> Resume:
         storage_path=key,
         file_size_bytes=len(pdf_bytes),
         status="pending",
+        agency_id=campaign.agency_id,
     )
     db.add(resume)
     db.commit()

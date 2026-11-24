@@ -14,6 +14,7 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.migrations.tenancy import upgrade_to_head_through_backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -75,7 +76,8 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
             assert "resume_uploaded_at" not in names
             assert conn.execute(text("SELECT count(*) FROM applications")).scalar() == 1
 
-        command.upgrade(cfg, "head")
+        # Through the tenancy backfill: the contract (E2-02) refuses rows without an agency.
+        upgrade_to_head_through_backfill(cfg, scratch_db)
         command.check(cfg)
     finally:
         engine.dispose()

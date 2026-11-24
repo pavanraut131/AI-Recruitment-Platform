@@ -12,6 +12,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Application
 from app.modules.talent.models import Person
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import UNKNOWN_ID, V2, add_conflict, add_identifier, applicant
 from tests.factories import at, make_campaign, make_resume
@@ -31,6 +32,7 @@ async def _people(db: AsyncSession) -> dict[str, Person]:
     second_resume.person_id = jane.id
     db.add(
         Application(
+            agency_id=second.agency_id,
             campaign_id=second.id, person_id=jane.id, resume_id=second_resume.id,
             resume_uploaded_at=at(30), score=55.0, category="moderate_match",
             pipeline_stage="technical", created_at=at(30), updated_at=at(31),
@@ -46,7 +48,13 @@ async def _people(db: AsyncSession) -> dict[str, Person]:
     raj.updated_at = at(40)
     await add_identifier(db, raj, "email", "raj@example.com")
 
-    old = Person(full_name="Old Timer", skills=["COBOL"], created_at=at(0), updated_at=at(0))
+    old = Person(
+        full_name="Old Timer",
+        skills=["COBOL"],
+        created_at=at(0),
+        updated_at=at(0),
+        agency_id=DEFAULT_AGENCY_ID,
+    )
     db.add(old)
     await db.flush()
     return {"jane": jane, "raj": raj, "old": old}

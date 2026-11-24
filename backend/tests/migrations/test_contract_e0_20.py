@@ -25,6 +25,7 @@ from alembic import command
 from sqlalchemy import Connection, create_engine, inspect, text
 
 from tests import postgres
+from tests.migrations.tenancy import upgrade_to_head_through_backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -193,7 +194,8 @@ def test_upgrade_contracts_then_downgrade_recreates_the_tables_empty(scratch_db:
             (ids["app"], ids["post"], "Ann", ["Py"], 3.0, "resume text")
         ]
 
-        command.upgrade(cfg, "head")
+        # Through the tenancy backfill: the contract (E2-02) refuses rows without an agency.
+        upgrade_to_head_through_backfill(cfg, scratch_db)
         command.check(cfg)  # raises if the models and the migrated schema differ
     finally:
         engine.dispose()

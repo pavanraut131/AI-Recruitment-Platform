@@ -16,18 +16,18 @@ pipeline (``tasks.process_candidate_ai``) writes them since E0-16; the backfill 
 them for the resumes processed before. Since the read switch (E0-19) ``extracted`` is also what
 the legacy candidate endpoints show as the candidate's name, contacts and profile.
 
-**Tenancy (EPIC-02).** ``resumes.agency_id`` (identity's agency) and ``uploaded_by_user_id``
-(identity's user, from E2-05) are plain UUIDs with no foreign key (ADR 0003), added by the E2-01
-expand migration as nullable columns (metadata-only). The upload sets ``agency_id``
-(``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03); E2-02 backfills it, makes it
-``NOT NULL`` and adds the index ``(agency_id, campaign_id)``.
+**Tenancy (EPIC-02).** ``resumes.agency_id`` (identity's agency, ``NOT NULL``) and
+``uploaded_by_user_id`` (identity's user, from E2-05) are plain UUIDs with no foreign key
+(ADR 0003), added by the E2-01 expand migration; E2-02 backfilled ``agency_id``, made it
+``NOT NULL`` and added the index ``(agency_id, campaign_id)`` (a campaign's resumes). The upload
+sets ``agency_id`` (``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03).
 """
 
 import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,6 +44,10 @@ class ResumeStatus(str):
 
 class Resume(Base):
     __tablename__ = "resumes"
+    __table_args__ = (
+        # A campaign's resumes, within the agency (lists, counts, the campaign delete).
+        Index("ix_resumes_agency_id_campaign_id", "agency_id", "campaign_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Hiring-owned campaign (no foreign key, ADR 0003).
@@ -81,7 +85,7 @@ class Resume(Base):
     # resume before dropping the table). Never part of an API response.
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # identity's user who uploaded the file; NULL before sign-in exists (E2-05).
     uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
