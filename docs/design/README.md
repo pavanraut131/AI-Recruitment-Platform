@@ -57,7 +57,6 @@ tabular-nums` on `body`), so scores and counts line up in columns and in sentenc
 
 | Use | Size | Class |
 |---|---|---|
-| Home greeting | 30px, semibold, -0.02em | `text-3xl font-semibold tracking-tight` |
 | Screen title | 26px, semibold | `text-title font-semibold tracking-tight` |
 | Review panel name | 20px, semibold | `text-xl font-semibold` |
 | Section heading | 15px, semibold | `text-section font-semibold` |
@@ -147,7 +146,7 @@ colleague.
 
 | Mock-up | App | Where the data differs |
 |---|---|---|
-| Home (`Main.dc.html`) | `/`, `features/home` | No user name before E2: the greeting has none. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign) and the role instead of a client (no client field). The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
+| Home (`Main.dc.html`) | `/`, `features/home` | The mock's greeting is dropped (D3, owner review): without a name it read as filler, so Home has a plain title and the day's numbers as one quiet row, like a campaign's. It uses the window like the workspace. A short "Good afternoon, <name>" can return after E2 adds sign-in. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign) and the role instead of a client (no client field). The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
 | Agency switcher (sidebar top) | Product header ("HireFlow AI") | E2-10 adds agencies; until then the header names the product only. |
 | Candidates (`Candidates.dc.html`) | `/campaigns/[id]`, `features/campaigns` + `features/applications` | Header: "Created 12 Nov" (no opened-at date), average instead of median score (the stats have no median). Table rows show the email under the name (no current role on an application). "Applied" is "Updated", the column the API sorts by. The panel overlays the table on narrow screens and sits beside it on wide ones; it is non-modal, so J/K keep working. Location is not shown (not extracted). |
 | Candidates, dark (`CandidatesDark.dc.html`) | Same, `.dark` tokens | Follows the system theme, or the sidebar's Theme menu. |

@@ -15,7 +15,7 @@ import { applicationHref, campaignHref } from "@/lib/routes"
 import { cn } from "@/lib/utils"
 
 import { useHome, useWorkspaceStats, type Home as HomeData, type ProcessingResume, type RecentMatch } from "./queries"
-import { greeting, longDate, plural, summarySentence } from "./summary"
+import { homeFacts, longDate, plural, type HomeFact } from "./summary"
 
 type Campaign = Schema<"Campaign">
 
@@ -30,9 +30,9 @@ const RESUME_STATUS_LABELS: Record<Schema<"ResumeStatus">, string> = {
 }
 
 /*
- * The greeting and date follow the reader's clock, which the server does not
- * know: the server renders a neutral heading and the client fills it in right
- * after hydration (no mismatch), then keeps it current each minute.
+ * The date follows the reader's clock, which the server does not know: the
+ * server renders without it and the client fills it in right after hydration
+ * (no mismatch), then keeps it current each minute.
  */
 function subscribeToMinutes(onChange: () => void) {
   const timer = setInterval(onChange, 60_000)
@@ -40,18 +40,16 @@ function subscribeToMinutes(onChange: () => void) {
 }
 function readClock(): string {
   const now = new Date()
-  return `${greeting(now.getHours())}|${longDate(now)}`
+  return longDate(now)
 }
-function useClock(): { greeting: string; date: string } | null {
-  const value = useSyncExternalStore(subscribeToMinutes, readClock, () => null)
-  if (value === null) return null
-  const [hello, date] = value.split("|")
-  return { greeting: hello, date }
+function useToday(): string | null {
+  return useSyncExternalStore(subscribeToMinutes, readClock, () => null)
 }
 
 /**
- * `/` (spec §4), a calm "today" page: a greeting and one sentence about the
- * day's numbers, then the focal point, the strong matches nobody has looked
+ * `/` (spec §4), a calm "today" page that uses the window like the workspace:
+ * its title and the day's numbers as one quiet row, then the focal point, the
+ * strong matches nobody has looked
  * at yet (from `GET /home`, best first), the open campaigns as compact rows,
  * and a quiet line about uploads still processing. A first run (no campaigns
  * at all) invites creating one.
@@ -59,25 +57,23 @@ function useClock(): { greeting: string; date: string } | null {
 export function Home() {
   const home = useHome()
   const stats = useWorkspaceStats()
-  const clock = useClock()
+  const today = useToday()
 
   const firstRun = stats.data?.campaigns.total === 0 && home.data !== undefined && isEmpty(home.data)
-  const summary = home.data && stats.data ? summarySentence(home.data, stats.data) : null
+  const facts = home.data && stats.data ? homeFacts(home.data, stats.data) : null
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-10 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
-      <header className="flex flex-wrap items-end gap-4">
-        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-1.5">
-          <p className="min-h-5 text-dense text-muted-foreground">{clock?.date}</p>
-          <h1 className="text-3xl leading-tight font-semibold tracking-tight">{clock?.greeting ?? "Today"}</h1>
-          <div className="mt-1 min-h-6 max-w-[620px] text-base text-ink-2">
-            {summary ? (
-              <p>
-                <span className="font-medium text-foreground">{summary.lead}</span>
-                {summary.rest}
-              </p>
+    <div className="flex w-full flex-col gap-8 px-4 pt-3 pb-14 sm:px-6 lg:px-10 2xl:px-14">
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <h1 className="text-title font-semibold tracking-tight">Home</h1>
+          <div className="min-h-6">
+            {facts ? (
+              <TodayFacts facts={facts} today={today} />
             ) : (stats.isPending || home.isPending) && !home.isError ? (
               <Skeleton className="mt-1 h-4 w-96 max-w-full" />
+            ) : today ? (
+              <p className="text-muted-foreground">{today}</p>
             ) : null}
           </div>
         </div>
@@ -96,9 +92,9 @@ export function Home() {
           action={<NewCampaignButton />}
         />
       ) : (
-        <div className="flex flex-wrap items-start gap-x-12 gap-y-10">
-          <ReadyForReview matches={home.data.recent_strong_matches} className="flex-[999_1_520px]" />
-          <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
+        <div className="grid items-start gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+          <ReadyForReview matches={home.data.recent_strong_matches} />
+          <div className="flex min-w-0 flex-col gap-6">
             <OpenCampaigns campaigns={home.data.active_campaigns} />
             <Processing processing={home.data.processing} />
           </div>
@@ -112,9 +108,28 @@ function isEmpty(home: HomeData): boolean {
   return home.active_campaigns.length === 0 && home.processing.total === 0 && home.recent_strong_matches.length === 0
 }
 
+/** The day's numbers as one quiet row (bold counts, muted words), then the date. */
+function TodayFacts({ facts, today }: { facts: HomeFact[]; today: string | null }) {
+  return (
+    <ul aria-label="Today" className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-ink-2">
+      {facts.map((fact) => (
+        <li key={fact.key}>
+          {fact.count !== null && (
+            <>
+              <span className="font-semibold text-foreground tabular-nums">{fact.count.toLocaleString("en-GB")}</span>{" "}
+            </>
+          )}
+          {fact.label}
+        </li>
+      ))}
+      {today && <li className="text-muted-foreground sm:border-l sm:pl-5">{today}</li>}
+    </ul>
+  )
+}
+
 function NewCampaignButton() {
   return (
-    <Button asChild size="lg">
+    <Button asChild>
       <Link href="/campaigns/new">
         <PlusIcon data-icon="inline-start" />
         New campaign
@@ -187,7 +202,7 @@ function QueueItem({ match }: { match: RecentMatch }) {
       >
         {initials(match.person.name)}
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className="flex min-w-36 flex-1 flex-col gap-0.5">
         <Link
           href={applicationHref(match.campaign.id, match.id)}
           className="truncate font-semibold outline-none after:absolute after:inset-0 focus-visible:underline"
@@ -199,7 +214,7 @@ function QueueItem({ match }: { match: RecentMatch }) {
           scored <RelativeTime iso={match.created_at} />
         </span>
       </div>
-      <span className="hidden w-44 shrink-0 truncate text-dense text-muted-foreground md:block" title={match.campaign.title}>
+      <span className="hidden max-w-72 min-w-0 shrink basis-44 truncate text-dense text-muted-foreground md:block 2xl:basis-72" title={match.campaign.title}>
         {match.campaign.title}
       </span>
       <span className="shrink-0">

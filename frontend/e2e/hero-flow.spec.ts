@@ -125,7 +125,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
 
   await test.step("3b. Home queues the new strong match, and opens its review", async () => {
     await sidebarLink(page, "Home").click()
-    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible()
     await expect(page.getByText(/waiting for a first look/)).toBeVisible()
     const campaign = page.getByRole("region", { name: "Open campaigns" }).getByRole("listitem").filter({ hasText: title })
     await expect(campaign.getByRole("link", { name: title })).toBeVisible()
@@ -262,7 +262,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
 
   await test.step("9. Home again: the reviewed candidate has left the queue", async () => {
     await sidebarLink(page, "Home").click()
-    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible()
     await expect(page.getByText(/waiting for a first look|has had a first look/)).toBeVisible()
     const campaign = page.getByRole("region", { name: "Open campaigns" }).getByRole("listitem").filter({ hasText: title })
     await expect(campaign.getByRole("link", { name: title })).toHaveAttribute("href", `/campaigns/${campaignId}`)
