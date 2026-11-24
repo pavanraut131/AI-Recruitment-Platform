@@ -1,7 +1,7 @@
-"""hiring ORM models: ``Campaign``, ``Application`` and ``LegacyCandidateMap``.
+"""hiring ORM models: ``Client``, ``Campaign``, ``Application`` and ``LegacyCandidateMap``.
 
-Tables ``campaigns``, ``applications`` and ``legacy_candidate_map`` (the last two created by the
-E0-14 expand migration). The upload pipeline writes ``applications`` through
+Tables ``clients`` (E2-01), ``campaigns``, ``applications`` and ``legacy_candidate_map`` (the last
+two created by the E0-14 expand migration). The upload pipeline writes ``applications`` through
 ``service.upsert_application``; the API reads and writes them since the read switch (E0-19).
 The legacy ``candidates`` table was dropped by the contract migration (E0-20, spec §6.1 phase 5).
 
@@ -14,6 +14,15 @@ campaigns.id``; ``tests/test_no_cross_module_foreign_keys.py`` checks the whole 
 ``applications.campaign_id`` is a same-module foreign key (``ON DELETE CASCADE``), which the
 database applies on a campaign delete; the campaign's resumes are deleted by ingestion in the
 same transaction (``app.api``, ``DELETE /campaigns/{id}``).
+
+**Tenancy (EPIC-02, expand phase E2-01).** ``clients``, ``campaigns`` and ``applications`` carry
+``agency_id``: identity's agency, a plain UUID with no foreign key (ADR 0003). On ``campaigns``
+and ``applications`` it is nullable until the E2-02 backfill and contract (``NOT NULL``, and
+composite foreign keys ``(agency_id, client_id) -> clients`` and ``(agency_id, campaign_id) ->
+campaigns``); every insert sets it already (``app.platform.tenancy.DEFAULT_AGENCY_ID``).
+``campaigns.client_id`` (nullable until E2-02 too) is the client the campaign is run for; new
+campaigns get ``DEFAULT_CLIENT_ID``. ``campaigns.created_by_user_id`` refers to identity's
+users (E2-05), also without a foreign key.
 """
 
 import enum
@@ -21,7 +30,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +52,44 @@ class CampaignStatus(str, enum.Enum):
     active = "active"
     closed = "closed"
     archived = "archived"
+
+
+class ClientStatus(str, enum.Enum):
+    active = "active"
+    # Archived, never deleted: campaigns refer to their client by id (spec §3.1).
+    archived = "archived"
+
+
+class Client(Base):
+    """An agency's customer; every campaign is run for one client (spec §3.1, §3.3).
+
+    Created by the E2-01 expand migration with the default agency's default client ("General",
+    ``app.platform.tenancy.DEFAULT_CLIENT_ID``). A new table, so ``agency_id`` is ``NOT NULL``
+    and its unique constraints include it from the start: a client name is unique per agency
+    (case-insensitively), and ``(agency_id, id)`` is the target of the composite foreign key
+    from ``campaigns`` that E2-02 adds.
+    """
+
+    __tablename__ = "clients"
+    __table_args__ = (
+        UniqueConstraint("agency_id", "id", name="uq_clients_agency_id_id"),
+        Index("uq_clients_agency_id_lower_name", "agency_id", text("lower(name)"), unique=True),
+        CheckConstraint("status IN ('active', 'archived')", name="ck_clients_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # identity's agency (no foreign key, ADR 0003).
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=ClientStatus.active.value
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Campaign(Base):
@@ -49,6 +107,13 @@ class Campaign(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # identity's user who created the campaign (no foreign key, ADR 0003); NULL for campaigns
+    # created before sign-in exists (E2-05).
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class Application(Base):
@@ -102,6 +167,9 @@ class Application(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class LegacyCandidateMap(Base):

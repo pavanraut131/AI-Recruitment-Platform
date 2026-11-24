@@ -11,6 +11,13 @@ other modules' tables are plain UUID columns with no foreign key and no ORM rela
 
 Created by the E0-14 expand migration (``person_resumes`` by the E0-15 one).
 ``app.modules.talent.service.resolve_person`` is the only writer.
+
+**Tenancy (EPIC-02).** Every table has ``agency_id``, identity's agency (a plain UUID, no foreign
+key, ADR 0003): the talent pool is per agency (spec §3.1). Added by the E2-01 expand migration
+as nullable; ``resolve_person`` sets it on every insert (``app.platform.tenancy.DEFAULT_AGENCY_ID``
+until E2-03). E2-02 backfills it, makes it ``NOT NULL``, adds composite foreign keys
+``(agency_id, person_id) -> people(agency_id, id)`` and makes matching per agency
+(``UNIQUE(agency_id, kind, value_normalized)``).
 """
 
 import uuid
@@ -62,12 +69,15 @@ class Person(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
 
 class PersonIdentifier(Base):
     """A normalised email or phone that identifies a Person (ADR 0004).
 
     ``UNIQUE(kind, value_normalized)`` guarantees one Person per identifier; it becomes
-    ``(agency_id, kind, value_normalized)`` in E2. ``inferred`` (sprint 3 decision, option A)
+    ``(agency_id, kind, value_normalized)`` in E2-02. ``inferred`` (sprint 3 decision, option A)
     marks a phone whose country was only inferred from ``PHONE_DEFAULT_REGION`` and that is not a
     mobile number: it is stored but never auto-matches on its own.
     """
@@ -96,6 +106,9 @@ class PersonIdentifier(Base):
     # Ingestion-owned resume the identifier was first seen on (no foreign key, ADR 0003).
     source_resume_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class IdentityConflict(Base):
@@ -128,6 +141,9 @@ class IdentityConflict(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
 
 class PersonResume(Base):
     """Which Person a resume was resolved to: one row per resolved resume (E0-15).
@@ -157,3 +173,6 @@ class PersonResume(Base):
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

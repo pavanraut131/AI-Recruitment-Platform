@@ -144,9 +144,11 @@ layers = ["ingestion", "hiring", "talent"]
 
 [[tool.importlinter.contracts]]
 id = "leaf-modules"
-name = "talent and ai import no other module"
+name = "talent, ai and identity import no other module"
 type = "forbidden"
-source_modules = ["app.modules.talent", "app.modules.ai"]
+# identity (EPIC-02 §3.2): other modules refer to agencies and users by id and take the tenant
+# types from app.platform.tenancy, so identity needs nothing from them either.
+source_modules = ["app.modules.talent", "app.modules.ai", "app.modules.identity"]
 # A module importing itself is not a violation (import-linter skips overlapping pairs).
 forbidden_modules = ["app.modules.*"]
 
@@ -177,6 +179,7 @@ source_modules = [
     "app.platform",
     "app.devtools",
     "app.modules.hiring",
+    "app.modules.identity",
     "app.modules.ingestion",
     "app.modules.talent",
 ]
