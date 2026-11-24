@@ -10,7 +10,7 @@
  */
 
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"
 
