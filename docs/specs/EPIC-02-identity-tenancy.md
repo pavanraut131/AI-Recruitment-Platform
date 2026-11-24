@@ -1,6 +1,6 @@
 # E2 · Identity & tenancy: Design Spec
 
-**Status:** in review  ·  **Date:** 2026-11-19  ·  **Roadmap:** [roadmap.md](../roadmap.md)  ·  **Depends on:** E1 closed (E1-10: the frontend calls only `/api/v2`)  ·  **ADRs:** [0009 Tenant isolation with row-level security](../adr/0009-tenant-isolation-row-level-security.md), [0010 Server-side sessions](../adr/0010-server-side-sessions.md)
+**Status:** approved (Sprint 7 started 2026-11-19)  ·  **Date:** 2026-11-19  ·  **Roadmap:** [roadmap.md](../roadmap.md)  ·  **Depends on:** E1 closed (E1-10: the frontend calls only `/api/v2`)  ·  **ADRs:** [0009 Tenant isolation with row-level security](../adr/0009-tenant-isolation-row-level-security.md), [0010 Server-side sessions](../adr/0010-server-side-sessions.md)
 
 ## 1. Goal
 
