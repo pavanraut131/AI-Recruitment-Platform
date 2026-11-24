@@ -109,7 +109,9 @@ export function CampaignWorkspace({
 }
 
 function WorkspaceFrame({ children }: { children: React.ReactNode }) {
-  return <div className="flex w-full max-w-[1440px] flex-col gap-5 px-4 pt-3 pb-10 sm:px-6 lg:px-10">{children}</div>
+  // A working surface: it uses the whole window (each tab decides how to fill it), and the
+  // review panel docks on the right of a full-width table instead of over empty space.
+  return <div className="flex w-full flex-col gap-5 px-4 pt-3 pb-10 sm:px-6 lg:px-10 2xl:px-14">{children}</div>
 }
 
 function BackToCampaigns() {
@@ -144,10 +146,13 @@ function WorkspaceHeader({
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-title font-semibold tracking-tight break-words">{campaign.title}</h1>
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-dense text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-dense text-muted-foreground">
             <span className="text-ink-2">{campaign.role}</span>
+            <MetaSeparator />
             <CampaignStatusBadge status={campaign.status} />
+            <MetaSeparator />
             <span>Created {shortDate(campaign.created_at)}</span>
+            {live !== "idle" && <MetaSeparator />}
             <LiveIndicator status={live} />
           </p>
         </div>
@@ -163,6 +168,15 @@ function WorkspaceHeader({
       </div>
       <CampaignSummary campaign={campaign} onTab={onTab} />
     </header>
+  )
+}
+
+/** A quiet middle dot between the header's facts, so the status dots don't run together. */
+function MetaSeparator() {
+  return (
+    <span aria-hidden="true" className="text-muted-foreground/60">
+      ·
+    </span>
   )
 }
 

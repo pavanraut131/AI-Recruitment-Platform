@@ -60,13 +60,17 @@ describe("CampaignWorkspace", () => {
     expect(screen.getByText(campaign.role)).toBeTruthy()
     expect(screen.getByRole("status").textContent).toBe("Live")
 
-    // The numbers read as one sentence (no KPI cards): counts at once, the split and average with the stats.
-    const summary = () => document.querySelector("[data-slot='campaign-summary']")?.textContent
+    // The numbers sit in one quiet row (no KPI cards): the count at once, the split and average with the stats,
+    // then a note for anything still processing or failed.
+    const items = () =>
+      within(screen.getByRole("list", { name: "Applicants" }))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
     await waitFor(() =>
-      expect(summary()).toBe(
-        "9 applicants. 4 strong, 3 possible, 1 unlikely and 1 not a match. Average score 71. " +
-          "2 resumes are still being read and scored. 1 resume could not be processed: see Uploads.",
-      ),
+      expect(items()).toEqual(["9 applicants", "4 strong", "3 possible", "1 unlikely", "1 not a match", "Average score 71"]),
+    )
+    expect(document.querySelector("[data-slot='campaign-summary'] p")?.textContent).toBe(
+      "2 resumes are still being read and scored. 1 resume could not be processed: see Uploads.",
     )
 
     expect(screen.getByRole("tab", { name: "Candidates", selected: true })).toBeTruthy()

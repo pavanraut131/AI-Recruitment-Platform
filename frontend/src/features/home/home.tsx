@@ -259,17 +259,19 @@ function campaignSummary(counts: Campaign["counts"]): string {
 function CampaignRow({ campaign }: { campaign: Campaign }) {
   const { counts } = campaign
   const strongShare = counts.applications > 0 ? (counts.strong_matches / counts.applications) * 100 : 0
+  // "Senior Python Engineer, platform team" already says its role: don't repeat it.
+  const showRole = !campaign.title.toLowerCase().includes(campaign.role.toLowerCase())
   return (
     <li className="relative flex flex-col gap-2 rounded-xl px-3 py-3 transition-colors focus-within:bg-muted/60 hover:bg-muted/60">
-      <span className="flex min-w-0 items-baseline gap-2">
+      <span className="flex min-w-0 flex-col gap-0.5">
         <Link
           href={campaignHref(campaign.id)}
-          className="truncate font-semibold outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:underline"
+          className="line-clamp-2 font-semibold break-words outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:underline"
           title={campaign.title}
         >
           {campaign.title}
         </Link>
-        <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">{campaign.role}</span>
+        {showRole && <span className="truncate text-dense text-muted-foreground">{campaign.role}</span>}
       </span>
       {/* Strong matches as a share of the applicants (the sentence below says the numbers). */}
       <span aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-border">
