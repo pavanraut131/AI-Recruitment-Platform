@@ -21,6 +21,8 @@ Fixtures
         ``join_transaction_mode="create_savepoint"``. ``commit()`` in code under test only
         releases a savepoint; the outer transaction is rolled back after the test, so nothing
         persists between tests. Use it in tests to arrange data and to assert on the database.
+        Bound to the default agency (``app.platform.tenancy.bind``, E2-03), the agency every
+        request is bound to until E2-05, so the services and repositories can be called with it.
     ``app`` (session)
         The FastAPI application (imported lazily).
     ``client`` (function)
@@ -113,11 +115,14 @@ async def db_connection(db_engine: AsyncEngine) -> AsyncIterator[AsyncConnection
 
 @pytest_asyncio.fixture
 async def db_session(db_connection: AsyncConnection) -> AsyncIterator[AsyncSession]:
+    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+
     session = AsyncSession(
         bind=db_connection,
         join_transaction_mode="create_savepoint",
         expire_on_commit=False,  # same as app.platform.database.AsyncSessionLocal
     )
+    bind(session, DEFAULT_AGENCY_ID)
     try:
         yield session
     finally:

@@ -218,6 +218,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',

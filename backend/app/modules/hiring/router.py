@@ -29,7 +29,8 @@ from app.modules.hiring.schemas import (
     JDParseRequest,
     JDParseResponse,
 )
-from app.platform.database import get_db
+from app.platform.request_tenant import default_agency_db, default_agency_scope
+from app.platform.tenancy import AccessScope
 
 campaigns_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 parse_jd_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -52,27 +53,33 @@ def _http_errors() -> Iterator[None]:
 
 # ── Campaigns ─────────────────────────────────────────────────
 @campaigns_router.post("", response_model=CampaignResponse, status_code=status.HTTP_201_CREATED)
-async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(get_db)) -> Campaign:
-    return await service.create_campaign(db, payload)
+async def create_campaign(
+    payload: CampaignCreate,
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
+) -> Campaign:
+    return await service.create_campaign(db, scope, payload)
 
 
 @campaigns_router.get("", response_model=list[CampaignResponse])
 async def list_campaigns(
     skip: int = 0,
     limit: int = 20,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
 ) -> Sequence[Campaign]:
-    return await service.list_campaigns(db, skip, limit)
+    return await service.list_campaigns(db, scope, skip, limit)
 
 
 @campaigns_router.put("/{campaign_id}", response_model=CampaignResponse)
 async def update_campaign(
     campaign_id: uuid.UUID,
     payload: CampaignUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
 ) -> Campaign:
     with _http_errors():
-        return await service.update_campaign(db, campaign_id, payload)
+        return await service.update_campaign(db, scope, campaign_id, payload)
 
 
 # ── Job description parsing ───────────────────────────────────

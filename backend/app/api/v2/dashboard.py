@@ -13,7 +13,8 @@ from app.api.v2.schemas import Home, HomeProcessing, ProcessingResume, Stats
 from app.modules.hiring import service as hiring
 from app.modules.ingestion import service as ingestion
 from app.modules.talent import service as talent
-from app.platform.database import get_db
+from app.platform.request_tenant import access_scope, tenant_db
+from app.platform.tenancy import AccessScope
 
 router = APIRouter(tags=["dashboard"])
 
@@ -23,20 +24,30 @@ HOME_MATCHES = 10
 
 
 @router.get("/stats", operation_id="getStats", response_model=Stats)
-async def get_stats(db: AsyncSession = Depends(get_db)) -> Stats:
+async def get_stats(
+    db: AsyncSession = Depends(tenant_db), scope: AccessScope = Depends(access_scope)
+) -> Stats:
     """Counts across all campaigns: campaigns by status, resumes by status, applications by
     category and stage, and people."""
-    workspace = await hiring.workspace_stats(db, await ingestion.resume_tally(db))
+    workspace = await hiring.workspace_stats(db, scope, await ingestion.resume_tally(db, scope))
     return Stats(**workspace.model_dump(), people=await talent.count_people(db))
 
 
 @router.get("/home", operation_id="getHome", response_model=Home)
-async def get_home(db: AsyncSession = Depends(get_db)) -> Home:
+async def get_home(
+    db: AsyncSession = Depends(tenant_db), scope: AccessScope = Depends(access_scope)
+) -> Home:
     """The Home screen in one call."""
-    campaigns = await hiring.active_campaigns(db, HOME_CAMPAIGNS, ingestion.resume_tallies(db))
-    in_progress, total = await ingestion.resumes_in_progress(db, HOME_PROCESSING)
-    refs = await hiring.campaign_refs(db, list(dict.fromkeys(r.campaign_id for r in in_progress)))
-    matches = await hiring.recent_strong_matches(db, HOME_MATCHES, ingestion.resume_profiles(db))
+    campaigns = await hiring.active_campaigns(
+        db, scope, HOME_CAMPAIGNS, ingestion.resume_tallies(db)
+    )
+    in_progress, total = await ingestion.resumes_in_progress(db, scope, HOME_PROCESSING)
+    refs = await hiring.campaign_refs(
+        db, scope, list(dict.fromkeys(r.campaign_id for r in in_progress))
+    )
+    matches = await hiring.recent_strong_matches(
+        db, scope, HOME_MATCHES, ingestion.resume_profiles(db)
+    )
     return Home(
         active_campaigns=campaigns,
         processing=HomeProcessing(

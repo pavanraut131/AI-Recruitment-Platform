@@ -3,6 +3,9 @@ from collections.abc import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+# Imported for its side effect too: the session listener that puts a bound session's agency in
+# every transaction (app.platform.tenancy, E2-03) is registered whenever a session can exist.
+from app.platform import tenancy  # noqa: F401
 from app.platform.config import settings
 
 engine = create_async_engine(

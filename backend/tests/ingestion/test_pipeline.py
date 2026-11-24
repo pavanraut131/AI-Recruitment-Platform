@@ -37,8 +37,12 @@ from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.fakes import InMemoryStorage
 from tests.ingestion.conftest import Events
+
+# The task message's agency (EPIC-02 §6.3); one without it is tests/tenancy's.
+DEFAULT_AGENCY = {"agency_id": str(DEFAULT_AGENCY_ID)}
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 REQUIRED_SKILLS = ["Python", "Go"]
@@ -123,7 +127,7 @@ def make_pdf_resume(db: Session, storage: InMemoryStorage, campaign: Campaign, t
 
 
 def analyse(resume: Resume) -> None:
-    result = tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    result = tasks.process_candidate_ai.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
     assert result.successful(), result.result
 
 
@@ -404,8 +408,8 @@ def pdf_resume(sync_db: Session, fake_storage: InMemoryStorage) -> Iterator[Resu
 
 def run_pipeline(resume: Resume) -> None:
     """Both tasks, as the worker would: text extraction, then (queued by it) AI analysis."""
-    assert tasks.extract_resume.apply(args=(str(resume.id),)).successful()
-    tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    assert tasks.extract_resume.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY).successful()
+    tasks.process_candidate_ai.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
 
 CLEAN_COUNTS = {
@@ -522,7 +526,7 @@ def test_text_extraction_failure_keeps_its_step(
 ) -> None:
     failures.at("extract_text", times=Failures.FOREVER)
 
-    tasks.extract_resume.apply(args=(str(pdf_resume.id),))
+    tasks.extract_resume.apply(args=(str(pdf_resume.id),), kwargs=DEFAULT_AGENCY)
 
     resume = reload(sync_db, pdf_resume)
     assert (resume.status, resume.processing_step) == ("failed", "extract_text")

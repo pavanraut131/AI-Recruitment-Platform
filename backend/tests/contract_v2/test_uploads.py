@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
 from app.modules.ingestion.events import campaign_channel, publish_resume_event
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.characterization.snapshot_utils import celery_calls_data, response_data
 from tests.characterization.sse import read_sse
 from tests.contract_v2.data import UNKNOWN_ID, V2, applicant, files, pdf
@@ -210,11 +211,23 @@ async def test_events_are_typed_and_campaign_filtered(
     publishers: list[Callable[[], None]] = [
         # Another campaign's event: never delivered.
         lambda: publish_resume_event(
-            str(uuid.uuid4()), "extracting", {"filename": "x.pdf"}, campaign_id=other.id
+            str(uuid.uuid4()),
+            "extracting",
+            {"filename": "x.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=other.id,
         ),  # fmt: skip
-        lambda: publish_resume_event(rid, "extracting", {"filename": "jane.pdf"}, campaign_id=cid),
+        lambda: publish_resume_event(
+            rid,
+            "extracting",
+            {"filename": "jane.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=cid,
+        ),
         # Not a valid ResumeEvent (unknown status): skipped, not sent malformed.
-        lambda: publish_resume_event(rid, "exploded", {}, campaign_id=cid),
+        lambda: publish_resume_event(
+            rid, "exploded", {}, agency_id=DEFAULT_AGENCY_ID, campaign_id=cid
+        ),
         lambda: publish_resume_event(
             rid,
             "done",
@@ -226,9 +239,12 @@ async def test_events_are_typed_and_campaign_filtered(
                 "person_id": str(uuid.uuid4()),
                 "matched_existing": False,
             },
+            agency_id=DEFAULT_AGENCY_ID,
             campaign_id=cid,
         ),  # fmt: skip
-        lambda: publish_resume_event(rid, "quota_exceeded", {"error": "quota"}, campaign_id=cid),
+        lambda: publish_resume_event(
+            rid, "quota_exceeded", {"error": "quota"}, agency_id=DEFAULT_AGENCY_ID, campaign_id=cid
+        ),
     ]
     result = await read_sse(
         app,
@@ -241,7 +257,7 @@ async def test_events_are_typed_and_campaign_filtered(
         "content_type": result.headers.get("content-type"),
         "events": result.events,
     } == snapshot
-    channel = campaign_channel(campaign.id)
+    channel = campaign_channel(DEFAULT_AGENCY_ID, campaign.id)
     assert fake_redis.sync_client().pubsub_numsub(channel) == [(channel.encode(), 0)]
 
 

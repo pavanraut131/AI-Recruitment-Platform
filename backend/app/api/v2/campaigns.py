@@ -22,9 +22,10 @@ from app.modules.hiring.schemas_v2 import (
     CampaignUpdate,
 )
 from app.modules.ingestion import service as ingestion
-from app.platform.database import get_db
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
+from app.platform.request_tenant import access_scope, tenant_db
+from app.platform.tenancy import AccessScope
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -49,12 +50,13 @@ async def list_campaigns(
     q: Annotated[
         str | None, Query(max_length=200, description="Contained in the title or the role.")
     ] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> CampaignPage:
     """Campaigns, newest first, with their counts."""
     query = hiring.CampaignQuery(statuses=[s.value for s in campaign_status or []], q=q)
     items, total = await hiring.list_campaigns_page(
-        db, query, page.offset, page.limit, ingestion.resume_tallies(db)
+        db, scope, query, page.offset, page.limit, ingestion.resume_tallies(db)
     )
     return CampaignPage(items=items, total=total, page=page.page, page_size=page.page_size)
 
@@ -65,9 +67,13 @@ async def list_campaigns(
     response_model=Campaign,
     responses=problem_responses(404, 422),
 )
-async def get_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Campaign:
+async def get_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
+) -> Campaign:
     with errors_as_http(HIRING_ERRORS):
-        return await hiring.get_campaign_v2(db, campaign_id, ingestion.resume_tallies(db))
+        return await hiring.get_campaign_v2(db, scope, campaign_id, ingestion.resume_tallies(db))
 
 
 @router.patch(
@@ -77,12 +83,15 @@ async def get_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db
     responses=problem_responses(404, 422),
 )
 async def update_campaign(
-    campaign_id: uuid.UUID, payload: CampaignUpdate, db: AsyncSession = Depends(get_db)
+    campaign_id: uuid.UUID,
+    payload: CampaignUpdate,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> Campaign:
     """Change the fields sent (title, role, description, required skills, status)."""
     with errors_as_http(HIRING_ERRORS):
         return await hiring.update_campaign_v2(
-            db, campaign_id, payload, ingestion.resume_tallies(db)
+            db, scope, campaign_id, payload, ingestion.resume_tallies(db)
         )
 
 
@@ -92,10 +101,14 @@ async def update_campaign(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=problem_responses(404, 422),
 )
-async def delete_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
+) -> None:
     """Delete the campaign with its applications, resumes and stored PDFs."""
     with errors_as_http(HIRING_ERRORS):
-        await hiring.delete_campaign(db, campaign_id)
+        await hiring.delete_campaign(db, scope, campaign_id)
     files = await ingestion.delete_campaign_resumes(db, campaign_id)
     await db.commit()
     await ingestion.delete_stored_files(files)
@@ -108,12 +121,14 @@ async def delete_campaign(campaign_id: uuid.UUID, db: AsyncSession = Depends(get
     responses=problem_responses(404, 422),
 )
 async def get_campaign_stats(
-    campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> CampaignStats:
     """The Insights numbers: resumes by status, applications by category and stage, mean
     score, score histogram and top skills."""
-    resumes = await ingestion.resume_tally(db, campaign_id)
+    resumes = await ingestion.resume_tally(db, scope, campaign_id)
     with errors_as_http(HIRING_ERRORS):
         return await hiring.campaign_insights(
-            db, campaign_id, resumes, ingestion.resume_profiles(db)
+            db, scope, campaign_id, resumes, ingestion.resume_profiles(db)
         )
