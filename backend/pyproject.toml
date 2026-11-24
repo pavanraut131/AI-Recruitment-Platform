@@ -47,6 +47,8 @@ dependencies = [
     "faker==30.8.2",
     # Identity normalisation (phone numbers -> E.164)
     "phonenumbers==9.0.41",
+    # Password hashing (Argon2id, EPIC-02 §4.2)
+    "argon2-cffi==25.1.0",
 ]
 
 [dependency-groups]
