@@ -35,6 +35,15 @@ pre-commit install   # once per clone; runs the hooks on every commit
 
 > These Make targets and the pre-commit config arrive with ticket **E0-02**. Until it merges they may not exist yet.
 
+### Signing in while developing
+
+`/api/v2` requires a session (E2-05). The seed creates one account per role in two agencies
+(password `hireflow-dev-password`, development only; the list is in the README under "Signing in
+locally"). Until the login screen arrives (E2-09) the dev and E2E stacks run with
+`AUTH_REQUIRED=false`, so the frontend works without signing in. In backend tests the `client`
+fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
+need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`.
+
 ## Branch protection on `master` (repo owner, one-time)
 
 Do this after ticket **E0-05** (the CI rewrite) has merged and its workflow has run at least once.

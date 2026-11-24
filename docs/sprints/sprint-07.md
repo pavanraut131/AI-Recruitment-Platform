@@ -95,6 +95,11 @@ Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenan
 
 Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenancy.md#e2-05--identity-core). Design: spec §4, §5.4, §8 and §10; [ADR 0010](../adr/0010-server-side-sessions.md) is accepted in this ticket.
 
+**Notes:**
+- **After pulling:** rebuild the images (new dependency `argon2-cffi`), run `alembic upgrade head` (migration `e2c05b3f7a21`), then `make seed` (or the seed command with `--if-empty`) to get the sign-in accounts. A local `.env` needs no change: the dev Compose backend defaults `AUTH_REQUIRED` to `false`, so the frontend keeps working without signing in. Set `AUTH_REQUIRED=true` in `.env` to try the session for real (README: "Signing in locally").
+- **Overlap with E2-04** (whichever merges second rebases): both migrations follow `e2b02c7a4d19`, so the second one's `down_revision` moves to the first. E2-05's grants run only when `hireflow_app` exists and leave `audit_events` with `SELECT, INSERT` (E2-04's acceptance criterion for that table); E2-04's isolation suite should put the five new tables on the global allowlist (§6.4). The test fixtures meet in `tests/conftest.py` (the `client` fixture now overrides `current_principal` with an owner of the default agency) and the new `tests/identity/conftest.py` (`auth_client` opens an unbound session per request, which E2-04's app role and RLS need too). `tenant_db` moved from `app.platform.request_tenant` to `app.modules.identity.dependencies`.
+- `AUTH_REQUIRED=false` is temporary: E2-09 removes it and the E2E stack signs in.
+
 ---
 
 ### D1 · Redesign rollout

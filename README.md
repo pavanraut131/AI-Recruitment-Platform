@@ -259,6 +259,48 @@ seeded resumes do not work. The same `--seed` always produces the same data.
 > (`pgvector/pgvector:pg16`), so run `docker compose down -v` once to drop the
 > old local volume. Local data is thrown away.
 
+#### Signing in locally
+`/api/v2` requires a signed-in session (EPIC-02, E2-05): a server-side session in an HttpOnly
+cookie (`hf_session` over http in development, `__Host-hf_session` with Secure cookies), plus a
+CSRF token in the `X-CSRF-Token` header on POST, PUT, PATCH and DELETE.
+
+The seed creates two agencies and one account per role in each, all with the
+**development-only** password `hireflow-dev-password` (the seed refuses to create them outside
+`APP_ENV=development` or `test`):
+
+| Agency | Owner | Admin | Recruiter | Viewer |
+|---|---|---|---|---|
+| Default agency (the seeded campaigns) | `owner@default.example` | `admin@default.example` | `recruiter@default.example` | `viewer@default.example` |
+| Northbank Talent (empty) | `owner@northbank.example` | `admin@northbank.example` | `recruiter@northbank.example` | `viewer@northbank.example` |
+
+The frontend has no login screen until E2-09, so the development stack runs with
+**`AUTH_REQUIRED=false`**: a request **without** a session cookie acts as the owner of the
+default agency (the dev Compose file defaults it to `false`; `.env.example` sets it). A request
+with a session cookie is always checked, so you can sign in with `curl` or the API docs
+(http://localhost:8000/api/v2/docs):
+
+```bash
+API=http://localhost:8000/api/v2
+curl -s -c jar -b jar $API/auth/csrf                        # {"csrf_token": "..."} + hf_csrf cookie
+TOKEN=$(grep hf_csrf jar | cut -f7)
+curl -s -c jar -b jar -H "X-CSRF-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"email":"owner@default.example","password":"hireflow-dev-password"}' $API/auth/login
+curl -s -b jar $API/me                                      # the signed-in user and agency
+```
+
+Set `AUTH_REQUIRED=true` in `.env` to make the API refuse requests without a session, as it does
+by default everywhere else. `AUTH_REQUIRED=false` and `SESSION_COOKIE_SECURE=false` are refused
+outside development and test, and so is a weak or template `SECRET_KEY`.
+
+Agencies and their owners are created by an operator command (there is no sign-up):
+
+```bash
+docker compose exec backend python -m app.modules.identity.cli create-agency \
+  --name "Rao Recruiting" --owner-email you@example.com          # asks for the owner's password
+docker compose exec backend python -m app.modules.identity.cli create-owner \
+  --email you@example.com --agency-name "Rao Recruiting"         # owner of the default agency, renamed
+```
+
 ### 4. Open the app
 | Service | URL |
 |---|---|
@@ -433,7 +475,8 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 ## API Reference
 
 The frontend uses **`/api/v2`** only (interactive docs at http://localhost:8000/api/v2/docs; the
-spec is [EPIC-01 §6](docs/specs/EPIC-01-frontend.md#6-api-apiv2)). The frozen **`/api/v1`** stays
+spec is [EPIC-01 §6](docs/specs/EPIC-01-frontend.md#6-api-apiv2)). It requires a session (see
+"Signing in locally"; sign-in endpoints in [EPIC-02 §8.2](docs/specs/EPIC-02-identity-tenancy.md#82-new-endpoints)). The frozen **`/api/v1`** stays
 for existing integrations until it is removed after E2:
 
 | Method | Endpoint | Description |
@@ -454,6 +497,12 @@ for existing integrations until it is removed after E2:
 
 | Variable | Description | Default |
 |---|---|---|
+| `APP_ENV` | `development`, `test`, or anything else for a deployment (`production`, `staging`): deployments refuse the development-only settings below | `development` |
+| `SECRET_KEY` | Signs the CSRF tokens. Outside development/test it must be at least 32 bytes and not the template value (`openssl rand -hex 32`) | `change_me` |
+| `AUTH_REQUIRED` | `false` lets `/api/v2` requests without a session act as the default agency's owner (until the login screen, E2-09). Development/test only | `true` (`false` in `.env.example` and the dev Compose stack) |
+| `SESSION_COOKIE_SECURE` | Secure session and CSRF cookies with the `__Host-` prefix; `false` only in development/test | on outside development/test |
+| `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT` | Session lifetimes (seconds or ISO 8601) | `PT8H`, `P7D` |
+| `LOGIN_MAX_FAILURES_PER_EMAIL`, `LOGIN_MAX_ATTEMPTS_PER_IP`, `LOGIN_RATE_LIMIT_WINDOW` | Sign-in throttling (429 with `Retry-After`, never a lockout) | `5`, `30`, 15 min |
 | `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
 | `GEMINI_API_KEY` | Google Gemini API key. **Required** when `AI_PROVIDER=gemini` (start-up fails with a clear error without it); not needed with `AI_PROVIDER=fake` | — |
 | `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
