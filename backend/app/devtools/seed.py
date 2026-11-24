@@ -23,7 +23,12 @@ What it does
     Tenancy (EPIC-02): everything is created in the default agency
     (``app.platform.tenancy.DEFAULT_AGENCY_ID``) and every campaign is run for its default client.
     ``generate`` needs a session bound to the default agency (E2-03: the services it calls take
-    the agency from the session); the CLI binds its own. Seeding several agencies comes with E2-05.
+    the agency from the session); the CLI binds its own.
+
+    Sign-in accounts (E2-05): before anything else, every run (``--if-empty`` and ``--reset``
+    too) makes sure a second agency and one user per role in each agency exist, with a
+    development-only password, and prints them (``app.devtools.seed_users``; idempotent, refused
+    outside development and test).
 
     Why through the services, not direct inserts (E0-20): until the contract phase the seed
     wrote legacy ``candidates`` and the backfill turned them into People and Applications. With
@@ -139,6 +144,7 @@ How each expected number is derived (no normalisation or matching code is run)
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import random
@@ -156,6 +162,7 @@ from faker import Faker
 from sqlalchemy import create_engine, delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
+from app.devtools import seed_users
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import service as hiring_service
 from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
@@ -816,6 +823,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         ensure_not_production()
         case_sizes(args.people)  # validate sizes before touching the database
+        for line in seed_users.describe(asyncio.run(seed_users.run())):
+            print(line)
         engine = create_engine(settings.SYNC_DATABASE_URL)
         with Session(engine) as session:
             bind(session, DEFAULT_AGENCY_ID)
@@ -839,7 +848,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 on_batch=session.commit,
             )
         engine.dispose()
-    except (SeedRefused, ValueError) as exc:
+    except (SeedRefused, seed_users.SeedUsersRefused, ValueError) as exc:
         print(f"seed: {exc}", file=sys.stderr)
         return 1
 
