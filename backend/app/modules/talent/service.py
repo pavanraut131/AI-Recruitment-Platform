@@ -25,10 +25,8 @@ inserts (the Person, its identifiers, a conflict, the resume's resolution) gets 
 lookups (identifiers, the Person it locks, the stored resolution) are filtered to it with
 ``tenant_filter``, which matches ``UNIQUE(agency_id, kind, value_normalized)``; and its
 advisory-lock keys start with the agency (``agency_id:kind:value``), so two agencies never wait
-on each other's locks and the same human in two agencies is two People (spec §3.4).
-**Transition:** while the default agency is bound, ``tenant_filter`` also matches rows that have
-no agency yet (stored before E2-01 and not yet backfilled), so uploads during the backfill still
-find the existing People. After the E2-02 contract there are none; the branch goes with E2-04.
+on each other's locks and the same human in two agencies is two People (spec §3.4). Row-level
+security (E2-04) holds the same line underneath.
 """
 
 import uuid

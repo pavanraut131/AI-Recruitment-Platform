@@ -8,8 +8,10 @@ from fastapi.responses import JSONResponse
 from app.api import routes as composed
 from app.modules.hiring import router as hiring
 from app.modules.ingestion import router as ingestion
+from app.platform import database
 from app.platform.config import settings
 from app.platform.logging import configure_logging
+from app.platform.rls import check_app_role
 from app.platform.storage import ensure_bucket_exists
 from app.v2 import v2_app
 
@@ -21,6 +23,12 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     logger.info("starting_up", env=settings.APP_ENV)
+    # Refuse to serve as a database user that would bypass row-level security (a superuser,
+    # BYPASSRLS, a table owner): EPIC-02 spec §6.2. Raises UnsafeDatabaseRole, which stops
+    # the server before it accepts a request.
+    async with database.engine.connect() as conn:
+        role = await conn.run_sync(check_app_role, "the API")
+    logger.info("database_role_checked", role=role)
     # Ensure MinIO bucket exists
     try:
         ensure_bucket_exists()
