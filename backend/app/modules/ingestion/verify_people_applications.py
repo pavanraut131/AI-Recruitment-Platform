@@ -19,7 +19,8 @@ Checks
       in the same campaign, resolved to the same Person.
     * ``done_resumes_have_people``: every ``done`` resume has a ``person_id`` that exists in
       ``people`` and agrees with talent's record of the resolution (``person_resumes``).
-    * ``identifiers_unique``: no ``(kind, value_normalized)`` stored twice.
+    * ``identifiers_unique``: no ``(agency_id, kind, value_normalized)`` stored twice (the same
+      value in two agencies is two People, by design: EPIC-02 spec §3.4).
     * ``people_without_identifiers_justified``: a Person with no identifier is allowed only when
       none of its (remaining) resumes had a match-eligible one (ADR 0004 amendment, option A: an
       inferred phone does not count as usable).
@@ -27,6 +28,16 @@ Checks
     * ``applications_have_extractions``: every application's current resume has an extraction
       snapshot (``resumes.extracted``), which the candidate endpoints show as the candidate's
       name, contacts and profile (spec §7.1).
+    * ``tenancy_complete`` (EPIC-02 spec §7.3): no row of a tenant table (``campaigns``,
+      ``applications``, ``people``, ``person_identifiers``, ``identity_conflicts``,
+      ``person_resumes``, ``resumes``) is without an ``agency_id``, and every ``agency_id`` is a
+      known agency. Fails until the tenancy backfill (``backfill_tenancy``) has run.
+    * ``cross_module_same_agency``: an application has the agency of its campaign, its Person
+      and its resume; a resume has the agency of its campaign and of its Person. Pairs where
+      either side has no agency yet are left to ``tenancy_complete``, and missing rows to the
+      checks above.
+    * ``clients_same_agency``: every campaign has a client, the client exists, and it belongs to
+      the campaign's agency (the contract's composite foreign key enforces the same).
     * With ``--manifest``: ``expected.{people, applications, identity_conflicts}`` of the seed
       manifest (``app.devtools.seed``), exactly. When the manifest lists its ``campaign_ids``,
       the comparison counts only rows in those campaigns, so uploads to other campaigns during
@@ -36,8 +47,8 @@ Checks
 keeps them pointing at an existing application, and their ``candidate_id`` refers to nothing
 since ``candidates`` was dropped (a historical id map).
 
-Cross-module reads go through each module's service (``hiring.service``, ``talent.service``);
-ingestion reads its own ``resumes``.
+Cross-module reads go through each module's service (``hiring.service``, ``talent.service``,
+``identity.service``); ingestion reads its own ``resumes``.
 """
 
 from __future__ import annotations
@@ -55,6 +66,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
+from app.modules.identity import service as identity_service
 from app.modules.ingestion import repository, tasks
 from app.modules.talent import service as talent_service
 from app.platform.config import settings
@@ -170,8 +182,8 @@ def verify(
     report.checks.append(check)
 
     check = Check("identifiers_unique")
-    for kind, value, rows in talent_service.duplicate_identifiers(db):
-        check.fail(f"{kind} {value!r} is stored {rows} times")
+    for agency_id, kind, value, rows in talent_service.duplicate_identifiers(db):
+        check.fail(f"{kind} {value!r} is stored {rows} times in agency {agency_id}")
     report.checks.append(check)
 
     check = Check("people_without_identifiers_justified")
@@ -206,9 +218,88 @@ def verify(
             check.fail(f"application {app.id}: resume {app.resume_id} has no extraction")
     report.checks.append(check)
 
+    _check_tenancy(db, report, applications, resumes)
+
     if manifest is not None:
         _compare_manifest(report, manifest, applications, resumes, conflict_resumes)
     return report
+
+
+def _check_tenancy(
+    db: Session,
+    report: Report,
+    applications: dict[uuid.UUID, hiring_service.ApplicationRef],
+    resumes: dict[uuid.UUID, Any],
+) -> None:
+    """The EPIC-02 checks (spec §7.3)."""
+    agencies = identity_service.agency_ids(db)
+    campaigns = hiring_service.campaign_tenancy(db)
+    people = talent_service.person_agencies(db)
+    census = {
+        **hiring_service.agency_census(db),
+        **talent_service.agency_census(db),
+        "resumes": repository.agency_census_sync(db),
+    }
+    report.counts["agencies"] = len(agencies)
+
+    check = Check("tenancy_complete")
+    for table, rows_by_agency in census.items():
+        for agency_id, rows in sorted(rows_by_agency.items(), key=lambda kv: str(kv[0])):
+            if agency_id is None:
+                check.fail(f"{table}: {rows} row(s) without an agency (run backfill_tenancy)")
+            elif agency_id not in agencies:
+                check.fail(f"{table}: {rows} row(s) of unknown agency {agency_id}")
+    report.checks.append(check)
+
+    def differ(a: uuid.UUID | None, b: uuid.UUID | None) -> bool:
+        return a is not None and b is not None and a != b
+
+    check = Check("cross_module_same_agency")
+    for app in applications.values():
+        campaign = campaigns.get(app.campaign_id)
+        resume = resumes.get(app.resume_id)
+        if campaign is not None and differ(app.agency_id, campaign.agency_id):
+            check.fail(
+                f"application {app.id} (agency {app.agency_id}): campaign {app.campaign_id} "
+                f"is in agency {campaign.agency_id}"
+            )
+        if differ(app.agency_id, people.get(app.person_id)):
+            check.fail(
+                f"application {app.id} (agency {app.agency_id}): person {app.person_id} is in "
+                f"agency {people[app.person_id]}"
+            )
+        if resume is not None and differ(app.agency_id, resume.agency_id):
+            check.fail(
+                f"application {app.id} (agency {app.agency_id}): resume {app.resume_id} is in "
+                f"agency {resume.agency_id}"
+            )
+    for rid, resume in resumes.items():
+        campaign = campaigns.get(resume.campaign_id)
+        if campaign is not None and differ(resume.agency_id, campaign.agency_id):
+            check.fail(
+                f"resume {rid} (agency {resume.agency_id}): campaign {resume.campaign_id} is "
+                f"in agency {campaign.agency_id}"
+            )
+        if resume.person_id is not None and differ(resume.agency_id, people.get(resume.person_id)):
+            check.fail(
+                f"resume {rid} (agency {resume.agency_id}): person {resume.person_id} is in "
+                f"agency {people[resume.person_id]}"
+            )
+    report.checks.append(check)
+
+    check = Check("clients_same_agency")
+    clients = hiring_service.client_agencies(db)
+    for campaign_id, campaign in campaigns.items():
+        if campaign.client_id is None:
+            check.fail(f"campaign {campaign_id} has no client")
+        elif campaign.client_id not in clients:
+            check.fail(f"campaign {campaign_id}: client {campaign.client_id} does not exist")
+        elif differ(campaign.agency_id, clients[campaign.client_id]):
+            check.fail(
+                f"campaign {campaign_id} (agency {campaign.agency_id}): client "
+                f"{campaign.client_id} is in agency {clients[campaign.client_id]}"
+            )
+    report.checks.append(check)
 
 
 def _compare_manifest(

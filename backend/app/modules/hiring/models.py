@@ -15,14 +15,16 @@ campaigns.id``; ``tests/test_no_cross_module_foreign_keys.py`` checks the whole 
 database applies on a campaign delete; the campaign's resumes are deleted by ingestion in the
 same transaction (``app.api``, ``DELETE /campaigns/{id}``).
 
-**Tenancy (EPIC-02, expand phase E2-01).** ``clients``, ``campaigns`` and ``applications`` carry
-``agency_id``: identity's agency, a plain UUID with no foreign key (ADR 0003). On ``campaigns``
-and ``applications`` it is nullable until the E2-02 backfill and contract (``NOT NULL``, and
-composite foreign keys ``(agency_id, client_id) -> clients`` and ``(agency_id, campaign_id) ->
-campaigns``); every insert sets it already (``app.platform.tenancy.DEFAULT_AGENCY_ID``).
-``campaigns.client_id`` (nullable until E2-02 too) is the client the campaign is run for; new
-campaigns get ``DEFAULT_CLIENT_ID``. ``campaigns.created_by_user_id`` refers to identity's
-users (E2-05), also without a foreign key.
+**Tenancy (EPIC-02).** ``clients``, ``campaigns`` and ``applications`` carry ``agency_id``
+(``NOT NULL``): identity's agency, a plain UUID with no foreign key (ADR 0003). Added by the
+E2-01 expand migration, backfilled and contracted by E2-02 (``e2b02c7a4d19``). Within hiring the
+database keeps the agency consistent with **composite foreign keys** to ``UNIQUE(agency_id,
+id)`` targets: a campaign's client is of the campaign's agency (``(agency_id, client_id) ->
+clients``), and an application's campaign of the application's (``(agency_id, campaign_id) ->
+campaigns``, ``ON DELETE CASCADE``, which replaced the single-column key). Every insert sets the
+agency (``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03); ``campaigns.client_id``
+(``NOT NULL``) is the client the campaign is run for, ``DEFAULT_CLIENT_ID`` until E2-06.
+``campaigns.created_by_user_id`` refers to identity's users (E2-05), also without a foreign key.
 """
 
 import enum
@@ -35,6 +37,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
     Text,
@@ -94,6 +97,18 @@ class Client(Base):
 
 class Campaign(Base):
     __tablename__ = "campaigns"
+    __table_args__ = (
+        # Target of the composite foreign key from applications.
+        UniqueConstraint("agency_id", "id", name="uq_campaigns_agency_id_id"),
+        # The client is one of the campaign's agency's clients.
+        ForeignKeyConstraint(
+            ["agency_id", "client_id"],
+            ["clients.agency_id", "clients.id"],
+            name="fk_campaigns_agency_id_client_id_clients",
+        ),
+        # The agency's campaign lists (by status, most recently updated first).
+        Index("ix_campaigns_agency_id_status_updated_at", "agency_id", "status", "updated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -108,9 +123,9 @@ class Campaign(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key) and hiring's client; see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # identity's user who created the campaign (no foreign key, ADR 0003); NULL for campaigns
     # created before sign-in exists (E2-05).
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -128,14 +143,21 @@ class Application(Base):
 
     __tablename__ = "applications"
     __table_args__ = (
-        # Also serves lookups by campaign_id (leading column), so no separate index for it.
+        # Also serves lookups by campaign_id (leading column), so no separate index for it; the
+        # cascade from a campaign delete uses it too.
         UniqueConstraint("campaign_id", "person_id", name="uq_applications_campaign_id_person_id"),
+        # The campaign is of the application's agency.
+        ForeignKeyConstraint(
+            ["agency_id", "campaign_id"],
+            ["campaigns.agency_id", "campaigns.id"],
+            ondelete="CASCADE",
+            name="fk_applications_agency_id_campaign_id_campaigns",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    campaign_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
-    )
+    # Same-module key to campaigns, with the agency (see __table_args__).
+    campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # Talent-owned Person (no foreign key, ADR 0003). Indexed for "applications of this person".
     person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     # Ingestion-owned resume submitted for this application (no foreign key, ADR 0003). Indexed
@@ -168,8 +190,8 @@ class Application(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
 class LegacyCandidateMap(Base):

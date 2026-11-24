@@ -55,7 +55,7 @@ from app.modules.ingestion import tasks, verify_people_applications
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
 from tests import postgres
 from tests.fakes import InMemoryStorage
 
@@ -138,7 +138,13 @@ def verify(
 
 def make_campaign(sessions: sessionmaker[Session], title: str = "Backend") -> uuid.UUID:
     with sessions() as db:
-        campaign = Campaign(title=title, role="Backend Engineer", required_skills=["Python"])
+        campaign = Campaign(
+            title=title,
+            role="Backend Engineer",
+            required_skills=["Python"],
+            agency_id=DEFAULT_AGENCY_ID,
+            client_id=DEFAULT_CLIENT_ID,
+        )
         db.add(campaign)
         db.commit()
         return campaign.id
@@ -167,11 +173,13 @@ def make_application(
             status="done",
             uploaded_at=uploaded_at,
             extracted=extraction.model_dump(mode="json"),
+            agency_id=DEFAULT_AGENCY_ID,
         )
         db.add(resume)
         db.flush()
         resolution = talent_service.resolve_person(
             db,
+            agency_id=DEFAULT_AGENCY_ID,
             email=email,
             phone=phone,
             profile=tasks.person_profile(extraction),
@@ -426,6 +434,7 @@ async def test_an_upload_after_the_contract_is_processed_and_verified(
             status="processing",
             uploaded_at=datetime.now(UTC),
             raw_text="Meera Iyer\nmeera.iyer@example.com\nBackend Engineer, 4 years\nSkills: Go",
+            agency_id=DEFAULT_AGENCY_ID,
         )
         db.add(resume)
         db.commit()
@@ -583,9 +592,43 @@ def test_verify_fails_on_a_person_resolved_from_no_resume(
     sessions: sessionmaker[Session], seeded: dict[str, Any]
 ) -> None:
     with sessions() as db:
-        db.add(Person(full_name="Nobody"))
+        db.add(Person(full_name="Nobody", agency_id=DEFAULT_AGENCY_ID))
         db.commit()
     assert failed_checks(verify(sessions)) == {"people_have_resumes"}
+
+
+def test_verify_fails_on_a_resume_in_another_agency_than_its_application(
+    sessions: sessionmaker[Session], seeded: dict[str, Any]
+) -> None:
+    """No foreign key ties a resume's agency to its campaign's, application's or Person's
+    (they are in other modules, ADR 0003): only the services and this check do (E2-02)."""
+    other = uuid.UUID("00000000-0000-4000-8000-0000000000b2")
+    with sessions() as db:
+        db.execute(
+            text("INSERT INTO agencies (id, name, slug, status) VALUES (:id, 'B', 'b', 'active')"),
+            {"id": other},
+        )
+        rid = db.scalars(select(Application.resume_id).limit(1)).one()
+        db.execute(update(Resume).where(Resume.id == rid).values(agency_id=other))
+        db.commit()
+    try:
+        report = verify(sessions)
+        assert failed_checks(report) == {"cross_module_same_agency"}
+        rendered = report.render()
+        assert f"resume {rid} is in agency {other}" in rendered  # from its application
+        assert f"resume {rid} (agency {other}): campaign" in rendered
+        assert f"resume {rid} (agency {other}): person" in rendered
+
+        with sessions() as db:  # an agency nobody knows: tenancy_complete says so
+            db.execute(text("DELETE FROM agencies WHERE id = :id"), {"id": other})
+            db.commit()
+        report = verify(sessions)
+        assert "tenancy_complete" in failed_checks(report)
+        assert f"resumes: 1 row(s) of unknown agency {other}" in report.render()
+    finally:
+        with sessions() as db:
+            db.execute(text("DELETE FROM agencies WHERE id = :id"), {"id": other})
+            db.commit()
 
 
 def test_people_without_identifiers_are_fine_when_their_resumes_had_none_usable(

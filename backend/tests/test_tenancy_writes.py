@@ -4,7 +4,8 @@ Since E2-03 every insert path writes the agency its session is bound to; every r
 to the default agency (``app.platform.tenancy.DEFAULT_AGENCY_ID``) until E2-05, and a new
 campaign is run for the default client. One test per insert path: campaigns (v1 and v2), resumes
 (the upload), the pipeline's writes (People, identifiers, conflicts, ``person_resumes``,
-applications) and the seed. Writes in another agency: ``tests/tenancy/test_repository_filters.py``.
+applications) and the seed. Writes in another agency: ``tests/tenancy/test_repository_filters.py``. Since the E2-02 contract the columns are ``NOT NULL``, so a missing insert path fails at once
+as well.
 """
 
 from __future__ import annotations
@@ -85,6 +86,7 @@ def _resolve(
 ) -> uuid.UUID:
     return talent_service.resolve_person(
         session,
+        agency_id=DEFAULT_AGENCY_ID,
         email=email,
         phone=phone,
         profile=PersonProfile(full_name="Asha Rao"),
@@ -97,7 +99,13 @@ def _resolve(
 def _pipeline_writes(session: Session) -> None:
     """Two People, then a resume with one's email and the other's phone (a conflict), and an
     application: every table the pipeline inserts into gets a row."""
-    campaign = Campaign(title="C", role="Engineer", required_skills=[])
+    campaign = Campaign(
+        title="C",
+        role="Engineer",
+        required_skills=[],
+        agency_id=DEFAULT_AGENCY_ID,
+        client_id=DEFAULT_CLIENT_ID,
+    )
     session.add(campaign)
     session.flush()
     _resolve(session, "asha@example.com", None, uuid.uuid4())
@@ -125,8 +133,9 @@ async def test_the_pipeline_writes_the_default_agency(db_session: AsyncSession) 
 
 
 async def test_an_application_keeps_its_agency_when_rescored(db_session: AsyncSession) -> None:
-    """The upsert sets ``agency_id`` on insert only: a row written before E2-01 keeps ``NULL``
-    (for the E2-02 backfill), and a row's agency never changes."""
+    """The upsert sets ``agency_id`` on insert only, so a row's agency never changes. (Before the
+    E2-02 contract this also left a row written before E2-01 at ``NULL`` for the backfill; now
+    the column is ``NOT NULL`` and the composite key ties it to the campaign's agency.)"""
     campaign = await make_campaign(db_session)
 
     def upsert(session: Session, resume_id: uuid.UUID) -> Application:
@@ -141,11 +150,8 @@ async def test_an_application_keeps_its_agency_when_rescored(db_session: AsyncSe
 
     person_id = uuid.uuid4()
     first = await db_session.run_sync(upsert, uuid.uuid4())
-    await db_session.execute(
-        text("UPDATE applications SET agency_id = NULL WHERE id = :id"), {"id": first.id}
-    )
     again = await db_session.run_sync(upsert, uuid.uuid4())
-    assert (again.id, again.agency_id) == (first.id, None)
+    assert (again.id, again.agency_id) == (first.id, DEFAULT_AGENCY_ID)
 
 
 async def test_the_seed_writes_the_default_agency_and_client(db_session: AsyncSession) -> None:

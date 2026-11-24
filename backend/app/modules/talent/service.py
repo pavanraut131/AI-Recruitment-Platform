@@ -4,7 +4,9 @@ Other modules call :func:`resolve_person` (and use the types in ``app.modules.ta
 they never touch talent's tables. The callers are the upload pipeline (E0-16) and the seed
 generator (``app.devtools.seed``; until E0-20 also the backfill), all running a synchronous
 ``Session``. The verification (``app.modules.ingestion.verify_people_applications``) reads
-through the functions under "Reads for the verification". The ``/api/v2`` people endpoints
+through the functions under "Reads for the verification", and the tenancy backfill
+(``app.modules.ingestion.backfill_tenancy``, E2-02) fills talent's tables through
+:func:`fill_tenancy_batch`. The ``/api/v2`` people endpoints
 (``app.api.v2``, E1-02) read through the functions under "People (v2)", with the request's
 ``AsyncSession``.
 
@@ -16,11 +18,17 @@ a resume whose processing then fails. The advisory locks it takes are held until
 callers should commit promptly after it returns. It needs ``READ COMMITTED`` (Postgres' default):
 each statement must see rows committed while it waited for a lock.
 
-**Tenancy.** Every row :func:`resolve_person` inserts (the Person, its identifiers, a conflict,
-the resume's resolution) gets the ``agency_id`` of the agency the session is bound to (E2-03,
-``app.platform.tenancy``), and the people reads are filtered to it. Matching itself is not per
-agency yet: E2-02 scopes the identifiers' unique constraint, the lookup and the advisory-lock
-keys to the agency (spec §3.4).
+**Tenancy (E2-01 to E2-03).** :func:`resolve_person` works within one agency: the caller passes
+it (``agency_id``, the agency its session is bound to, ``app.platform.tenancy.agency_id_of``) and
+it must be the session's (:class:`~app.platform.tenancy.TenantMismatch` otherwise). Every row it
+inserts (the Person, its identifiers, a conflict, the resume's resolution) gets that agency; its
+lookups (identifiers, the Person it locks, the stored resolution) are filtered to it with
+``tenant_filter``, which matches ``UNIQUE(agency_id, kind, value_normalized)``; and its
+advisory-lock keys start with the agency (``agency_id:kind:value``), so two agencies never wait
+on each other's locks and the same human in two agencies is two People (spec §3.4).
+**Transition:** while the default agency is bound, ``tenant_filter`` also matches rows that have
+no agency yet (stored before E2-01 and not yet backfilled), so uploads during the backfill still
+find the existing People. After the E2-02 contract there are none; the branch goes with E2-04.
 """
 
 import uuid
@@ -39,7 +47,7 @@ from app.modules.talent import schemas_v2 as v2
 from app.modules.talent.identity import classify_phone, normalize_email
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import agency_id_of
+from app.platform.tenancy import TenantMismatch, agency_id_of
 
 logger = structlog.get_logger()
 
@@ -65,14 +73,16 @@ class _Identifier:
     def key(self) -> tuple[str, str]:
         return (self.kind, self.value)
 
-    @property
-    def lock_key(self) -> str:
-        return f"{self.kind}:{self.value}"
+
+def _lock_key(agency_id: uuid.UUID, ident: _Identifier) -> str:
+    """The advisory-lock key of an identifier: per agency (spec §3.4)."""
+    return f"{agency_id}:{ident.kind}:{ident.value}"
 
 
 def resolve_person(
     session: Session,
     *,
+    agency_id: uuid.UUID,
     email: str | None,
     phone: str | None,
     profile: PersonProfile,
@@ -81,6 +91,10 @@ def resolve_person(
     default_region: str,
 ) -> ResolveResult:
     """Attach a resume to an existing Person or create one, and refresh the Person's profile.
+
+    ``agency_id`` is the agency the resume belongs to, and must be the one ``session`` is bound
+    to (``TenantMismatch`` otherwise): matching, the locks and every row written stay within it
+    (see the module docstring).
 
     ``email`` and ``phone`` are the raw values from the resume; they are normalised here
     (``talent.identity``). ``default_region`` is normally ``settings.PHONE_DEFAULT_REGION``.
@@ -96,25 +110,32 @@ def resolve_person(
     - The email matches Person A and the phone Person B: attach to **A** and record an
       ``identity_conflicts`` row. People are never merged.
 
-    An identifier already stored for a *different* Person (an inferred phone, or the phone of a
-    conflict) is not added: ``UNIQUE(kind, value_normalized)`` allows one owner per value.
+    An identifier already stored for a *different* Person of the agency (an inferred phone, or
+    the phone of a conflict) is not added: ``UNIQUE(agency_id, kind, value_normalized)`` allows
+    one owner per value in an agency.
 
     Idempotent per ``resume_id``: once a resume is resolved (and committed), calling again
     returns the stored result and changes nothing, even with different arguments.
 
     Concurrency (spec §5.4): before reading anything it takes a transaction-level advisory lock
-    on the resume and on every normalised identifier, in one global order, so concurrent calls
-    that share any identifier run one after the other. Should an insert still hit the unique
+    on the resume and on every normalised identifier of the agency (``agency_id:kind:value``),
+    in one global order, so concurrent calls that share any identifier in the same agency run
+    one after the other. Should an insert still hit the unique
     constraint, the attempt is rolled back to a savepoint, re-read and retried once.
     """
     if uploaded_at.tzinfo is None:
         raise ValueError("uploaded_at must be timezone-aware")
+    if agency_id != agency_id_of(session):
+        raise TenantMismatch(
+            f"resolve_person for agency {agency_id} on a session of {agency_id_of(session)}"
+        )
 
     identifiers = _normalise(email, phone, default_region)
     repository.take_advisory_locks(
-        session, [f"resume:{resume_id}", *(ident.lock_key for ident in identifiers)]
+        session, [f"resume:{resume_id}", *(_lock_key(agency_id, ident) for ident in identifiers)]
     )
     args: dict[str, Any] = {
+        "agency_id": agency_id,
         "identifiers": identifiers,
         "profile": profile,
         "resume_id": resume_id,
@@ -183,10 +204,41 @@ def resolutions(session: Session) -> dict[uuid.UUID, uuid.UUID]:
     return repository.resolutions(session)
 
 
-def duplicate_identifiers(session: Session) -> list[tuple[str, str, int]]:
-    """``(kind, value_normalized, rows)`` stored more than once. Always empty while
-    ``UNIQUE(kind, value_normalized)`` exists; checked anyway, it is what matching relies on."""
+def duplicate_identifiers(session: Session) -> list[tuple[uuid.UUID | None, str, str, int]]:
+    """``(agency_id, kind, value_normalized, rows)`` stored more than once in one agency. Always
+    empty while ``UNIQUE(agency_id, kind, value_normalized)`` exists; checked anyway, it is what
+    matching relies on. The same value in two agencies is two People, by design."""
     return repository.duplicate_identifiers(session)
+
+
+def person_agencies(session: Session) -> dict[uuid.UUID, uuid.UUID | None]:
+    """``person_id -> agency_id`` of every Person."""
+    return repository.person_agencies(session)
+
+
+def agency_census(session: Session) -> dict[str, dict[uuid.UUID | None, int]]:
+    """``table -> {agency_id: rows}`` for talent's four tables (``None``: no agency yet)."""
+    return repository.agency_census(session)
+
+
+# ── Tenancy backfill (``app.modules.ingestion.backfill_tenancy``, E2-02) ──
+TENANCY_TABLES: tuple[str, ...] = repository.TENANCY_TABLES
+
+
+def fill_tenancy_batch(
+    session: Session, table: str, *, agency_id: uuid.UUID, after: uuid.UUID | None, limit: int
+) -> list[uuid.UUID]:
+    """One backfill batch of ``table`` (one of :data:`TENANCY_TABLES`): the next ``limit`` rows
+    after ``after`` (by primary key) without an agency get ``agency_id``. Returns the keys
+    updated, ascending (empty: the table is done after ``after``). Does not commit."""
+    return repository.fill_tenancy_batch(
+        session, table, agency_id=agency_id, after=after, limit=limit
+    )
+
+
+def count_tenancy_gaps(session: Session, table: str) -> int:
+    """Rows of ``table`` still without an agency."""
+    return repository.count_tenancy_gaps(session, table)
 
 
 def people_without_identifiers(session: Session) -> dict[uuid.UUID, list[uuid.UUID]]:
@@ -314,6 +366,7 @@ def _normalise(email: str | None, phone: str | None, default_region: str) -> lis
 def _resolve_locked(
     session: Session,
     *,
+    agency_id: uuid.UUID,
     identifiers: Sequence[_Identifier],
     profile: PersonProfile,
     resume_id: uuid.UUID,
@@ -338,7 +391,7 @@ def _resolve_locked(
     conflicting_id = owners.get(PHONE) if owners.get(PHONE) not in (None, chosen_id) else None
 
     if chosen_id is None:
-        person = Person(id=uuid.uuid4(), agency_id=agency_id_of(session))
+        person = Person(id=uuid.uuid4(), agency_id=agency_id)
         _refresh_profile(person, profile, resume_id, newer=True)
         session.add(person)
         session.flush()
@@ -354,7 +407,7 @@ def _resolve_locked(
         session.add(
             IdentityConflict(
                 id=conflict_id,
-                agency_id=agency_id_of(session),
+                agency_id=agency_id,
                 resume_id=resume_id,
                 chosen_person_id=person.id,
                 conflicting_person_id=conflicting_id,
@@ -370,13 +423,15 @@ def _resolve_locked(
         )
 
     for ident in identifiers:
-        _attach(session, person.id, ident, stored.get(ident.key), resume_id, conflicting_id)
+        _attach(
+            session, agency_id, person.id, ident, stored.get(ident.key), resume_id, conflicting_id
+        )
 
     session.flush()  # the conflict row before the reference to it
     session.add(
         PersonResume(
             resume_id=resume_id,
-            agency_id=agency_id_of(session),
+            agency_id=agency_id,
             person_id=person.id,
             uploaded_at=uploaded_at,
             matched_existing=chosen_id is not None,
@@ -391,6 +446,7 @@ def _resolve_locked(
 
 def _attach(
     session: Session,
+    agency_id: uuid.UUID,
     person_id: uuid.UUID,
     ident: _Identifier,
     row: PersonIdentifier | None,
@@ -401,7 +457,7 @@ def _attach(
     if row is None:
         session.add(
             PersonIdentifier(
-                agency_id=agency_id_of(session),
+                agency_id=agency_id,
                 person_id=person_id,
                 kind=ident.kind,
                 value_normalized=ident.value,

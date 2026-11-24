@@ -3,7 +3,11 @@ bound agency's rows, and every insert writes it.
 
 Rows written before E2-01 have ``agency_id IS NULL`` until the E2-02 backfill. They belong to the
 default agency, so while it is bound they are listed too (the transition in
-``app.platform.tenancy.tenant_filter``, removed in E2-04); another agency never sees them.
+``app.platform.tenancy.tenant_filter``, removed in E2-04); another agency never sees them. Since
+the E2-02 contract the session database's columns are ``NOT NULL``, so that test makes them
+nullable again (as the E2-01 schema had them) inside its own rolled-back transaction. The
+backfill tests cover the same transition at the real E2-01 revision
+(``tests/ingestion/test_backfill_tenancy.py``).
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -25,7 +29,7 @@ from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope
+from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, agency_id_of
 from tests.factories import make_campaign, make_candidate, make_resume
 from tests.fakes import CeleryRecorder, InMemoryStorage
 from tests.ingestion.test_service import PDF, FakeUpload
@@ -43,6 +47,31 @@ async def _other_agencys_campaign(db: AsyncSession, other: OtherAgency) -> Appli
         db, title="Other agency's campaign", agency_id=other.agency_id, client_id=other.client_id
     )
     return await make_candidate(db, campaign, name="Other Person", email="other@example.com")
+
+
+async def _as_before_the_contract(db: AsyncSession) -> None:
+    """The tenant columns nullable again, as between E2-01 and E2-02's contract, for this test's
+    transaction only (it is rolled back; DDL is transactional in Postgres). The composite keys
+    stay: a key with a NULL column is not checked (``MATCH SIMPLE``)."""
+    for table, column in TENANT_COLUMNS:
+        await db.execute(text(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL"))
+
+
+TENANT_COLUMNS = (
+    *(
+        (table, "agency_id")
+        for table in (
+            "campaigns",
+            "applications",
+            "people",
+            "person_identifiers",
+            "identity_conflicts",
+            "person_resumes",
+            "resumes",
+        )
+    ),
+    ("campaigns", "client_id"),
+)
 
 
 async def _ids(client: AsyncClient, path: str) -> set[str]:
@@ -103,6 +132,7 @@ async def test_rows_not_backfilled_yet_belong_to_the_default_agency(
 ) -> None:
     """``agency_id IS NULL`` (written before E2-01): listed, found and counted for the default
     agency until E2-02 backfills them; invisible to any other agency."""
+    await _as_before_the_contract(db_session)
     legacy_campaign = await make_campaign(db_session, agency_id=None, client_id=None)
     # make_candidate gives the Person and the application the resume's agency: NULL too.
     legacy = await make_candidate(
@@ -181,6 +211,7 @@ async def test_inserts_take_the_agency_of_the_session(
     def pipeline_writes(session: Session) -> uuid.UUID:
         person_id = talent_service.resolve_person(
             session,
+            agency_id=agency_id_of(session),
             email="new.person@example.com",
             phone=None,
             profile=PersonProfile(full_name="New Person"),

@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import service
 from app.modules.hiring.models import Application, Campaign
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 LOW = ScoringResult(
@@ -63,7 +64,13 @@ def db() -> Iterator[Session]:
 
 @pytest.fixture
 def campaign(db: Session) -> Campaign:
-    row = Campaign(title="Backend", role="Backend Engineer", required_skills=["Python", "Go"])
+    row = Campaign(
+        title="Backend",
+        role="Backend Engineer",
+        required_skills=["Python", "Go"],
+        agency_id=DEFAULT_AGENCY_ID,
+        client_id=DEFAULT_CLIENT_ID,
+    )
     db.add(row)
     db.commit()  # (releases a savepoint only; the outer transaction is rolled back)
     return row
@@ -209,6 +216,7 @@ def test_an_application_without_an_upload_time_counts_as_older(
     # A row written before resume_uploaded_at existed (NULL).
     db.add(
         Application(
+            agency_id=campaign.agency_id,
             campaign_id=campaign.id,
             person_id=PERSON,
             resume_id=BIG_ID,
@@ -224,7 +232,13 @@ def test_an_application_without_an_upload_time_counts_as_older(
 
 
 def test_applications_are_per_campaign_and_person(db: Session, campaign: Campaign) -> None:
-    other = Campaign(title="Platform", role="SRE", required_skills=[])
+    other = Campaign(
+        title="Platform",
+        role="SRE",
+        required_skills=[],
+        agency_id=DEFAULT_AGENCY_ID,
+        client_id=DEFAULT_CLIENT_ID,
+    )
     db.add(other)
     db.flush()
 

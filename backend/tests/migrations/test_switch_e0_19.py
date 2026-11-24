@@ -16,6 +16,7 @@ from alembic import command
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.migrations.tenancy import upgrade_to_head_through_backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -145,7 +146,8 @@ def test_upgrade_aligns_timestamps_then_downgrade_and_upgrade_again(scratch_db: 
             assert "raw_text" not in {c["name"] for c in inspect(conn).get_columns("resumes")}
             assert _timestamps(conn) == stamps  # the data step's downgrade changes nothing
 
-        command.upgrade(cfg, "head")
+        # Through the tenancy backfill: the contract (E2-02) refuses rows without an agency.
+        upgrade_to_head_through_backfill(cfg, scratch_db)
         with engine.connect() as conn:
             assert _timestamps(conn) == stamps  # idempotent
         command.check(cfg)

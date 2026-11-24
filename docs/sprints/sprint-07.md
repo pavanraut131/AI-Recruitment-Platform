@@ -65,6 +65,11 @@ Goal and acceptance criteria: [spec §12, E2-01](../specs/EPIC-02-identity-tenan
 
 Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenancy.md#e2-02--tenancy-backfill-verify-and-contract). Design: spec §3.3, §7.1 (phases 2–4) and §7.3. Takes the `resumes (agency_id, campaign_id)` index from the backlog.
 
+**Notes:**
+- Deploy order and commands: [runbook](../runbooks/tenancy-backfill.md). Deploy the E2-02 code, run the backfill and the verification, then `alembic upgrade head`; the contract migration refuses to run before the backfill has finished.
+- `resolve_person(..., agency_id=...)` takes the agency explicitly; it must be the session's. Since the merge with E2-03 the callers pass `agency_id_of(session)` and the matching lookups use `tenant_filter`. Until the contract the default agency also matches identifiers not yet backfilled (`tenant_filter`'s transition branch, removed with E2-04).
+- After this merges, rebuild nothing (no new dependency), but a database at E2-01 needs the backfill before `alembic upgrade head`. On a fresh volume, `make setup` works as before (empty tables pass the check).
+
 ---
 
 ### E2-03 · Tenant context

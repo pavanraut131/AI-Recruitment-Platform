@@ -37,7 +37,7 @@ from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import InMemoryStorage
 from tests.ingestion.conftest import Events
 
@@ -75,7 +75,13 @@ def resume_text(
 
 # ── Arrange ───────────────────────────────────────────────────
 def make_campaign(db: Session, title: str = "Backend") -> Campaign:
-    campaign = Campaign(title=title, role="Backend Engineer", required_skills=REQUIRED_SKILLS)
+    campaign = Campaign(
+        title=title,
+        role="Backend Engineer",
+        required_skills=REQUIRED_SKILLS,
+        agency_id=DEFAULT_AGENCY_ID,
+        client_id=DEFAULT_CLIENT_ID,
+    )
     db.add(campaign)
     db.commit()
     return campaign
@@ -99,6 +105,7 @@ def make_resume(
         processing_step=tasks.STEP_EXTRACT_TEXT,
         uploaded_at=uploaded_at,
         raw_text=text,
+        agency_id=campaign.agency_id,
     )
     db.add(resume)
     db.commit()
@@ -119,6 +126,7 @@ def make_pdf_resume(db: Session, storage: InMemoryStorage, campaign: Campaign, t
         file_size_bytes=len(pdf_bytes),
         status="pending",
         uploaded_at=T0,
+        agency_id=campaign.agency_id,
     )
     db.add(resume)
     db.commit()

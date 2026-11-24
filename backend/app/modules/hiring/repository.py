@@ -22,12 +22,15 @@ filtered.
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     ColumnElement,
     Row,
+    Table,
+    and_,
     any_,
+    case,
     func,
     or_,
     select,
@@ -37,7 +40,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign, Client, LegacyCandidateMap
+from app.platform import backfill
 from app.platform.sql import uuid_array
 from app.platform.tenancy import AnySession, tenant_filter
 
@@ -556,9 +560,79 @@ def legacy_map_rows_sync(db: Session) -> dict[uuid.UUID, uuid.UUID]:
 
 
 def application_refs_sync(db: Session) -> Sequence[Row[Any]]:
-    """``(id, campaign_id, person_id, resume_id)`` of every application."""
+    """``(id, campaign_id, person_id, resume_id, agency_id)`` of every application."""
     return db.execute(
         select(
-            Application.id, Application.campaign_id, Application.person_id, Application.resume_id
+            Application.id,
+            Application.campaign_id,
+            Application.person_id,
+            Application.resume_id,
+            Application.agency_id,
         )
     ).all()
+
+
+def campaign_tenancy_sync(db: Session) -> Sequence[Row[Any]]:
+    """``(id, agency_id, client_id)`` of every campaign."""
+    return db.execute(select(Campaign.id, Campaign.agency_id, Campaign.client_id)).all()
+
+
+def client_agencies_sync(db: Session) -> dict[uuid.UUID, uuid.UUID]:
+    """``client_id -> agency_id`` of every client."""
+    rows = db.execute(select(Client.id, Client.agency_id)).tuples()
+    return {client_id: agency_id for client_id, agency_id in rows}
+
+
+# ── Tenancy backfill (sync, ``app.modules.ingestion.backfill_tenancy``, E2-02): every agency ──
+_TENANT_TABLES = {
+    "campaigns": cast(Table, Campaign.__table__),
+    "applications": cast(Table, Application.__table__),
+}
+# hiring's tenant tables, in the order the backfill fills them.
+TENANCY_TABLES = tuple(_TENANT_TABLES)
+
+
+def _missing(table: str) -> ColumnElement[bool]:
+    t = _TENANT_TABLES[table]
+    if table == "campaigns":
+        return or_(t.c.agency_id.is_(None), t.c.client_id.is_(None))
+    return t.c.agency_id.is_(None)
+
+
+def fill_tenancy_batch_sync(
+    db: Session,
+    table: str,
+    *,
+    agency_id: uuid.UUID,
+    client_id: uuid.UUID,
+    after: uuid.UUID | None,
+    limit: int,
+) -> list[uuid.UUID]:
+    """Give the next ``limit`` rows of ``table`` without an agency (campaigns: or without a
+    client) the agency ``agency_id``; campaigns of that agency also get the client
+    ``client_id``. A campaign of another agency is never given this client (it would belong to
+    the wrong agency); it stays without one, for the verification to report. Returns the keys
+    updated; the caller commits."""
+    t = _TENANT_TABLES[table]
+    values: dict[str, Any] = {"agency_id": func.coalesce(t.c.agency_id, agency_id)}
+    if table == "campaigns":
+        values["client_id"] = case(
+            (
+                and_(t.c.client_id.is_(None), func.coalesce(t.c.agency_id, agency_id) == agency_id),
+                client_id,
+            ),
+            else_=t.c.client_id,
+        )
+    return backfill.update_next_batch(
+        db, t, missing=_missing(table), values=values, after=after, limit=limit
+    )
+
+
+def count_tenancy_gaps_sync(db: Session, table: str) -> int:
+    """Rows of ``table`` the backfill has still to fill."""
+    return backfill.count_missing(db, _TENANT_TABLES[table], _missing(table))
+
+
+def agency_census_sync(db: Session) -> dict[str, dict[uuid.UUID | None, int]]:
+    """``table -> {agency_id: rows}`` for hiring's tenant tables (``None``: no agency yet)."""
+    return {table: backfill.agency_census(db, _TENANT_TABLES[table]) for table in TENANCY_TABLES}

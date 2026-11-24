@@ -56,6 +56,7 @@ from app.modules.talent.schemas import PersonProfile, ResolveResult
 from app.platform import storage
 from app.platform.celery_app import AGENCY_ID_ARG, TenantTask, celery_app
 from app.platform.config import settings
+from app.platform.tenancy import agency_id_of
 
 logger = structlog.get_logger()
 
@@ -583,6 +584,7 @@ def _resolve_person(db: Session, resume: Resume, extraction: ExtractionResult) -
 
     result = talent_service.resolve_person(
         db,
+        agency_id=agency_id_of(db),  # the task's agency (TenantTask binds the session)
         email=extraction.email,
         phone=extraction.phone,
         profile=person_profile(extraction),

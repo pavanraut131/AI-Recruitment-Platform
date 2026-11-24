@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 import structlog
 from billiard.einfo import ExceptionInfo
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.ai.fake import FakeAIService
@@ -256,6 +257,16 @@ def test_reset_stuck_requeues_each_resume_with_its_own_agency(
     agency_id, client_id = _agency(sync_db)
     mine = _resume(sync_db, fake_storage, agency_id, client_id, status="failed")
     default = _resume(sync_db, fake_storage, DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, status="failed")
+    # A resume written before E2-01 and not backfilled yet. Since the E2-02 contract the columns
+    # are NOT NULL: make them nullable again, as the E2-01 schema had them, for this test's
+    # rolled-back transaction only (DDL is transactional in Postgres).
+    sync_db.execute(
+        text(
+            "ALTER TABLE campaigns ALTER COLUMN agency_id DROP NOT NULL, "
+            "ALTER COLUMN client_id DROP NOT NULL; "
+            "ALTER TABLE resumes ALTER COLUMN agency_id DROP NOT NULL"
+        )
+    )
     legacy = _resume(sync_db, fake_storage, None, None, status="processing")  # before E2-02
 
     reset_stuck.main()

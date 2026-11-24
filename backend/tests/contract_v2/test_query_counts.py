@@ -88,7 +88,8 @@ async def test_person_profile_is_a_fixed_number_of_queries(
         resume = await make_resume(db_session, campaign, original_filename=f"again{i}.pdf")
         resume.person_id = person_id
         db_session.add(
-            Application(campaign_id=campaign.id, person_id=person_id, resume_id=resume.id,
+            Application(agency_id=campaign.agency_id, campaign_id=campaign.id,
+                        person_id=person_id, resume_id=resume.id,
                         created_at=at(i), updated_at=at(i))
         )  # fmt: skip
     await db_session.flush()

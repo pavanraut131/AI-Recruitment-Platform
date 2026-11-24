@@ -28,8 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application
 from app.modules.talent.models import Person, PersonIdentifier
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
 from tests.factories import make_campaign, make_resume
+from tests.migrations.tenancy import upgrade_to_head_through_backfill
 
 EXPAND_REVISION = "404e09095076"
 PREVIOUS_REVISION = "5618884e3aec"
@@ -137,7 +139,8 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
 
     d = await _inspect(db_session, describe)
 
-    assert ("kind", "value_normalized") in d["uniques"]["person_identifiers"]
+    # Per agency since the E2-02 contract (it was (kind, value_normalized)).
+    assert ("agency_id", "kind", "value_normalized") in d["uniques"]["person_identifiers"]
     assert ("campaign_id", "person_id") in d["uniques"]["applications"]
     assert "ck_person_identifiers_kind" in d["checks"]
 
@@ -149,14 +152,15 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
     assert ("conflicting_person_id",) in d["indexes"]["identity_conflicts"]
     assert ("application_id",) in d["indexes"]["legacy_candidate_map"]
 
-    # Foreign keys only within a module (ADR 0003).
+    # Foreign keys only within a module (ADR 0003); since the E2-02 contract they carry the
+    # agency (composite keys, tests/migrations/test_tenancy_e2_02.py).
     fks = d["fks"]
-    assert fks["person_identifiers"] == {(("person_id",), "people", "CASCADE")}
+    assert fks["person_identifiers"] == {(("agency_id", "person_id"), "people", "CASCADE")}
     assert fks["identity_conflicts"] == {
-        (("chosen_person_id",), "people", "CASCADE"),
-        (("conflicting_person_id",), "people", "CASCADE"),
+        (("agency_id", "chosen_person_id"), "people", "CASCADE"),
+        (("agency_id", "conflicting_person_id"), "people", "CASCADE"),
     }
-    assert fks["applications"] == {(("campaign_id",), "campaigns", "CASCADE")}
+    assert fks["applications"] == {(("agency_id", "campaign_id"), "campaigns", "CASCADE")}
     assert fks["legacy_candidate_map"] == {(("application_id",), "applications", "CASCADE")}
     assert fks["people"] == set()
     # resumes has none: the new person_id never had one, and the contract migration (E0-20)
@@ -166,24 +170,31 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
 
 # ── Constraint behaviour ──────────────────────────────────────
 async def _person(db: AsyncSession) -> Person:
-    person = Person(full_name="Asha Rao")
+    person = Person(full_name="Asha Rao", agency_id=DEFAULT_AGENCY_ID)
     db.add(person)
     await db.flush()
     return person
 
 
 def _identifier(person: Person, kind: str, value: str) -> PersonIdentifier:
-    return PersonIdentifier(person_id=person.id, kind=kind, value_normalized=value, raw_value=value)
+    return PersonIdentifier(
+        agency_id=person.agency_id,
+        person_id=person.id,
+        kind=kind,
+        value_normalized=value,
+        raw_value=value,
+    )
 
 
 async def test_identifier_defaults_to_not_inferred(db_session: AsyncSession) -> None:
     person = await _person(db_session)
     await db_session.execute(
         text(
-            "INSERT INTO person_identifiers (id, person_id, kind, value_normalized, raw_value) "
-            "VALUES (:id, :pid, 'email', 'a@example.com', 'A@example.com')"
+            "INSERT INTO person_identifiers "
+            "(id, agency_id, person_id, kind, value_normalized, raw_value) "
+            "VALUES (:id, :aid, :pid, 'email', 'a@example.com', 'A@example.com')"
         ),
-        {"id": uuid.uuid4(), "pid": person.id},
+        {"id": uuid.uuid4(), "aid": person.agency_id, "pid": person.id},
     )
     inferred = (
         await db_session.execute(text("SELECT inferred FROM person_identifiers"))
@@ -199,7 +210,9 @@ async def test_identifier_unique_per_kind_and_value(db_session: AsyncSession) ->
     db_session.add(_identifier(second, "phone", "asha@example.com"))
     await db_session.flush()
 
-    with pytest.raises(IntegrityError, match="uq_person_identifiers_kind_value_normalized"):
+    with pytest.raises(
+        IntegrityError, match="uq_person_identifiers_agency_id_kind_value_normalized"
+    ):
         async with db_session.begin_nested():
             db_session.add(_identifier(second, "email", "asha@example.com"))
             await db_session.flush()
@@ -217,14 +230,18 @@ async def test_application_unique_per_campaign_and_person(db_session: AsyncSessi
     campaign = await make_campaign(db_session)
     resume = await make_resume(db_session, campaign=campaign)
     person_id = uuid.uuid4()  # plain UUID: no FK to people (ADR 0003)
-    db_session.add(Application(campaign_id=campaign.id, person_id=person_id, resume_id=resume.id))
+    fields = {
+        "agency_id": campaign.agency_id,
+        "campaign_id": campaign.id,
+        "person_id": person_id,
+        "resume_id": resume.id,
+    }
+    db_session.add(Application(**fields))
     await db_session.flush()
 
     with pytest.raises(IntegrityError, match="uq_applications_campaign_id_person_id"):
         async with db_session.begin_nested():
-            db_session.add(
-                Application(campaign_id=campaign.id, person_id=person_id, resume_id=resume.id)
-            )
+            db_session.add(Application(**fields))
             await db_session.flush()
 
 
@@ -233,7 +250,11 @@ async def test_deleting_a_campaign_cascades_to_its_applications(db_session: Asyn
     other = await make_campaign(db_session, title="Other")
     resume = await make_resume(db_session, campaign=campaign)
     for c in (campaign, other):
-        db_session.add(Application(campaign_id=c.id, person_id=uuid.uuid4(), resume_id=resume.id))
+        db_session.add(
+            Application(
+                agency_id=c.agency_id, campaign_id=c.id, person_id=uuid.uuid4(), resume_id=resume.id
+            )
+        )
     await db_session.flush()
 
     await db_session.execute(text("DELETE FROM campaigns WHERE id = :id"), {"id": campaign.id})
@@ -355,7 +376,8 @@ def test_upgrade_downgrade_upgrade_keeps_legacy_rows(scratch_db: str) -> None:
             assert conn.execute(text("SELECT count(*) FROM resumes")).scalar() == 1
             assert conn.execute(text("SELECT count(*) FROM candidates")).scalar() == 1
 
-        command.upgrade(cfg, "head")
+        # Through the tenancy backfill: the contract (E2-02) refuses rows without an agency.
+        upgrade_to_head_through_backfill(cfg, scratch_db)
         command.check(cfg)  # raises if the models and the migrated schema differ
     finally:
         engine.dispose()

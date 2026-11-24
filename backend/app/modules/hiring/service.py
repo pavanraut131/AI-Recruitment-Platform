@@ -81,6 +81,12 @@ client a field of the request.
 The use cases that list or fetch campaign data take an ``AccessScope`` (spec §5.3, §5.4), which
 :func:`check_scope` checks against the session's agency. Every scope covers all clients until
 client scoping arrives (E2-06); a narrower one is refused rather than silently widened.
+
+Rows written before E2-01 get their agency from the tenancy backfill
+(``app.modules.ingestion.backfill_tenancy``, E2-02) through :func:`fill_tenancy_batch`; it and
+the verification's reads (:func:`application_refs`, :func:`campaign_tenancy`,
+:func:`client_agencies`, :func:`agency_census`) read **every agency** on purpose (operator
+commands, unbound sessions).
 """
 
 import csv
@@ -1550,11 +1556,64 @@ class ApplicationRef:
     campaign_id: uuid.UUID
     person_id: uuid.UUID
     resume_id: uuid.UUID
+    agency_id: uuid.UUID | None
 
 
 def application_refs(db: Session) -> list[ApplicationRef]:
     """Every application."""
     return [ApplicationRef(**row._asdict()) for row in repository.application_refs_sync(db)]
+
+
+@dataclass(frozen=True)
+class CampaignTenancy:
+    agency_id: uuid.UUID | None
+    client_id: uuid.UUID | None
+
+
+def campaign_tenancy(db: Session) -> dict[uuid.UUID, CampaignTenancy]:
+    """``campaign_id -> (agency_id, client_id)`` of every campaign."""
+    return {
+        row.id: CampaignTenancy(agency_id=row.agency_id, client_id=row.client_id)
+        for row in repository.campaign_tenancy_sync(db)
+    }
+
+
+def client_agencies(db: Session) -> dict[uuid.UUID, uuid.UUID]:
+    """``client_id -> agency_id`` of every client."""
+    return repository.client_agencies_sync(db)
+
+
+def agency_census(db: Session) -> dict[str, dict[uuid.UUID | None, int]]:
+    """``table -> {agency_id: rows}`` for ``campaigns`` and ``applications`` (``None`` counts
+    the rows without an agency)."""
+    return repository.agency_census_sync(db)
+
+
+# ── Tenancy backfill (``app.modules.ingestion.backfill_tenancy``, E2-02) ──
+TENANCY_TABLES: tuple[str, ...] = repository.TENANCY_TABLES
+
+
+def fill_tenancy_batch(
+    db: Session,
+    table: str,
+    *,
+    agency_id: uuid.UUID,
+    client_id: uuid.UUID,
+    after: uuid.UUID | None,
+    limit: int,
+) -> list[uuid.UUID]:
+    """One backfill batch of ``table`` (one of :data:`TENANCY_TABLES`): the next ``limit`` rows
+    after ``after`` (by id) without an agency get ``agency_id``, and campaigns of that agency
+    without a client get ``client_id``. ``updated_at`` is left alone. Returns the ids updated,
+    ascending (empty: the table is done after ``after``). Does not commit."""
+    return repository.fill_tenancy_batch_sync(
+        db, table, agency_id=agency_id, client_id=client_id, after=after, limit=limit
+    )
+
+
+def count_tenancy_gaps(db: Session, table: str) -> int:
+    """Rows of ``table`` still without an agency (campaigns: or without a client)."""
+    return repository.count_tenancy_gaps_sync(db, table)
 
 
 def legacy_candidate_map(db: Session) -> dict[uuid.UUID, uuid.UUID]:

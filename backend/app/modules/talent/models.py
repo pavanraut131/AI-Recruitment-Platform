@@ -3,7 +3,8 @@
 Tables ``people``, ``person_identifiers``, ``identity_conflicts`` (EPIC-00 spec §4, ADR 0002,
 ADR 0004) and ``person_resumes`` (E0-15). Private to the talent module: other modules use ``app.modules.talent.service``.
 
-Foreign keys exist only *within* talent (identifiers and conflicts -> ``people``). References to
+Foreign keys exist only *within* talent (identifiers, conflicts and resolutions -> ``people``,
+with the agency: see below). References to
 other modules' tables are plain UUID columns with no foreign key and no ORM relationship
 (ADR 0003): ``people.latest_resume_id``, ``person_identifiers.source_resume_id`` and
 ``identity_conflicts.resume_id`` and ``person_resumes.resume_id`` all point at ingestion's
@@ -12,11 +13,12 @@ other modules' tables are plain UUID columns with no foreign key and no ORM rela
 Created by the E0-14 expand migration (``person_resumes`` by the E0-15 one).
 ``app.modules.talent.service.resolve_person`` is the only writer.
 
-**Tenancy (EPIC-02).** Every table has ``agency_id``, identity's agency (a plain UUID, no foreign
-key, ADR 0003): the talent pool is per agency (spec §3.1). Added by the E2-01 expand migration
-as nullable; ``resolve_person`` sets it on every insert (``app.platform.tenancy.DEFAULT_AGENCY_ID``
-until E2-03). E2-02 backfills it, makes it ``NOT NULL``, adds composite foreign keys
-``(agency_id, person_id) -> people(agency_id, id)`` and makes matching per agency
+**Tenancy (EPIC-02).** Every table has ``agency_id`` (``NOT NULL``), identity's agency (a plain
+UUID, no foreign key, ADR 0003): the talent pool is per agency (spec §3.1). Added by the E2-01
+expand migration, backfilled and contracted by E2-02 (``e2b02c7a4d19``); ``resolve_person``
+writes the agency it is given on every insert. The references to a Person are **composite
+foreign keys** ``(agency_id, person_id) -> people(agency_id, id)``, so an identifier, a conflict
+or a resolution always has its Person's agency, and matching is per agency
 (``UNIQUE(agency_id, kind, value_normalized)``).
 """
 
@@ -30,6 +32,8 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -47,6 +51,12 @@ class Person(Base):
     *uploaded* resume; fields a newer extraction lacks keep their previous value (spec §5.3)."""
 
     __tablename__ = "people"
+    __table_args__ = (
+        # Target of the composite foreign keys from the other talent tables.
+        UniqueConstraint("agency_id", "id", name="uq_people_agency_id_id"),
+        # The agency's talent pool, most recently updated first (/people).
+        Index("ix_people_agency_id_updated_at", "agency_id", "updated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -69,15 +79,25 @@ class Person(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+
+def _person_fk(column: str, name: str) -> ForeignKeyConstraint:
+    """``(agency_id, <column>) -> people(agency_id, id)``, deleted with the Person."""
+    return ForeignKeyConstraint(
+        ["agency_id", column],
+        ["people.agency_id", "people.id"],
+        ondelete="CASCADE",
+        name=name,
+    )
 
 
 class PersonIdentifier(Base):
     """A normalised email or phone that identifies a Person (ADR 0004).
 
-    ``UNIQUE(kind, value_normalized)`` guarantees one Person per identifier; it becomes
-    ``(agency_id, kind, value_normalized)`` in E2-02. ``inferred`` (sprint 3 decision, option A)
+    ``UNIQUE(agency_id, kind, value_normalized)`` guarantees one Person per identifier in an
+    agency (E2-02; it was ``UNIQUE(kind, value_normalized)`` before). ``inferred`` (sprint 3 decision, option A)
     marks a phone whose country was only inferred from ``PHONE_DEFAULT_REGION`` and that is not a
     mobile number: it is stored but never auto-matches on its own.
     """
@@ -85,18 +105,17 @@ class PersonIdentifier(Base):
     __tablename__ = "person_identifiers"
     __table_args__ = (
         UniqueConstraint(
-            "kind", "value_normalized", name="uq_person_identifiers_kind_value_normalized"
+            "agency_id",
+            "kind",
+            "value_normalized",
+            name="uq_person_identifiers_agency_id_kind_value_normalized",
         ),
         CheckConstraint("kind IN ('email', 'phone')", name="ck_person_identifiers_kind"),
+        _person_fk("person_id", "fk_person_identifiers_agency_id_person_id_people"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("people.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     value_normalized: Mapped[str] = mapped_column(String(320), nullable=False)
     raw_value: Mapped[str] = mapped_column(String(320), nullable=False)
@@ -107,8 +126,8 @@ class PersonIdentifier(Base):
     source_resume_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
 class IdentityConflict(Base):
@@ -119,6 +138,12 @@ class IdentityConflict(Base):
     """
 
     __tablename__ = "identity_conflicts"
+    __table_args__ = (
+        _person_fk("chosen_person_id", "fk_identity_conflicts_agency_id_chosen_person_id_people"),
+        _person_fk(
+            "conflicting_person_id", "fk_identity_conflicts_agency_id_conflicting_person_id_people"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Ingestion-owned resume (no foreign key, ADR 0003).
@@ -126,23 +151,17 @@ class IdentityConflict(Base):
     # Indexed: Postgres does not index FK columns itself, and deleting a person (cascade) and the
     # E6 queue's "conflicts involving this person" both look rows up by these columns.
     chosen_person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("people.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        UUID(as_uuid=True), nullable=False, index=True
     )
     conflicting_person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("people.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        UUID(as_uuid=True), nullable=False, index=True
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
 class PersonResume(Base):
@@ -156,15 +175,11 @@ class PersonResume(Base):
     """
 
     __tablename__ = "person_resumes"
+    __table_args__ = (_person_fk("person_id", "fk_person_resumes_agency_id_person_id_people"),)
 
     # Ingestion-owned resume (no foreign key, ADR 0003).
     resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("people.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     matched_existing: Mapped[bool] = mapped_column(Boolean, nullable=False)
     conflict_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -174,5 +189,5 @@ class PersonResume(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    # Tenancy (E2-01 expand): nullable until the E2-02 contract; see the module docstring.
-    agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Tenancy: identity's agency (no foreign key); see the module docstring.
+    agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

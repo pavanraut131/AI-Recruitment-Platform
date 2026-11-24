@@ -7,7 +7,9 @@ must be in it, so a new table has to be given an owner before this passes. Since
 migration (E0-20) dropped ``resumes.campaign_id -> campaigns``, there are none left.
 
 The tenant key (EPIC-02, E2-01) adds none either: ``agency_id`` on hiring, talent and ingestion
-tables refers to identity's ``agencies`` as a plain UUID (ADR 0003).
+tables refers to identity's ``agencies`` as a plain UUID (ADR 0003). The E2-02 contract makes
+the same-module keys composite (``(agency_id, ...)``) and adds ``campaigns -> clients``, both
+within hiring.
 """
 
 from __future__ import annotations
@@ -67,6 +69,7 @@ async def test_no_foreign_key_crosses_a_module_boundary(db_session: AsyncSession
 async def test_the_same_module_foreign_keys_are_the_expected_ones(db_session: AsyncSession) -> None:
     rows = (await db_session.execute(text(FOREIGN_KEYS))).all()
     assert {(table, referenced) for _, table, referenced in rows} == {
+        ("campaigns", "clients"),  # (agency_id, client_id), E2-02
         ("applications", "campaigns"),
         ("legacy_candidate_map", "applications"),
         ("person_identifiers", "people"),
