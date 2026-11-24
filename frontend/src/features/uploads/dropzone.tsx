@@ -55,8 +55,8 @@ export function ResumeDropzone({
         role: "group",
         "aria-label": "Upload resumes",
         className: cn(
-          "flex flex-col items-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
-          isDragActive ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
+          "flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center transition-colors",
+          isDragActive ? "border-primary bg-primary-soft" : "border-input bg-canvas hover:bg-muted",
           disabled ? "opacity-60" : "cursor-pointer",
         ),
       })}
@@ -64,16 +64,16 @@ export function ResumeDropzone({
     >
       {/* The picker filters to PDFs; the checks above apply to dropped files too. */}
       <input {...getInputProps({ accept: PDF_ACCEPT })} aria-label="PDF resumes" />
-      <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <div className="flex size-10 items-center justify-center rounded-full bg-background text-muted-foreground">
         <FileUpIcon className="size-5" aria-hidden="true" />
       </div>
       <div className="flex flex-col gap-1">
-        <p className="font-medium">{isDragActive ? "Drop to upload" : "Drop PDF resumes here"}</p>
-        <p className="text-sm text-muted-foreground" id="resume-dropzone-limits">
+        <p className="text-section font-semibold">{isDragActive ? "Drop to upload" : "Drop PDF resumes here"}</p>
+        <p className="text-ink-2" id="resume-dropzone-limits">
           PDF only, up to {MAX_FILE_SIZE_MB} MB each. Larger drops go up in batches of {MAX_FILES_PER_BATCH}.
         </p>
       </div>
-      <Button type="button" variant="outline" disabled={disabled} aria-describedby="resume-dropzone-limits">
+      <Button type="button" variant="outline" disabled={disabled} aria-describedby="resume-dropzone-limits" className="bg-background">
         Choose PDFs
       </Button>
     </div>

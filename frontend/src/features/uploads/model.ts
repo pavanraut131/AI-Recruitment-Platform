@@ -5,7 +5,7 @@ import { perFileProgress } from "./validate"
 
 /**
  * The steps a file moves through on the Uploads tab (spec §5.3):
- * Queued → Uploading → Extracting → Analysing → Done, or Failed / Quota limit;
+ * Queued → Uploading → Reading → Scoring → Done, or Failed / Quota limit;
  * Rejected for a file that never became a resume (client check or server),
  * Upload failed for a request that got no answer or an error.
  */
@@ -25,12 +25,12 @@ export type StepTone = "progress" | "done" | "failed" | "warning" | "muted"
 export const STEP_META: Record<UploadStep, { label: string; tone: StepTone }> = {
   queued: { label: "Queued", tone: "muted" },
   uploading: { label: "Uploading", tone: "progress" },
-  extracting: { label: "Extracting", tone: "progress" },
-  analysing: { label: "Analysing", tone: "progress" },
+  extracting: { label: "Reading", tone: "progress" },
+  analysing: { label: "Scoring", tone: "progress" },
   done: { label: "Done", tone: "done" },
   failed: { label: "Failed", tone: "failed" },
   quota: { label: "Quota limit", tone: "warning" },
-  rejected: { label: "Rejected", tone: "failed" },
+  rejected: { label: "Not accepted", tone: "failed" },
   upload_failed: { label: "Upload failed", tone: "failed" },
 }
 
@@ -40,8 +40,8 @@ export const STEP_META: Record<UploadStep, { label: string; tone: StepTone }> = 
  * | status           | step        |
  * |------------------|-------------|
  * | `pending`        | Queued (stored, waiting for a worker) |
- * | `extracting`     | Extracting (PDF text) |
- * | `processing`     | Analysing (AI profile, person, score, save) |
+ * | `extracting`     | Reading (PDF text) |
+ * | `processing`     | Scoring (AI profile, person, score, save) |
  * | `done`           | Done        |
  * | `failed`         | Failed (at `processing_step`) |
  * | `quota_exceeded` | Quota limit |
