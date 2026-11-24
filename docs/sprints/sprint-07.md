@@ -88,6 +88,10 @@ Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenan
 
 Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenancy.md#e2-04--row-level-security). Design: spec §6, §7.2 and §11.1–11.2; [ADR 0009](../adr/0009-tenant-isolation-row-level-security.md) is accepted in this ticket.
 
+**Notes:**
+- Deploy order and commands: [runbook](../runbooks/tenancy-rls.md) (drain the queues, `make db-roles`, migrate as the owner, recreate the services). Its section 8 is the exact list for an existing local stack; no `.env` edit is needed (Compose builds the URLs from `POSTGRES_DB` and two password variables with defaults). No new dependency, so no image rebuild, but the postgres container is recreated (new mounts) and the backend services are recreated (new URLs).
+- **Overlap with E2-05** (whichever merges second rebases): the migration head (both start from `e2b02c7a4d19`), `tests/conftest.py` / `tests/postgres.py` (the suite now runs as `hireflow_app`; a fixture that writes another agency's rows needs a session bound to it), and `app.platform.rls.GLOBAL_TABLES`, which E2-05's identity tables must join (with `audit_events` already expected at `SELECT, INSERT` only by `APP_PRIVILEGE_EXCEPTIONS`). E2-05's tables get the app role's grants from the owner's default privileges: no `GRANT` of its own is needed, only the `REVOKE UPDATE, DELETE` on `audit_events`.
+
 ---
 
 ### E2-05 · Identity core

@@ -1,5 +1,5 @@
 # 0009 · Tenant isolation with Postgres row-level security behind explicit filtering
-**Status:** proposed  ·  **Date:** 2026-11-19
+**Status:** accepted (E2-04, 2026-11-24)  ·  **Date:** 2026-11-19
 
 ## Context
 E2 makes HireFlow AI multi-tenant ([spec §3](../specs/EPIC-02-identity-tenancy.md#3-tenancy-model-and-data)): every campaign, application, Person, identifier, conflict and resume belongs to one **agency**. Agencies are competitors, and the data is candidates' personal data. One agency seeing another's talent pool would be a data breach under GDPR / DPDP, not just a bug, and it would end the product's credibility with the agencies it is sold to.
@@ -52,3 +52,10 @@ The forces:
   - New global tables, which must be justified in the allowlist.
   - Unique constraints without `agency_id`.
   - Cross-module consistency (an application, its Person and its resume in one agency), which no foreign key can enforce: the verification script checks it.
+
+## Implementation notes (E2-04)
+- **Roles:** `docker/postgres/roles.sql` creates `hireflow_owner` and `hireflow_app` (attributes and passwords reset on every run) and gives the owner the `public` schema and every existing relation. A new Compose volume runs it from the init script (`docker/postgres/init/10-roles.sh`); an existing one with `make db-roles`; the tests and the CI `migrations` job run the same file. The owner role has no `CREATEROLE`, so the migration does not create the roles: it refuses to run until they exist and own the tables.
+- **Migration** `e2c04a7f3b18`: `app_current_agency()`, the grants and `ALTER DEFAULT PRIVILEGES FOR ROLE hireflow_owner` (tables the owner creates later get `SELECT, INSERT, UPDATE, DELETE` for the app role, sequences `USAGE`), and `app.platform.rls.enable_tenant_rls` on the eight tenant tables. The global allowlist is `app.platform.rls.GLOBAL_TABLES`; `catalogue_problems` (the isolation suite, `python -m app.devtools.check_rls`, CI) fails on any other table without the policies.
+- **Start-up check:** `app.platform.rls.check_app_role` in the API's lifespan and the workers' `worker_init` also refuses a role that is a *member* of a table's owner, since a policy granted to a role applies to its members. There is no switch to skip it.
+- **Operator commands** use `app.platform.maintenance.owner_session()` (`MIGRATION_DATABASE_URL`); the seed stays on the app role, bound to the default agency.
+- Runbook: [tenancy-rls.md](../runbooks/tenancy-rls.md).
