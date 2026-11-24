@@ -158,8 +158,8 @@ describe("PersonProfile: header and sections", () => {
     expect(first.textContent).toContain("Technical")
     expect(first.textContent).toContain("10 Nov 2026")
     expect(first.getAttribute("aria-current")).toBe("true")
-    expect(second.textContent).toContain("Moderate match")
-    expect(second.textContent).toContain("Unreviewed")
+    expect(second.textContent).toContain("Possible match")
+    expect(second.textContent).toContain("New")
     expect(second.textContent).toContain("Campaign closed")
   })
 
@@ -226,7 +226,7 @@ describe("PersonProfile: application switcher", () => {
     const notes = within(section("Notes")).getByRole("textbox", { name: /Notes/ }) as HTMLTextAreaElement
     expect(notes.value).toBe("")
     // The stage selector follows the selected application.
-    expect(screen.getByRole("combobox", { name: "Stage" }).textContent).toContain("Unreviewed")
+    expect(screen.getByRole("combobox", { name: "Stage" }).textContent).toContain("New")
 
     // Back to the most recent: the default leaves the URL.
     fireEvent.click(within(section("Applications")).getByRole("button", { name: /Senior frontend engineer/ }))

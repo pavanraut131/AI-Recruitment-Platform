@@ -7,7 +7,7 @@ import type { ReactNode } from "react"
 
 import { ApplicationEvaluation, EvaluationBlock, SkillChips } from "@/components/application/evaluation"
 import { ApplicationNotes } from "@/components/application/review-controls"
-import { MatchLabel, ScoreCell } from "@/components/application/score"
+import { ScoreCell } from "@/components/application/score"
 import { EmptyState, ErrorState } from "@/components/data-states"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -35,12 +35,12 @@ function Section({
 }) {
   const headingId = `${id}-heading`
   return (
-    <section id={id} aria-labelledby={headingId} className="flex scroll-mt-4 flex-col gap-4">
-      <div className="flex flex-col gap-0.5 border-b pb-2">
-        <h2 id={headingId} className="text-lg font-semibold tracking-tight">
+    <section id={id} aria-labelledby={headingId} className="flex scroll-mt-4 flex-col gap-4 border-t pt-5">
+      <div className="flex flex-col gap-0.5">
+        <h2 id={headingId} className="text-section font-semibold">
           {title}
         </h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {description && <p className="text-dense text-muted-foreground">{description}</p>}
       </div>
       {children}
     </section>
@@ -48,7 +48,7 @@ function Section({
 }
 
 function NoApplications() {
-  return <p className="text-sm text-muted-foreground">No applications: their resumes were deleted from every campaign.</p>
+  return <p className="text-ink-2">No applications: their resumes were deleted from every campaign.</p>
 }
 
 /** The selected application's state, or `null` when it loaded (the section renders it). */
@@ -105,23 +105,14 @@ export function EvaluationSection({
       description={
         <>
           For{" "}
-          <Link href={applicationHref(selected.campaign.id, selected.id)} className="font-medium text-foreground hover:underline">
+          <Link href={applicationHref(selected.campaign.id, selected.id)} className="text-link">
             {selected.campaign.title}
           </Link>
           , applied {formatDate(selected.created_at)}
         </>
       }
     >
-      {state ??
-        (data && (
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <ScoreCell score={data.score} category={data.category} />
-              <MatchLabel category={data.category} />
-            </div>
-            <ApplicationEvaluation application={data} />
-          </div>
-        ))}
+      {state ?? (data && <ApplicationEvaluation application={data} />)}
     </Section>
   )
 }
@@ -139,9 +130,9 @@ function Entry({ title, subtitle, meta, children }: { title: ReactNode; subtitle
     <li className="flex flex-col gap-0.5 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <span className="font-medium">{title}</span>
-        {meta && <span className="text-xs text-muted-foreground tabular-nums">{meta}</span>}
+        {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
       </div>
-      {subtitle && <span className="text-muted-foreground">{subtitle}</span>}
+      {subtitle && <span className="text-ink-2">{subtitle}</span>}
       {children}
     </li>
   )
@@ -156,14 +147,14 @@ export function ProfileSection({ person }: { person: Person }) {
   const certifications = profile.certifications.filter((item) => item.trim() !== "")
 
   return (
-    <Section id="profile" title="Profile" description="Extracted from their most recent resume.">
+    <Section id="profile" title="Profile" description="From their most recent resume, in any campaign.">
       <EvaluationBlock title="Skills">
         <SkillChips skills={profile.skills} />
       </EvaluationBlock>
       <div className="grid gap-6 md:grid-cols-2">
         <EvaluationBlock title="Experience">
           {work.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No work experience extracted.</p>
+            <p className="text-dense text-muted-foreground">No work history found on the resume.</p>
           ) : (
             <EntryList label="Work experience">
               {work.map((entry, index) => (
@@ -176,7 +167,7 @@ export function ProfileSection({ person }: { person: Person }) {
         </EvaluationBlock>
         <EvaluationBlock title="Education">
           {education.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No education extracted.</p>
+            <p className="text-dense text-muted-foreground">No education found on the resume.</p>
           ) : (
             <EntryList label="Education">
               {education.map((entry, index) => (
@@ -192,7 +183,7 @@ export function ProfileSection({ person }: { person: Person }) {
         </EvaluationBlock>
         <EvaluationBlock title="Projects">
           {projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No projects extracted.</p>
+            <p className="text-dense text-muted-foreground">No projects found on the resume.</p>
           ) : (
             <EntryList label="Projects">
               {projects.map((entry, index) => (
@@ -208,7 +199,7 @@ export function ProfileSection({ person }: { person: Person }) {
         </EvaluationBlock>
         <EvaluationBlock title="Certifications">
           {certifications.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No certifications extracted.</p>
+            <p className="text-dense text-muted-foreground">No certifications found on the resume.</p>
           ) : (
             <ul aria-label="Certifications" className="flex flex-col gap-1.5 text-sm">
               {certifications.map((item, index) => (
@@ -237,16 +228,15 @@ export function ApplicationsSection({
       {applications.length === 0 ? (
         <NoApplications />
       ) : (
-        <div className="rounded-lg border">
-          <Table aria-label="Applications" className="text-dense">
+        <div className="border-t">
+          <Table aria-label="Applications" className="min-w-[640px] text-dense">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 text-xs text-muted-foreground">Campaign</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Score</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Category</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Stage</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Applied</TableHead>
-                <TableHead className="h-9 w-24 text-xs text-muted-foreground">
+                <TableHead className="pl-1">Campaign</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Stage</TableHead>
+                <TableHead>Applied</TableHead>
+                <TableHead className="w-24 pr-1">
                   <span className="sr-only">Evaluation</span>
                 </TableHead>
               </TableRow>
@@ -259,12 +249,13 @@ export function ApplicationsSection({
                     key={application.id}
                     data-state={current ? "selected" : undefined}
                     aria-current={current || undefined}
+                    className="data-[state=selected]:shadow-[inset_2px_0_0_var(--primary)]"
                   >
-                    <TableCell className="py-2">
+                    <TableCell className="py-2 pl-2">
                       <div className="flex flex-col">
                         <Link
                           href={applicationHref(application.campaign.id, application.id)}
-                          className="font-medium hover:underline"
+                          className="text-sm font-semibold hover:underline"
                         >
                           {application.campaign.title}
                         </Link>
@@ -274,16 +265,13 @@ export function ApplicationsSection({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <ScoreCell score={application.score} category={application.category} />
+                      <ScoreCell score={application.score} category={application.category} withLabel />
                     </TableCell>
-                    <TableCell>
-                      <MatchLabel category={application.category} />
-                    </TableCell>
-                    <TableCell className={cn(application.pipeline_stage === null && "text-muted-foreground")}>
+                    <TableCell className={cn(application.pipeline_stage === null ? "text-muted-foreground" : "text-ink-2")}>
                       {stageLabel(application.pipeline_stage)}
                     </TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">{formatDate(application.created_at)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-muted-foreground">{formatDate(application.created_at)}</TableCell>
+                    <TableCell className="pr-1 text-right">
                       {current ? (
                         <span className="text-xs text-muted-foreground">Shown above</span>
                       ) : (

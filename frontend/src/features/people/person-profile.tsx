@@ -92,7 +92,7 @@ export function PersonProfile({ personId }: { personId: string }) {
 }
 
 function ProfileFrame({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">{children}</div>
+  return <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-10 px-4 pt-6 pb-14 sm:px-8 lg:px-14">{children}</div>
 }
 
 function BackToTalent() {
@@ -110,12 +110,23 @@ function ProfileSkeleton() {
   return (
     <ProfileFrame>
       <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading person">
-        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-8 w-64" />
         <Skeleton className="h-4 w-80" />
-        <Skeleton className="mt-2 h-8 w-96" />
+        <div className="mt-3 flex gap-6 border-y py-3">
+          <Skeleton className="h-9 w-72" />
+          <Skeleton className="h-9 w-40" />
+        </div>
       </div>
-      <Skeleton className="h-48 w-full" />
-      <Skeleton className="h-32 w-full" />
+      <div className="flex flex-col gap-3 border-t pt-5">
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="h-9 w-40" />
+        <Skeleton className="h-4 w-full max-w-xl" />
+        <Skeleton className="h-4 w-2/3 max-w-lg" />
+      </div>
+      <div className="flex flex-col gap-3 border-t pt-5">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-24 w-full" />
+      </div>
     </ProfileFrame>
   )
 }

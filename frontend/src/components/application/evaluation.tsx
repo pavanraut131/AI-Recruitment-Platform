@@ -71,10 +71,10 @@ export function Recommendation({ application }: { application: Pick<Application,
   return (
     <p className="max-w-prose text-ink-2">
       {recommendation && (
-        <span className="font-medium text-foreground">
-          {recommendation}
+        <>
+          <span className="font-medium text-foreground">{recommendation}</span>
           {/[.!?]$/.test(recommendation) ? "" : "."}
-        </span>
+        </>
       )}
       {recommendation && summary && " "}
       {summary}

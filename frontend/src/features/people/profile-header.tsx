@@ -7,6 +7,7 @@ import { ApplicationStageSelect } from "@/components/application/review-controls
 import { Kbd } from "@/components/ui/kbd"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { displayName, formatDate, formatYears } from "@/lib/applications"
+import { workEntries, workLine } from "@/lib/profile"
 
 import { contacts, type Person, type PersonApplication } from "./model"
 
@@ -20,7 +21,7 @@ function ExternalLink({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 hover:text-foreground hover:underline"
+      className="inline-flex items-center gap-1 text-primary hover:underline"
     >
       {label}
       <ExternalLinkIcon className="size-3" aria-hidden="true" />
@@ -68,22 +69,25 @@ export function ProfileHeader({
   const github = safeUrl(person.github_url)
   const linkedin = safeUrl(person.linkedin_url)
   const years = person.profile.years_of_experience
+  const latest = workEntries(person.profile.work_experience)[0]
+  const currentRole = latest ? workLine(latest) : null
 
   return (
-    <header className="flex flex-col gap-4">
+    <header className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{displayName(person.name)}</h1>
-        <ul aria-label="Contact and links" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <h1 className="text-title font-semibold tracking-tight">{displayName(person.name)}</h1>
+        {currentRole && <p className="text-base text-ink-2">{currentRole}</p>}
+        <ul aria-label="Contact and links" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-dense text-ink-2">
           {emails.map((email) => (
             <ContactItem key={email} icon={<MailIcon className="size-3.5" aria-hidden="true" />}>
-              <a href={`mailto:${email}`} className="hover:text-foreground hover:underline">
+              <a href={`mailto:${email}`} className="text-primary hover:underline">
                 {email}
               </a>
             </ContactItem>
           ))}
           {phones.map((phone) => (
             <ContactItem key={phone} icon={<PhoneIcon className="size-3.5" aria-hidden="true" />}>
-              <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="hover:text-foreground hover:underline">
+              <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="text-primary hover:underline">
                 {phone}
               </a>
             </ContactItem>
@@ -108,13 +112,13 @@ export function ProfileHeader({
       </div>
 
       {selected && (
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-lg border bg-muted/30 px-4 py-3">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-y py-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <label htmlFor={switcherId} className="text-xs text-muted-foreground">
+            <label htmlFor={switcherId} className="text-xs font-medium text-muted-foreground">
               Application{person.applications.length > 1 && ` (${person.applications.length})`}
             </label>
             <Select value={selected.id} onValueChange={onSelect}>
-              <SelectTrigger id={switcherId} size="sm" className="max-w-full min-w-64">
+              <SelectTrigger id={switcherId} className="max-w-full min-w-64">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
@@ -127,7 +131,7 @@ export function ProfileHeader({
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor={stageId} className="text-xs text-muted-foreground">
+            <label htmlFor={stageId} className="text-xs font-medium text-muted-foreground">
               Stage <Kbd aria-hidden="true">S</Kbd>
             </label>
             <ApplicationStageSelect
