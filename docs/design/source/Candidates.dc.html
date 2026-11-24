@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HireFlow AI · Candidate review</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1F5C4A}a:hover{color:#163F33}
+.hf-light{--bg:#F7F7F5;--surface:#FFFFFF;--sunken:#F1F1EE;--row-on:#EEF3F0;--line:#E6E5E1;--line-2:#D9D8D3;--ink:#18181B;--ink-2:#45454B;--ink-3:#66666D;--accent:#1F5C4A;--accent-ink:#FFFFFF;--accent-soft:#E6EFEA;--strong:#1F5C4A;--moderate:#94570F;--weak:#7A7A80;--seg-off:#E6E5E1;--miss:#A3361F}
+.hf-dark{--bg:#111113;--surface:#17171A;--sunken:#1E1E22;--row-on:#1C2A24;--line:#2A2A2F;--line-2:#36363C;--ink:#EDEDEF;--ink-2:#BDBDC3;--ink-3:#9A9AA2;--accent:#86C9AE;--accent-ink:#0E1F19;--accent-soft:#1B2D26;--strong:#86C9AE;--moderate:#E3A75E;--weak:#9A9AA2;--seg-off:#2E2E34;--miss:#F0937D}
+.hf-dark a{color:#86C9AE}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="min-height: 1000px; background: var(--bg); color: var(--ink); font-family: 'Instrument Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; display: flex; flex-wrap: wrap; font-variant-numeric: tabular-nums">
+
+  <nav aria-label="Main" style="flex: 1 1 64px; max-width: 64px; box-sizing: border-box; padding: 20px 12px; display: flex; flex-direction: column; align-items: center; gap: 20px; border-right: 1px solid var(--line)">
+    <span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 8px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-size: 13px">N</span>
+    <a href="#" aria-label="Today" style="width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-3)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg></a>
+    <a href="#" aria-label="Campaigns" aria-current="page" style="width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; background: var(--sunken); color: var(--ink)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></a>
+    <a href="#" aria-label="Talent pool" style="width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-3)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/></svg></a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; background: var(--surface); box-sizing: border-box; padding: 28px clamp(16px, 3vw, 40px) 40px; display: flex; flex-direction: column; gap: 20px">
+    <header style="display: flex; flex-direction: column; gap: 6px">
+      <p style="margin: 0; font-size: 13px; color: var(--ink-3)"><a href="#" style="color: var(--ink-3); text-decoration: none">Campaigns</a> <span aria-hidden="true">/</span> Finch Pay</p>
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px">
+        <h1 style="margin: 0; font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em">Senior Python Engineer</h1>
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2)"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: var(--accent)"></span>Open since 12 Nov</span>
+      </div>
+      <p style="margin: 2px 0 0; color: var(--ink-2)"><strong style="font-weight: 600; color: var(--ink)">24 applicants.</strong> 3 strong, 9 worth a look, 12 unlikely. Median score 58.</p>
+    </header>
+
+    <div role="tablist" aria-label="Campaign sections" style="display: flex; gap: 24px; border-bottom: 1px solid var(--line)">
+      <button type="button" role="tab" aria-selected="true" style="padding: 10px 0; margin-bottom: -1px; border: 0; border-bottom: 2px solid var(--ink); background: transparent; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer">Candidates <span style="color: var(--ink-3); font-weight: 500">24</span></button>
+      <button type="button" role="tab" aria-selected="false" style="padding: 10px 0; border: 0; background: transparent; color: var(--ink-3); font: inherit; cursor: pointer">Uploads</button>
+      <button type="button" role="tab" aria-selected="false" style="padding: 10px 0; border: 0; background: transparent; color: var(--ink-3); font: inherit; cursor: pointer">Insights</button>
+      <button type="button" role="tab" aria-selected="false" style="padding: 10px 0; border: 0; background: transparent; color: var(--ink-3); font: inherit; cursor: pointer">Brief</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+      <label style="flex: 1 1 240px; max-width: 320px; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 8px; color: var(--ink-3)">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search candidates</span>
+        <input type="search" placeholder="Name, email or skill" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit">
+      </label>
+      <button type="button" style="min-height: 36px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 8px; background: transparent; color: var(--ink-2); font: inherit; cursor: pointer">Match: any</button>
+      <button type="button" style="min-height: 36px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 8px; background: transparent; color: var(--ink-2); font: inherit; cursor: pointer">Stage: any</button>
+      <button type="button" style="min-height: 36px; padding: 0 12px; border: 1px dashed var(--line-2); border-radius: 8px; background: transparent; color: var(--ink-3); font: inherit; cursor: pointer">+ Filter</button>
+      <span style="margin-left: auto; font-size: 13px; color: var(--ink-3)">Sorted by score</span>
+    </div>
+
+    <div style="overflow-x: auto; border-top: 1px solid var(--line)">
+      <table style="width: 100%; min-width: 760px; border-collapse: collapse">
+        <thead>
+          <tr style="text-align: left; font-size: 12px; color: var(--ink-3)">
+            <th scope="col" style="width: 36px; padding: 10px 8px; font-weight: 500"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Select</span></th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500">Candidate</th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500">Score</th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500">Must-haves</th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500">Experience</th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500">Stage</th>
+            <th scope="col" style="padding: 10px 8px; font-weight: 500; text-align: right">Applied</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+            <tr style="border-top: 1px solid var(--line); background: {{r.rowBg}}">
+              <td style="padding: 12px 8px; box-shadow: {{r.edge}}"><input type="checkbox" aria-label="Select {{r.name}}" style="width: 16px; height: 16px; accent-color: var(--accent)"></td>
+              <td style="padding: 12px 8px"><div style="display: flex; flex-direction: column"><span style="font-weight: 600">{{r.name}}</span><span style="font-size: 13px; color: var(--ink-3)">{{r.role}}</span></div></td>
+              <td style="padding: 12px 8px"><span style="display: inline-flex; align-items: center; gap: 8px"><span style="font-weight: 600; width: 22px; text-align: right">{{r.score}}</span><span aria-hidden="true" style="display: flex; gap: 2px"><sc-for list="{{r.segs}}" as="s" hint-placeholder-count="5"><span style="width: 5px; height: 12px; border-radius: 2px; background: {{s.bg}}"></span></sc-for></span><span style="font-size: 13px; color: {{r.matchColor}}">{{r.match}}</span></span></td>
+              <td style="padding: 12px 8px; color: var(--ink-2)">{{r.must}}</td>
+              <td style="padding: 12px 8px; color: var(--ink-2)">{{r.exp}}</td>
+              <td style="padding: 12px 8px; color: var(--ink-2)">{{r.stage}}</td>
+              <td style="padding: 12px 8px; color: var(--ink-3); text-align: right">{{r.applied}}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin: 0; font-size: 13px; color: var(--ink-3)">Showing 8 of 24 · <kbd style="font: inherit; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px">J</kbd> <kbd style="font: inherit; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px">K</kbd> to move, <kbd style="font: inherit; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px">S</kbd> to change stage</p>
+  </main>
+
+  <aside aria-label="Asha Verma" style="flex: 1 1 380px; max-width: 440px; box-sizing: border-box; background: var(--surface); border-left: 1px solid var(--line); padding: 28px 28px 32px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: flex-start; gap: 12px">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Asha Verma</h2>
+        <span style="color: var(--ink-2)">Backend lead at Finch Pay · London</span>
+        <a href="#" style="font-size: 13px; text-decoration: none">asha.verma@example.com</a>
+      </div>
+      <button type="button" aria-label="Close" style="width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ink-3); cursor: pointer"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <button type="button" style="min-height: 38px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer">Move to phone screen</button>
+      <button type="button" style="min-height: 38px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 8px; background: transparent; color: var(--ink); font: inherit; cursor: pointer">Not a fit</button>
+      <a href="#" style="display: inline-flex; align-items: center; min-height: 38px; padding: 0 6px; text-decoration: none; font-weight: 500">Full profile</a>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: baseline; gap: 10px">
+        <span style="font-size: 36px; line-height: 1; font-weight: 600; letter-spacing: -0.02em">90</span>
+        <span style="font-weight: 600; color: var(--strong)">Strong match</span>
+      </div>
+      <p style="margin: 0; color: var(--ink-2)">Has every must-have skill and eight years building Python payment APIs. Worth a phone screen; ask about AWS depth, which only shows in one role.</p>
+    </section>
+
+    <section aria-labelledby="musts" style="display: flex; flex-direction: column; gap: 8px">
+      <h3 id="musts" style="margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-3)">Must-haves</h3>
+      <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px">
+        <sc-for list="{{skills}}" as="k" hint-placeholder-count="5">
+          <li style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 13px">
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="color: var(--strong)"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{k}}</li>
+        </sc-for>
+      </ul>
+    </section>
+
+    <section aria-labelledby="breakdown" style="display: flex; flex-direction: column; gap: 8px">
+      <h3 id="breakdown" style="margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-3)">How the score adds up</h3>
+      <sc-for list="{{parts}}" as="p" hint-placeholder-count="5">
+        <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 48px; align-items: center; gap: 12px; font-size: 13px">
+          <span style="color: var(--ink-2)">{{p.label}}</span>
+          <span aria-hidden="true" style="height: 4px; border-radius: 2px; background: var(--seg-off); overflow: hidden"><span style="display: block; height: 100%; width: {{p.w}}; background: var(--ink-2)"></span></span>
+          <span style="text-align: right; color: var(--ink-2)">{{p.v}}</span>
+        </div>
+      </sc-for>
+    </section>
+
+    <section aria-labelledby="exp" style="display: flex; flex-direction: column; gap: 10px">
+      <h3 id="exp" style="margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-3)">Recent experience</h3>
+      <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">Backend lead, Finch Pay</span><span style="font-size: 13px; color: var(--ink-3)">2021 to now · Payments API in FastAPI, moved billing to PostgreSQL</span></div>
+      <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">Software engineer, Ledgerly</span><span style="font-size: 13px; color: var(--ink-3)">2018 to 2021 · Django services on AWS</span></div>
+    </section>
+
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 13px; font-weight: 600; color: var(--ink-3)">Notes</span>
+      <textarea rows="3" placeholder="Only your agency sees notes" style="resize: vertical; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit"></textarea>
+    </label>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var dark = this.props.dark ?? false;
+    function segs(score) {
+      var n = Math.round(score / 20);
+      var out = [];
+      for (var i = 0; i < 5; i++) {
+        out.push({ bg: i < n ? (score >= 75 ? 'var(--strong)' : score >= 50 ? 'var(--moderate)' : 'var(--weak)') : 'var(--seg-off)' });
+      }
+      return out;
+    }
+    var rows = [
+      { name: 'Asha Verma', role: 'Backend lead at Finch Pay', score: 90, must: '5 of 5', exp: '8 yrs', stage: 'New', applied: '2d', on: true },
+      { name: 'Tomás Rivera', role: 'Senior engineer at Kestrel', score: 82, must: '5 of 5', exp: '6 yrs', stage: 'Phone screen', applied: '4d' },
+      { name: 'Grace Liu', role: 'Platform engineer at Moorfield', score: 77, must: '4 of 5', exp: '7 yrs', stage: 'New', applied: '1d' },
+      { name: 'Rahul Iyer', role: 'Software engineer at Brightwell', score: 59, must: '3 of 5', exp: '4 yrs', stage: 'New', applied: '2d' },
+      { name: 'Hannah Becker', role: 'Python developer at Quill', score: 55, must: '3 of 5', exp: '3 yrs', stage: 'New', applied: '5d' },
+      { name: 'Omar Haddad', role: 'Backend developer, contract', score: 51, must: '3 of 5', exp: '5 yrs', stage: 'Not a fit', applied: '6d' },
+      { name: 'Meera Nair', role: 'Junior developer at Copperleaf', score: 28, must: '1 of 5', exp: '1 yr', stage: 'New', applied: '2d' },
+      { name: 'Ben Archer', role: 'QA engineer at Northgate', score: 22, must: '1 of 5', exp: '4 yrs', stage: 'New', applied: '7d' }
+    ].map(function (r) {
+      var match = r.score >= 75 ? 'Strong' : r.score >= 50 ? 'Possible' : 'Unlikely';
+      var color = r.score >= 75 ? 'var(--strong)' : r.score >= 50 ? 'var(--moderate)' : 'var(--weak)';
+      return Object.assign({}, r, {
+        segs: segs(r.score), match: match, matchColor: color,
+        rowBg: r.on ? 'var(--row-on)' : 'transparent',
+        edge: r.on ? 'inset 2px 0 0 var(--accent)' : 'none'
+      });
+    });
+    var parts = [
+      { label: 'Skills', v: '40 / 40', w: '100%' },
+      { label: 'Experience', v: '30 / 30', w: '100%' },
+      { label: 'Relevant projects', v: '10 / 15', w: '67%' },
+      { label: 'Education', v: '7 / 10', w: '70%' },
+      { label: 'Resume quality', v: '3 / 5', w: '60%' }
+    ];
+    return {
+      themeClass: dark ? 'hf-dark' : 'hf-light',
+      rows: rows,
+      parts: parts,
+      skills: ['Python', 'FastAPI', 'PostgreSQL', 'Docker', 'AWS']
+    };
+  }
+}
+</script>
+</body>
+</html>

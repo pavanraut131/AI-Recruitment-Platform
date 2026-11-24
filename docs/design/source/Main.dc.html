@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HireFlow AI · Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1F5C4A}a:hover{color:#163F33}
+.hf-light{--bg:#F7F7F5;--surface:#FFFFFF;--sunken:#F1F1EE;--line:#E6E5E1;--line-2:#D9D8D3;--ink:#18181B;--ink-2:#45454B;--ink-3:#66666D;--accent:#1F5C4A;--accent-ink:#FFFFFF;--accent-soft:#E6EFEA;--strong:#1F5C4A;--moderate:#94570F;--weak:#7A7A80;--seg-off:#E6E5E1}
+.hf-dark{--bg:#111113;--surface:#17171A;--sunken:#1E1E22;--line:#2A2A2F;--line-2:#36363C;--ink:#EDEDEF;--ink-2:#BDBDC3;--ink-3:#9A9AA2;--accent:#86C9AE;--accent-ink:#0E1F19;--accent-soft:#1B2D26;--strong:#86C9AE;--moderate:#E3A75E;--weak:#9A9AA2;--seg-off:#2E2E34}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="min-height: 1000px; background: var(--bg); color: var(--ink); font-family: 'Instrument Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; display: flex; flex-wrap: wrap; font-variant-numeric: tabular-nums">
+
+  <nav aria-label="Main" style="flex: 1 1 232px; max-width: 260px; box-sizing: border-box; padding: 20px 14px; display: flex; flex-direction: column; gap: 24px; border-right: 1px solid var(--line)">
+    <button type="button" style="display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer">
+      <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 7px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-size: 13px">N</span>
+      <span style="display: flex; flex-direction: column; line-height: 1.25">
+        <span style="font-weight: 600">Northbank Talent</span>
+        <span style="font-size: 12px; color: var(--ink-3)">All clients</span>
+      </span>
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: auto; color: var(--ink-3)"><path d="M7 10l5-5 5 5M7 14l5 5 5-5"/></svg>
+    </button>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; background: var(--sunken); color: var(--ink); text-decoration: none; font-weight: 600">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>Today</a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; color: var(--ink-2); text-decoration: none">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Campaigns<span style="margin-left: auto; font-size: 12px; color: var(--ink-3)">4</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; color: var(--ink-2); text-decoration: none">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/></svg>Talent pool<span style="margin-left: auto; font-size: 12px; color: var(--ink-3)">812</span></a>
+    </div>
+    <div style="margin-top: auto; display: flex; flex-direction: column; gap: 2px">
+      <a href="#" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; color: var(--ink-2); text-decoration: none">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</a>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 10px; margin-top: 8px; border-top: 1px solid var(--line)">
+        <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 12px; font-weight: 600">PS</span>
+        <span style="display: flex; flex-direction: column; line-height: 1.25"><span style="font-weight: 500">Priya Shah</span><span style="font-size: 12px; color: var(--ink-3)">Recruiter</span></span>
+      </div>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; background: var(--surface); box-sizing: border-box; padding: 40px clamp(20px, 4vw, 56px) 56px">
+    <div style="max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px">
+
+      <header style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+        <div style="flex: 1 1 420px; display: flex; flex-direction: column; gap: 6px">
+          <p style="margin: 0; font-size: 13px; color: var(--ink-3)">Tuesday 24 November</p>
+          <h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em">Good morning, Priya</h1>
+          <p style="margin: 4px 0 0; font-size: 16px; color: var(--ink-2); max-width: 620px">Three strong matches came in overnight, and <a href="#" style="font-weight: 500">12 candidates</a> are waiting for a first look.</p>
+        </div>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); text-decoration: none; font-weight: 600">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>New campaign</a>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 48px; align-items: flex-start">
+
+        <section aria-labelledby="queue" style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: baseline; gap: 12px">
+            <h2 id="queue" style="margin: 0; font-size: 15px; font-weight: 600">Ready for review</h2>
+            <span style="font-size: 13px; color: var(--ink-3)">Best matches first</span>
+            <a href="#" style="margin-left: auto; font-size: 13px; text-decoration: none; font-weight: 500">See all 12</a>
+          </div>
+          <ul style="list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line)">
+            <sc-for list="{{queue}}" as="c" hint-placeholder-count="5">
+              <li style="display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-bottom: 1px solid var(--line)">
+                <span aria-hidden="true" style="flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--sunken); color: var(--ink-2); display: grid; place-items: center; font-size: 13px; font-weight: 600">{{c.initials}}</span>
+                <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+                  <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap"><span style="font-weight: 600">{{c.name}}</span><span style="font-size: 13px; color: var(--ink-3)">{{c.role}}</span></div>
+                  <span style="font-size: 13px; color: var(--ink-2)">{{c.why}}</span>
+                </div>
+                <span style="flex: none; font-size: 13px; color: var(--ink-3); width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.campaign}}</span>
+                <span style="flex: none; display: flex; align-items: center; gap: 8px; width: 86px">
+                  <span style="font-weight: 600; font-size: 15px; width: 24px; text-align: right">{{c.score}}</span>
+                  <span aria-hidden="true" style="display: flex; gap: 2px"><sc-for list="{{c.segs}}" as="s" hint-placeholder-count="5"><span style="width: 6px; height: 14px; border-radius: 2px; background: {{s.bg}}"></span></sc-for></span>
+                </span>
+                <a href="#" style="flex: none; display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 7px; color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 500">Review</a>
+              </li>
+            </sc-for>
+          </ul>
+        </section>
+
+        <aside aria-labelledby="campaigns" style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: baseline; gap: 12px">
+            <h2 id="campaigns" style="margin: 0; font-size: 15px; font-weight: 600">Open campaigns</h2>
+            <a href="#" style="margin-left: auto; font-size: 13px; text-decoration: none; font-weight: 500">All campaigns</a>
+          </div>
+          <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px">
+            <sc-for list="{{campaigns}}" as="k" hint-placeholder-count="4">
+              <li>
+                <a href="#" style="display: flex; flex-direction: column; gap: 8px; padding: 14px; margin: 0 -14px; border-radius: 10px; color: var(--ink); text-decoration: none">
+                  <span style="display: flex; align-items: baseline; gap: 8px"><span style="font-weight: 600">{{k.title}}</span><span style="margin-left: auto; font-size: 12px; color: var(--ink-3)">{{k.client}}</span></span>
+                  <span aria-hidden="true" style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--seg-off); gap: 2px">
+                    <span style="width: {{k.reviewW}}; background: var(--ink-3)"></span>
+                    <span style="width: {{k.shortW}}; background: var(--accent)"></span>
+                    <span style="width: {{k.offerW}}; background: var(--moderate)"></span>
+                  </span>
+                  <span style="font-size: 13px; color: var(--ink-2)">{{k.summary}}</span>
+                </a>
+              </li>
+            </sc-for>
+          </ul>
+          <p style="margin: 8px 0 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3)">
+            <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent)"></span>All uploads processed, last one at 08:12</p>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var dark = this.props.dark ?? false;
+    function segs(score) {
+      var n = Math.round(score / 20);
+      var out = [];
+      for (var i = 0; i < 5; i++) {
+        out.push({ bg: i < n ? (score >= 75 ? 'var(--strong)' : score >= 50 ? 'var(--moderate)' : 'var(--weak)') : 'var(--seg-off)' });
+      }
+      return out;
+    }
+    var queue = [
+      { initials: 'AV', name: 'Asha Verma', role: 'Backend lead at Finch Pay', why: 'All 5 must-haves, 8 years of Python backends', campaign: 'Senior Python Engineer', score: 90 },
+      { initials: 'DK', name: 'Daniel Kowalski', role: 'Data engineer at Ordnance', why: 'Spark and Airflow at scale; no dbt yet', campaign: 'Data Engineer', score: 84 },
+      { initials: 'SM', name: 'Saumya Mall', role: 'Senior engineer at Harbour Labs', why: 'Strong Go and Postgres; light on Kubernetes', campaign: 'Backend Engineer', score: 79 },
+      { initials: 'RI', name: 'Rahul Iyer', role: 'Software engineer at Brightwell', why: '3 of 5 must-haves; FastAPI but no AWS', campaign: 'Senior Python Engineer', score: 59 },
+      { initials: 'LO', name: 'Lena Okafor', role: 'Frontend developer, freelance', why: 'React and TypeScript; design-system work', campaign: 'Frontend Engineer', score: 56 }
+    ].map(function (c) { return Object.assign({}, c, { segs: segs(c.score) }); });
+    var campaigns = [
+      { title: 'Senior Python Engineer', client: 'Finch Pay', reviewW: '38%', shortW: '12%', offerW: '0%', summary: '24 applicants · 3 strong · 9 to review' },
+      { title: 'Data Engineer', client: 'Ordnance', reviewW: '22%', shortW: '18%', offerW: '6%', summary: '31 applicants · 1 offer out' },
+      { title: 'Backend Engineer', client: 'Harbour Labs', reviewW: '30%', shortW: '20%', offerW: '10%', summary: '18 applicants · interviews this week' },
+      { title: 'Frontend Engineer', client: 'Finch Pay', reviewW: '45%', shortW: '5%', offerW: '0%', summary: '12 applicants · 6 new since Friday' }
+    ];
+    return { themeClass: dark ? 'hf-dark' : 'hf-light', queue: queue, campaigns: campaigns };
+  }
+}
+</script>
+</body>
+</html>
