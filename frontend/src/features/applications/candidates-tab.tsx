@@ -129,7 +129,11 @@ export function CandidatesTab({
 
   let body: ReactNode
   if (list.isPending) {
-    body = <CandidatesTableSkeleton />
+    body = (
+      <div className="overflow-x-auto border-t">
+        <CandidatesTableSkeleton />
+      </div>
+    )
   } else if (list.isError && list.data === undefined) {
     body = <LoadError error={list.error} onRetry={() => void list.refetch()} retrying={list.isFetching} />
   } else if (noCandidatesAtAll) {
@@ -141,7 +145,7 @@ export function CandidatesTab({
   } else {
     body = (
       <>
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto border-t">
           <CandidatesTable
             rows={rows}
             requiredSkills={requiredSkills}
@@ -168,7 +172,7 @@ export function CandidatesTab({
   }
 
   return (
-    <section aria-label="Candidates" className="flex flex-col gap-3">
+    <section aria-label="Candidates" className="flex flex-col gap-4">
       {!noCandidatesAtAll && (
         <div className="flex flex-wrap items-start justify-between gap-2">
           <CandidatesToolbar
@@ -202,7 +206,7 @@ export function CandidatesTab({
         error={openDetail.isError ? openDetail.error : undefined}
         onRetry={() => void openDetail.refetch()}
         onClose={onClosePanel}
-        requiredSkills={requiredSkills}
+        requiredSkills={campaign.data?.required_skills}
       />
     </section>
   )

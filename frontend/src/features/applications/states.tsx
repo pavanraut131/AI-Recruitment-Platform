@@ -21,18 +21,15 @@ function StateBlock({
   role?: "alert" | "status"
 }) {
   return (
-    <div
-      role={role}
-      className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-14 text-center"
-    >
-      <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+    <div role={role} className="flex flex-col items-center gap-3 border-t px-6 py-16 text-center">
+      <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="size-5" aria-hidden="true" />
       </div>
       <div className="flex flex-col gap-1">
-        <p className="font-medium">{title}</p>
-        {description && <p className="max-w-sm text-sm text-muted-foreground">{description}</p>}
+        <p className="text-section font-semibold">{title}</p>
+        {description && <p className="max-w-sm text-ink-2">{description}</p>}
       </div>
-      {action}
+      {action && <div className="mt-1">{action}</div>}
     </div>
   )
 }
@@ -43,9 +40,9 @@ export function NoCandidates({ uploadHref }: { uploadHref: string }) {
     <StateBlock
       icon={UsersIcon}
       title="No candidates yet"
-      description="Upload resumes and HireFlow AI will extract, score and rank each candidate here."
+      description="Upload their resumes. Each one is read, scored against this campaign's must-haves and ranked here."
       action={
-        <Button asChild size="sm">
+        <Button asChild>
           <Link href={uploadHref}>
             <UploadIcon aria-hidden="true" />
             Upload resumes
@@ -62,9 +59,9 @@ export function NoMatches({ onClear }: { onClear: () => void }) {
     <StateBlock
       icon={FilterXIcon}
       title="No candidates match these filters"
-      description="Try a wider score range or fewer categories, stages or skills."
+      description="Try a wider score range, or fewer matches, stages or skills."
       action={
-        <Button variant="outline" size="sm" onClick={onClear}>
+        <Button variant="outline" onClick={onClear}>
           Clear filters
         </Button>
       }
@@ -79,7 +76,7 @@ export function EmptyPage({ onFirstPage }: { onFirstPage: () => void }) {
       icon={UsersIcon}
       title="This page is empty"
       action={
-        <Button variant="outline" size="sm" onClick={onFirstPage}>
+        <Button variant="outline" onClick={onFirstPage}>
           Go to the first page
         </Button>
       }
@@ -97,7 +94,7 @@ export function LoadError({ error, onRetry, retrying }: { error: unknown; onRetr
       title={`Could not load candidates: ${title}`}
       description={description}
       action={
-        <Button variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
+        <Button variant="outline" onClick={onRetry} disabled={retrying}>
           {retrying ? "Retrying…" : "Retry"}
         </Button>
       }

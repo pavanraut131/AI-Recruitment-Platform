@@ -1,60 +1,35 @@
 import { useEffect, useRef } from "react"
 
+import { mustHaves } from "@/lib/applications"
 import { cn } from "@/lib/utils"
 
 import { stageLabel, type Stage } from "./model"
 
-// The score and category cells are shared with the review panel and the Person profile.
+// The score cell is shared with Home, the review panel and the Person profile.
 export { MatchLabel, ScoreCell } from "@/components/application/score"
 
 /**
- * The top skills: the campaign's required skills the candidate has come first
- * (highlighted), then the rest in resume order.
+ * "4 of 5": the campaign's must-haves the candidate has. The title lists the
+ * missing ones (the review panel shows them as chips). A dash when the
+ * campaign lists no required skills.
  */
-export function topSkills(
-  skills: readonly string[],
-  required: ReadonlySet<string>,
-  limit = 3,
-): { shown: { skill: string; required: boolean }[]; more: number } {
-  const unique = [...new Map(skills.map((skill) => [skill.trim().toLowerCase(), skill.trim()])).values()].filter(
-    Boolean,
-  )
-  const matched = unique.filter((skill) => required.has(skill.toLowerCase()))
-  const others = unique.filter((skill) => !required.has(skill.toLowerCase()))
-  const ordered = [...matched.map((skill) => ({ skill, required: true })), ...others.map((skill) => ({ skill, required: false }))]
-  return { shown: ordered.slice(0, limit), more: Math.max(0, ordered.length - limit) }
-}
-
-export function SkillsCell({ skills, required }: { skills: readonly string[]; required: ReadonlySet<string> }) {
-  const { shown, more } = topSkills(skills, required)
-  if (shown.length === 0) return <span className="text-muted-foreground">—</span>
+export function MustHavesCell({ skills, required }: { skills: readonly string[]; required: ReadonlySet<string> }) {
+  if (required.size === 0) return <span className="text-muted-foreground">—</span>
+  const items = mustHaves([...required], skills)
+  const has = items.filter((item) => item.has).length
+  const missing = items.filter((item) => !item.has).map((item) => item.skill)
   return (
-    <div className="flex items-center gap-1">
-      {shown.map(({ skill, required: isRequired }) => (
-        <span
-          key={skill}
-          data-required={isRequired || undefined}
-          className={cn(
-            "inline-flex h-5 max-w-32 items-center truncate rounded-sm border px-1.5 text-xs",
-            // Required skills: tinted chip, foreground text. Teal text on the translucent tint
-            // fell below 4.5:1 on an active or selected row (axe, E1-09).
-            isRequired
-              ? "border-primary/30 bg-primary/10 font-medium text-foreground"
-              : "border-border text-muted-foreground",
-          )}
-          title={isRequired ? `${skill} (required skill)` : skill}
-        >
-          {skill}
-          {isRequired && <span className="sr-only"> (required)</span>}
-        </span>
-      ))}
-      {more > 0 && <span className="text-xs text-muted-foreground">+{more}</span>}
-    </div>
+    <span
+      className={cn(has === items.length ? "text-foreground" : "text-ink-2")}
+      title={missing.length > 0 ? `Missing: ${missing.join(", ")}` : "Has every must-have"}
+    >
+      {has} of {items.length}
+    </span>
   )
 }
 
 export function StageCell({ stage }: { stage: Stage | null }) {
-  return <span className={cn(stage === null && "text-muted-foreground")}>{stageLabel(stage)}</span>
+  return <span className={cn(stage === null ? "text-muted-foreground" : "text-ink-2")}>{stageLabel(stage)}</span>
 }
 
 /**

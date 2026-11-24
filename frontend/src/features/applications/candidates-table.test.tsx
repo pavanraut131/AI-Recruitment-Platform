@@ -2,7 +2,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react"
 import type { RowSelectionState } from "@tanstack/react-table"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { topSkills } from "./cells"
+import { mustHaves } from "@/lib/applications"
+
 import { CandidatesTable, type CandidatesTableProps } from "./candidates-table"
 import { makeApplication } from "./fixtures"
 import { installDomPolyfills } from "./test-utils"
@@ -55,7 +56,7 @@ describe("CandidatesTable columns", () => {
   it("shows the headers in the spec's order", () => {
     renderTable()
     const headers = screen.getAllByRole("columnheader").map((header) => header.textContent)
-    expect(headers).toEqual(["", "Candidate", "Score", "Category", "Top skills", "Experience", "Stage", "Updated"])
+    expect(headers).toEqual(["", "Candidate", "Score", "Must-haves", "Experience", "Stage", "Updated"])
   })
 
   it("shows the name with the email under it", () => {
@@ -64,54 +65,53 @@ describe("CandidatesTable columns", () => {
     expect(within(row).getByText("ada@example.com")).toBeTruthy()
   })
 
-  it("shows the rounded score with a bar in the category colour", () => {
+  it("shows the rounded score, a 5-segment meter in the category colour and the label", () => {
     renderTable()
     const row = rowOf("Ada Lovelace")
     expect(within(row).getByText("87")).toBeTruthy()
-    const bar = row.querySelector<HTMLElement>("[data-slot='score-bar']")
-    expect(bar?.className).toContain("bg-category-strong")
-    expect(bar?.style.getPropertyValue("--bar")).toBe("87.4%")
-    expect(within(row).getByText("Strong match").getAttribute("data-variant")).toBe("strong")
+    const segments = [...row.querySelectorAll<HTMLElement>("[data-slot='score-meter'] > span")]
+    expect(segments).toHaveLength(5)
+    // 87 rounds to 4 of 5 segments.
+    expect(segments.filter((segment) => segment.className.includes("bg-category-strong"))).toHaveLength(4)
+    expect(within(row).getByText("Strong match").className).toContain("text-category-strong-foreground")
   })
 
-  it("puts the campaign's required skills first, highlighted, and counts the rest", () => {
+  it("counts the campaign's must-haves the candidate has, and shows experience and stage", () => {
     renderTable()
     const row = rowOf("Ada Lovelace")
-    const skills = row.querySelectorAll<HTMLElement>("td[data-column='skills'] span[title]")
-    expect([...skills].map((skill) => skill.title)).toEqual([
-      "react (required skill)",
-      "PostgreSQL (required skill)",
-      "Python",
-    ])
-    expect(skills[0].dataset.required).toBe("true")
-    expect(skills[2].dataset.required).toBeUndefined()
-    expect(within(row).getByText("+2")).toBeTruthy()
+    const musts = row.querySelector<HTMLElement>("td[data-column='musts'] span")
+    expect(musts?.textContent).toBe("2 of 2")
+    expect(musts?.title).toBe("Has every must-have")
     expect(within(row).getByText("6.5 yrs")).toBeTruthy()
     expect(within(row).getByText("Technical")).toBeTruthy()
   })
 
-  it("shows dashes and fallbacks for missing values, and no score bar", () => {
+  it("names the missing must-haves", () => {
+    renderTable({ requiredSkills: new Set(["react", "kubernetes"]) })
+    const musts = rowOf("Ada Lovelace").querySelector<HTMLElement>("td[data-column='musts'] span")
+    expect(musts?.textContent).toBe("1 of 2")
+    expect(musts?.title).toBe("Missing: kubernetes")
+  })
+
+  it("shows dashes and fallbacks for missing values, and no meter", () => {
     renderTable()
     const row = rowOf("Unnamed candidate")
     expect(within(row).getByText("No email")).toBeTruthy()
     expect(within(row).getByLabelText("Not scored")).toBeTruthy()
-    expect(row.querySelector("[data-slot='score-bar']")).toBeNull()
-    expect(within(row).getByText("Unreviewed")).toBeTruthy()
-    // category, skills and experience
-    expect(within(row).getAllByText("—")).toHaveLength(4)
+    expect(row.querySelector("[data-slot='score-meter']")).toBeNull()
+    expect(within(row).getByText("New")).toBeTruthy()
+    expect(within(row).getByText("0 of 2")).toBeTruthy()
+    // score and experience
+    expect(within(row).getAllByText("—")).toHaveLength(2)
   })
 })
 
-describe("topSkills", () => {
-  it("matches required skills case-insensitively and drops duplicates", () => {
-    expect(topSkills(["Go", "go", "REACT", "Rust"], new Set(["react"]))).toEqual({
-      shown: [
-        { skill: "REACT", required: true },
-        { skill: "go", required: false },
-        { skill: "Rust", required: false },
-      ],
-      more: 0,
-    })
+describe("mustHaves", () => {
+  it("checks required skills case-insensitively, in the campaign's order, once each", () => {
+    expect(mustHaves(["React", "Go", "react", " "], ["REACT", "Rust"])).toEqual([
+      { skill: "React", has: true },
+      { skill: "Go", has: false },
+    ])
   })
 })
 
@@ -120,7 +120,7 @@ describe("CandidatesTable sorting", () => {
     renderTable({ sort: "-score" })
     expect(screen.getByRole("columnheader", { name: /Score/ }).getAttribute("aria-sort")).toBe("descending")
     expect(screen.getByRole("columnheader", { name: /Candidate/ }).getAttribute("aria-sort")).toBe("none")
-    expect(screen.getByRole("columnheader", { name: /Category/ }).getAttribute("aria-sort")).toBeNull()
+    expect(screen.getByRole("columnheader", { name: /Must-haves/ }).getAttribute("aria-sort")).toBeNull()
   })
 
   it("maps header clicks to the API's sort values", () => {
