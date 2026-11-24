@@ -442,7 +442,7 @@ def test_upgrade_downgrade_upgrade_after_the_backfill(scratch_db: str) -> None: 
             )
 
         started = time.perf_counter()
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, CONTRACT)  # this migration only (later ones follow it, E2-05)
         elapsed = time.perf_counter() - started
         with engine.connect() as conn:
             assert _revision(conn) == CONTRACT
@@ -469,7 +469,7 @@ def test_the_downgrade_refuses_while_two_agencies_share_an_identifier(scratch_db
     cfg = _alembic_config()
     engine = create_engine(scratch_db)
     try:
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, CONTRACT)
         with engine.begin() as conn:
             conn.execute(
                 text(
