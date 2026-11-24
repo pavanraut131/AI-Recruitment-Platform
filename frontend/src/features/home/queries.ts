@@ -4,6 +4,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query"
 
 import { api, unwrap, type Schema } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
+import { statsQueryOptions } from "@/lib/query/stats"
 
 export type Home = Schema<"Home">
 export type ProcessingResume = Schema<"ProcessingResume">
@@ -30,14 +31,11 @@ export function useHome() {
 }
 
 /**
- * Workspace-wide counts (`GET /stats`). Home asks only when it has nothing to
- * show, to tell a first run (no campaigns at all) from campaigns that are all
- * closed or archived.
+ * Workspace-wide counts (`GET /stats`): Home's summary sentence ("12
+ * candidates are waiting for a first look") and, when there is nothing to
+ * show, whether this is a first run (no campaigns at all) or every campaign
+ * is closed. The sidebar reads the same query.
  */
-export function useWorkspaceStats({ enabled }: { enabled: boolean }) {
-  return useQuery({
-    queryKey: queryKeys.stats.all,
-    queryFn: ({ signal }) => api.GET("/stats", { signal }).then(unwrap),
-    enabled,
-  })
+export function useWorkspaceStats() {
+  return useQuery(statsQueryOptions())
 }
