@@ -21,6 +21,13 @@ from app.platform.database import Base
 
 TABLE_OWNERS = {
     "agencies": "identity",
+    # E2-05: foreign keys among these stay inside identity (memberships -> agencies / users,
+    # user_sessions -> users / agencies, membership_clients -> memberships).
+    "users": "identity",
+    "memberships": "identity",
+    "membership_clients": "identity",
+    "user_sessions": "identity",
+    "audit_events": "identity",
     "clients": "hiring",
     "campaigns": "hiring",
     "applications": "hiring",
@@ -76,4 +83,10 @@ async def test_the_same_module_foreign_keys_are_the_expected_ones(db_session: As
         ("identity_conflicts", "people"),
         ("person_resumes", "people"),
         ("person_resumes", "identity_conflicts"),
+        # identity (E2-05)
+        ("memberships", "agencies"),
+        ("memberships", "users"),  # user_id and invited_by_user_id
+        ("membership_clients", "memberships"),
+        ("user_sessions", "users"),
+        ("user_sessions", "agencies"),
     }
