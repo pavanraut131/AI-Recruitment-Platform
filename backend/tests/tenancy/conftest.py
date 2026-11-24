@@ -23,6 +23,9 @@ import pytest_asyncio
 from sqlalchemy.exc import DBAPIError, InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
+# Real sign-in (E2-05): the API sweep authenticates as a user of the default agency.
+from tests.identity.conftest import auth_client, users  # noqa: F401
+
 # The pipeline's synchronous fixtures (tasks.SyncSession on a rolled-back connection).
 from tests.ingestion.conftest import sync_connection, sync_db  # noqa: F401
 

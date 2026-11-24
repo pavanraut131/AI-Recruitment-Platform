@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v2.schemas import Person, PersonListItem, PersonPage
 from app.modules.hiring import service as hiring
+from app.modules.identity.dependencies import access_scope, tenant_db
 from app.modules.talent import service as talent
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
-from app.platform.request_tenant import access_scope, tenant_db
 from app.platform.tenancy import AccessScope
 
 router = APIRouter(prefix="/people", tags=["people"])

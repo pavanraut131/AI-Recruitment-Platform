@@ -17,14 +17,15 @@ What it does
     - Grants for ``hireflow_app``: ``SELECT, INSERT, UPDATE, DELETE`` on every table but
       ``alembic_version`` (nothing), ``USAGE`` on every sequence; ``ALTER DEFAULT PRIVILEGES FOR
       ROLE hireflow_owner`` gives tables and sequences the owner creates later the same grants
-      (E2-05's identity tables get them without a grant of their own). ``audit_events`` keeps
-      ``SELECT, INSERT`` only, and ``alembic_version`` nothing, also when E2-05 ran first.
+      (a later migration needs no GRANT of its own). E2-05's identity tables (revision
+      ``e2c05b3f7a21``, just before this one) keep what their migration granted:
+      ``audit_events`` stays ``SELECT, INSERT`` only, and ``alembic_version`` gets nothing.
     - On each tenant table (:data:`TENANT_TABLES`): ``ENABLE`` and ``FORCE ROW LEVEL
       SECURITY``, the policy ``tenant_isolation`` for ``hireflow_app`` (``USING`` and ``WITH
       CHECK`` ``agency_id = (SELECT app_current_agency())``: an unbound transaction reads and
       writes nothing) and the policy ``maintenance`` for ``hireflow_owner`` (every row).
-    - The global tables (spec §6.4: ``agencies``, ``legacy_candidate_map``) get the grants but
-      no policies.
+    - The global tables (spec §6.4: ``agencies``, ``legacy_candidate_map`` and E2-05's
+      identity tables) get the grants but no policies.
 
     Each ``ALTER TABLE`` and ``CREATE POLICY`` takes a short ``ACCESS EXCLUSIVE`` lock (catalog
     only, no scan), under ``lock_timeout`` 5 s: behind a long transaction the migration fails
@@ -38,7 +39,7 @@ Downgrade
     role can read nothing (the runbook's rollback).
 
 Revision ID: e2c04a7f3b18
-Revises: e2b02c7a4d19
+Revises: e2c05b3f7a21
 Create Date: 2026-11-24 15:00:00.000000
 """
 
@@ -57,7 +58,7 @@ from app.platform.rls import (
 )
 
 revision: str = "e2c04a7f3b18"
-down_revision: str | None = "e2b02c7a4d19"
+down_revision: str | None = "e2c05b3f7a21"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -78,10 +79,11 @@ TENANT_TABLES = (
 
 TABLE_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
 
-# Tables that keep narrower grants than TABLE_PRIVILEGES, if they exist when this runs: E2-05's
-# append-only audit_events may be migrated before this revision (spec §4.7, §6.2).
+# Tables that keep narrower grants than TABLE_PRIVILEGES (spec §4.7, §6.2): E2-05's append-only
+# audit_events (created by the revision before this one) and alembic_version.
 NARROWER_GRANTS = {"alembic_version": "", "audit_events": "SELECT, INSERT"}
-# E2-05's global identity tables: granted by their own migration; the downgrade leaves them.
+# E2-05's global identity tables (revision e2c05b3f7a21, before this one): granted by their own
+# migration; the downgrade leaves their grants as that migration set them.
 IDENTITY_TABLES = ("users", "memberships", "membership_clients", "user_sessions", "audit_events")
 
 

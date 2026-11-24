@@ -90,7 +90,7 @@ Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenan
 
 **Notes:**
 - Deploy order and commands: [runbook](../runbooks/tenancy-rls.md) (drain the queues, `make db-roles`, migrate as the owner, recreate the services). Its section 8 is the exact list for an existing local stack; no `.env` edit is needed (Compose builds the URLs from `POSTGRES_DB` and two password variables with defaults). No new dependency, so no image rebuild, but the postgres container is recreated (new mounts) and the backend services are recreated (new URLs).
-- **Overlap with E2-05** (whichever merges second rebases): the migration head (both start from `e2b02c7a4d19`), `tests/conftest.py` / `tests/postgres.py` (the suite now runs as `hireflow_app`; a fixture that writes another agency's rows needs a session bound to it), and the identity tables. `app.platform.rls.GLOBAL_TABLES` already lists E2-05's five (an allowlisted table may not exist yet), and `audit_events` is expected at `SELECT, INSERT` only. In either migration order the grants come out right: E2-04's default privileges cover tables created after it, its migration keeps `audit_events` at `SELECT, INSERT` if E2-05 ran first, and its downgrade leaves the identity tables' grants to their own migration.
+- **Merged with E2-05** (which merges first, PR #58): `e2c04a7f3b18` now follows `e2c05b3f7a21`. The identity tables are global (on `app.platform.rls.GLOBAL_TABLES`) and keep the grants E2-05's migration gives them (`audit_events`: `SELECT, INSERT` only; E2-04's downgrade leaves them alone). The identity CLI connects as the owner (`MIGRATION_DATABASE_URL`); the seed and `seed_users` stay on the app role (identity tables are global; the default agency's data through a bound session). The API sweep signs in for real as an owner of the default agency (`users` / `auth_client`). One local upgrade covers both: runbook section 8 (rebuild for `argon2-cffi`, `make db-roles`, migrate, recreate).
 
 ---
 
@@ -98,6 +98,11 @@ Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenan
 **Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
 
 Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenancy.md#e2-05--identity-core). Design: spec §4, §5.4, §8 and §10; [ADR 0010](../adr/0010-server-side-sessions.md) is accepted in this ticket.
+
+**Notes:**
+- **After pulling:** rebuild the images (new dependency `argon2-cffi`), run `alembic upgrade head` (migration `e2c05b3f7a21`), then `make seed` (or the seed command with `--if-empty`) to get the sign-in accounts. A local `.env` needs no change: the dev Compose backend defaults `AUTH_REQUIRED` to `false`, so the frontend keeps working without signing in. Set `AUTH_REQUIRED=true` in `.env` to try the session for real (README: "Signing in locally").
+- **Overlap with E2-04** (whichever merges second rebases): both migrations follow `e2b02c7a4d19`, so the second one's `down_revision` moves to the first. E2-05's grants run only when `hireflow_app` exists and leave `audit_events` with `SELECT, INSERT` (E2-04's acceptance criterion for that table); E2-04's isolation suite should put the five new tables on the global allowlist (§6.4). The test fixtures meet in `tests/conftest.py` (the `client` fixture now overrides `current_principal` with an owner of the default agency) and the new `tests/identity/conftest.py` (`auth_client` opens an unbound session per request, which E2-04's app role and RLS need too). `tenant_db` moved from `app.platform.request_tenant` to `app.modules.identity.dependencies`.
+- `AUTH_REQUIRED=false` is temporary: E2-09 removes it and the E2E stack signs in.
 
 ---
 

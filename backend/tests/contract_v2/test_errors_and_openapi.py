@@ -109,7 +109,7 @@ def test_every_operation_follows_the_client_conventions() -> None:
     document = v2_app.openapi()
     operations = _operations(document)
     ids = [op["operationId"] for _, _, op in operations]
-    assert len(ids) == len(set(ids)) == 21
+    assert len(ids) == len(set(ids)) == 30  # 21 + 9 identity operations (E2-05)
     for method, path, op in operations:
         assert CAMEL_CASE.match(op["operationId"]), (method, path)
         assert len(op["tags"]) == 1, (method, path)

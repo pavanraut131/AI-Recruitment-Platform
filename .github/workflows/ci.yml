@@ -156,7 +156,7 @@ jobs:
       # The RLS migration is reversible: down to the contract, up again, still correct.
       - name: Downgrade and upgrade the row-level-security migration
         run: |
-          uv run alembic downgrade e2b02c7a4d19
+          uv run alembic downgrade e2c05b3f7a21
           uv run alembic upgrade head
           uv run python -m app.devtools.check_rls
 

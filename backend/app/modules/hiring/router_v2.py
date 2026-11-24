@@ -21,8 +21,8 @@ from app.modules.hiring.schemas_v2 import (
     JobDescription,
     ParsedJobDescription,
 )
+from app.modules.identity.dependencies import access_scope, tenant_db
 from app.platform.problems import errors_as_http, problem_responses
-from app.platform.request_tenant import access_scope, tenant_db
 from app.platform.tenancy import AccessScope
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])

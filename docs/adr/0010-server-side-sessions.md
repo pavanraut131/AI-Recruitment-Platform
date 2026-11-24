@@ -1,5 +1,5 @@
 # 0010 · Server-side sessions in an httpOnly cookie; OIDC for Google and Microsoft sign-in
-**Status:** proposed  ·  **Date:** 2026-11-19
+**Status:** accepted (E2-05, 2026-11-24)  ·  **Date:** 2026-11-19
 
 ## Context
 E2 adds sign-in to HireFlow AI ([spec §4](../specs/EPIC-02-identity-tenancy.md#4-authentication)). The client is **our own** Next.js web app, talking to **our own** FastAPI backend: no third-party API consumers, no mobile app, no service-to-service calls with user tokens (an MCP server in E10 or ATS connectors in E11 would get their own credentials). Agencies expect to sign in with their Google Workspace or Microsoft 365 accounts as well as with a password.

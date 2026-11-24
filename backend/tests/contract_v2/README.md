@@ -22,7 +22,8 @@ The difference: v1's snapshots record **current** behaviour (bugs included); the
 | `test_uploads.py` | upload (accepted / rejected, 404, too many files, bodies over the parsing limits), resume list, retry-failed, the typed SSE stream (campaign-filtered, no DB transaction held while streaming) |
 | `test_people.py` | talent list and search (name / email), Person profile with applications and identity-conflict flags |
 | `test_dashboard.py` | `/stats`, `/home` (and its bounds) |
-| `test_errors_and_openapi.py` | problem details for framework errors (404 route, 405, malformed JSON, 500), v1 errors unchanged, the OpenAPI document and its conventions (operation ids, tags, problem responses, enums) |
+| `test_identity.py` | `/auth/csrf`, `/auth/login` (success, CSRF, 401, 403, 422, 429), `/auth/logout`, `/me` (profile, password, active agency), `/agency`, the 401 that clears an ended session's cookie (real cookies, `tests/identity/conftest.py`; tokens, cookie values and `Retry-After` masked) |
+| `test_errors_and_openapi.py` | problem details for framework errors (404 route, 405, malformed JSON, 500), v1 errors unchanged, the OpenAPI document and its conventions (operation ids, tags, problem responses, enums, security schemes) |
 | `test_query_counts.py` | statements per request are fixed for every list and aggregate (no N+1) |
 | `data.py` | shared test data (`ranked_campaign`, people helpers) and the statement counter |
 

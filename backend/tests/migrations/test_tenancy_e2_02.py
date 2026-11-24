@@ -450,7 +450,7 @@ def test_upgrade_downgrade_upgrade_after_the_backfill(scratch_db: str) -> None: 
             )
 
         started = time.perf_counter()
-        command.upgrade(cfg, CONTRACT)
+        command.upgrade(cfg, CONTRACT)  # this migration only (later ones follow it, E2-05)
         elapsed = time.perf_counter() - started
         with engine.connect() as conn:
             assert _revision(conn) == CONTRACT

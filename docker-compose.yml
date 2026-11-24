@@ -76,7 +76,13 @@ services:
     container_name: resumeai_backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file: .env
-    environment: *database-urls
+    environment:
+      <<: *database-urls
+      # /api/v2 requires a session from E2-05, but the frontend has no login screen until
+      # E2-09: a local .env without the setting keeps the stack usable (no session = the default
+      # agency's owner). Set AUTH_REQUIRED=true in .env to try sign-in for real. Development
+      # only: the app refuses false outside APP_ENV=development/test.
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     volumes:

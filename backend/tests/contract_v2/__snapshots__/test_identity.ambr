@@ -1,0 +1,483 @@
+# serializer version: 1
+# name: test_agency
+  dict({
+    'get_agency': dict({
+      'body': dict({
+        'id': '<default-agency>',
+        'name': 'Default agency',
+        'slug': 'default',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'not_signed_in': dict({
+      'body': dict({
+        'detail': 'Not signed in',
+        'status': 401,
+        'title': 'Unauthorized',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 401,
+    }),
+    'session_ended': dict({
+      'body': dict({
+        'detail': 'Your session has ended. Sign in again.',
+        'status': 401,
+        'title': 'Unauthorized',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'set-cookie': list([
+        'hf_session=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 401,
+    }),
+    'update_agency': dict({
+      'body': dict({
+        'id': '<default-agency>',
+        'name': 'Rao Recruiting',
+        'slug': 'default',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'update_agency_invalid': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'name',
+            ]),
+            'msg': 'String should have at least 1 character',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'update_agency_not_owner': dict({
+      'body': dict({
+        'detail': "You don't have permission to manage the agency",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+  })
+# ---
+# name: test_auth
+  dict({
+    'csrf': dict({
+      'body': dict({
+        'csrf_token': '<csrf-token>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_csrf=<value>; Path=/; SameSite=strict',
+      ]),
+      'status_code': 200,
+    }),
+    'login': dict({
+      'body': dict({
+        'active_agency': dict({
+          'id': '<default-agency>',
+          'name': 'Default agency',
+        }),
+        'client_scope': dict({
+          'all_clients': True,
+          'client_ids': list([
+          ]),
+        }),
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'owner',
+          }),
+        ]),
+        'role': 'owner',
+        'user': dict({
+          'display_name': 'ada',
+          'email': 'ada@example.com',
+          'id': '<uuid:1>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_csrf=<value>; Path=/; SameSite=strict',
+        'hf_session=<value>; HttpOnly; Max-Age=604800; Path=/; SameSite=lax',
+      ]),
+      'status_code': 200,
+    }),
+    'login_invalid_body': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'password',
+            ]),
+            'msg': 'Field required',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'login_without_csrf': dict({
+      'body': dict({
+        'detail': 'CSRF token missing or invalid',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'login_wrong_password': dict({
+      'body': dict({
+        'detail': 'Invalid email or password',
+        'status': 401,
+        'title': 'Unauthorized',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 401,
+    }),
+    'logout': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_csrf=""; expires=<date>; Max-Age=0; Path=/; SameSite=strict',
+        'hf_session=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 204,
+    }),
+    'logout_again': dict({
+      'body': dict({
+        'detail': 'CSRF token missing or invalid',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+  })
+# ---
+# name: test_login_failures
+  dict({
+    'no_agency_access': dict({
+      'body': dict({
+        'detail': 'Your account has no active agency access',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'rate_limited': dict({
+      'body': dict({
+        'detail': 'Too many attempts. Try again later.',
+        'status': 429,
+        'title': 'Too Many Requests',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': '<seconds>',
+      }),
+      'status_code': 429,
+    }),
+  })
+# ---
+# name: test_me
+  dict({
+    'agency_without_agency': dict({
+      'body': dict({
+        'detail': 'Choose an agency',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'change_password': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_csrf=<value>; Path=/; SameSite=strict',
+        'hf_session=<value>; HttpOnly; Max-Age=604800; Path=/; SameSite=lax',
+      ]),
+      'status_code': 204,
+    }),
+    'change_password_wrong_current': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'current_password',
+            ]),
+            'msg': 'Your current password is not correct',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'get_me': dict({
+      'body': dict({
+        'active_agency': dict({
+          'id': '<uuid:1>',
+          'name': 'Northbank Talent',
+        }),
+        'client_scope': dict({
+          'all_clients': True,
+          'client_ids': list([
+          ]),
+        }),
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'owner',
+          }),
+          dict({
+            'agency': dict({
+              'id': '<uuid:1>',
+              'name': 'Northbank Talent',
+            }),
+            'role': 'recruiter',
+          }),
+        ]),
+        'role': 'recruiter',
+        'user': dict({
+          'display_name': 'Ada Lovelace',
+          'email': 'ada@example.com',
+          'id': '<uuid:2>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'get_me_signed_out': dict({
+      'body': dict({
+        'detail': 'Not signed in',
+        'status': 401,
+        'title': 'Unauthorized',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 401,
+    }),
+    'get_me_without_agency': dict({
+      'body': dict({
+        'active_agency': None,
+        'client_scope': None,
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'owner',
+          }),
+          dict({
+            'agency': dict({
+              'id': '<uuid:1>',
+              'name': 'Northbank Talent',
+            }),
+            'role': 'recruiter',
+          }),
+        ]),
+        'role': None,
+        'user': dict({
+          'display_name': 'ada',
+          'email': 'ada@example.com',
+          'id': '<uuid:2>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'set_active_agency': dict({
+      'body': dict({
+        'active_agency': dict({
+          'id': '<uuid:1>',
+          'name': 'Northbank Talent',
+        }),
+        'client_scope': dict({
+          'all_clients': True,
+          'client_ids': list([
+          ]),
+        }),
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'owner',
+          }),
+          dict({
+            'agency': dict({
+              'id': '<uuid:1>',
+              'name': 'Northbank Talent',
+            }),
+            'role': 'recruiter',
+          }),
+        ]),
+        'role': 'recruiter',
+        'user': dict({
+          'display_name': 'ada',
+          'email': 'ada@example.com',
+          'id': '<uuid:2>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'set_active_agency_unknown': dict({
+      'body': dict({
+        'detail': 'Agency not found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 404,
+    }),
+    'update_me': dict({
+      'body': dict({
+        'active_agency': dict({
+          'id': '<uuid:1>',
+          'name': 'Northbank Talent',
+        }),
+        'client_scope': dict({
+          'all_clients': True,
+          'client_ids': list([
+          ]),
+        }),
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'owner',
+          }),
+          dict({
+            'agency': dict({
+              'id': '<uuid:1>',
+              'name': 'Northbank Talent',
+            }),
+            'role': 'recruiter',
+          }),
+        ]),
+        'role': 'recruiter',
+        'user': dict({
+          'display_name': 'Ada Lovelace',
+          'email': 'ada@example.com',
+          'id': '<uuid:2>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'update_me_invalid': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'display_name',
+            ]),
+            'msg': 'String should have at least 1 character',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+  })
+# ---

@@ -20,7 +20,7 @@ What changes for the running system:
 
 | Check | How |
 |---|---|
-| The E2-02 contract is applied (migration `e2b02c7a4d19`): `agency_id` is `NOT NULL` everywhere | `docker compose exec backend alembic current` shows `e2b02c7a4d19 (head)` before you pull E2-04 |
+| The E2-02 contract is applied (migration `e2b02c7a4d19`): `agency_id` is `NOT NULL` everywhere | `docker compose exec backend alembic current` shows `e2b02c7a4d19` (or E2-05's `e2c05b3f7a21`) before you pull E2-04. The RLS migration `e2c04a7f3b18` follows E2-05's `e2c05b3f7a21`, so `alembic upgrade head` applies both when needed |
 | The E2-03 code (or later) has been running in the workers and the API, so every message queued since carries `agency_id` | `git log`; the workers were restarted after E2-03 was deployed |
 | The verification passes | `docker compose exec -T backend python -m app.modules.ingestion.verify_people_applications` exits `0` |
 | A database backup exists (production) | your backup tooling. Locally: `docker compose exec -T postgres pg_dump -U resumeai -Fc -f /tmp/before-e2-04.dump resumeai`, then `docker compose cp postgres:/tmp/before-e2-04.dump .` (before section 3 recreates the container) |
@@ -144,19 +144,19 @@ The start-up check refuses the owner role and the superuser, so the E2-04 code c
 
 ```bash
 docker compose stop backend worker_extract worker_ai celery_beat flower   # drain first (section 2)
-docker compose run --rm --no-deps backend alembic downgrade e2b02c7a4d19
+docker compose run --rm --no-deps backend alembic downgrade e2c05b3f7a21   # E2-05 stays
 git checkout <the release before E2-04>
 docker compose up -d
 ```
 
-The downgrade drops the policies, `NO FORCE` / `DISABLE` RLS, revokes the app role's grants and default privileges and drops `app_current_agency()`. The roles and the new ownership stay: they are harmless to the previous release (its superuser owns nothing but can do everything) and are reused when E2-04 is deployed again (`make db-roles` is idempotent). To remove them as well, after the downgrade, as the superuser: `REASSIGN OWNED BY hireflow_owner TO resumeai; DROP OWNED BY hireflow_app; DROP ROLE hireflow_app; DROP OWNED BY hireflow_owner; DROP ROLE hireflow_owner;`.
+The downgrade drops the policies, `NO FORCE` / `DISABLE` RLS, revokes the grants and default privileges it gave the app role (E2-05's identity tables keep the grants their own migration gave) and drops `app_current_agency()`. The roles and the new ownership stay: they are harmless to the previous release (its superuser owns nothing but can do everything) and are reused when E2-04 is deployed again (`make db-roles` is idempotent). To remove them as well, after the downgrade, as the superuser: `REASSIGN OWNED BY hireflow_owner TO resumeai; DROP OWNED BY hireflow_app; DROP ROLE hireflow_app; DROP OWNED BY hireflow_owner; DROP ROLE hireflow_owner;`.
 
-## 8. Your local dev stack after merging E2-04
+## 8. Your local dev stack after merging E2-04 (with E2-05)
 
-The dev stack is an existing volume with real data (the `resumeai_*` containers of the `ai-recruitment-platform` Compose project). From the repository root, in PowerShell (in Git Bash, prefix the `exec … /docker-entrypoint-initdb.d/…` line with `MSYS_NO_PATHCONV=1`). No `.env` edit is needed.
+E2-05 (identity core, PR #58) merges first, then E2-04; pull both and upgrade once. The dev stack is an existing volume with real data (the `resumeai_*` containers of the `ai-recruitment-platform` Compose project). From the repository root, in PowerShell (in Git Bash, prefix the `exec … /docker-entrypoint-initdb.d/…` line with `MSYS_NO_PATHCONV=1`). No `.env` edit is needed: Compose builds the database URLs, and `AUTH_REQUIRED` defaults to `false` in the dev stack.
 
 ```powershell
-git pull                                                     # master with E2-04
+git pull                                                     # master with E2-05 and E2-04
 # 1. Drain: no uploads running; these must print 0
 docker compose exec redis redis-cli LLEN extract_queue
 docker compose exec redis redis-cli LLEN ai_queue
@@ -165,17 +165,24 @@ docker compose exec redis redis-cli HLEN unacked
 #    binary dump piped through `>`)
 docker compose exec -T postgres pg_dump -U resumeai -Fc -f /tmp/before-e2-04.dump resumeai
 docker compose cp postgres:/tmp/before-e2-04.dump .
-# 3. Roles and ownership (recreates the postgres container; the volume stays)
+# 3. Rebuild the backend images: E2-05 adds a dependency (argon2-cffi)
+docker compose build backend worker_extract worker_ai celery_beat flower
+# 4. Roles and ownership (recreates the postgres container; the volume stays)
 docker compose up -d --wait postgres
 docker compose exec -T postgres bash /docker-entrypoint-initdb.d/10-roles.sh
-# 4. Enable RLS, as hireflow_owner, in a one-off container
+# 5. Migrate as hireflow_owner, in a one-off container on the new image: E2-05's identity
+#    tables (e2c05b3f7a21), then row-level security (e2c04a7f3b18)
 docker compose run --rm --no-deps backend alembic upgrade head
-# 5. Recreate the services on the app role
+# 6. Recreate the services on the new image and the app role
 docker compose up -d --wait
-# 6. Verify
-docker compose exec backend python -m app.devtools.check_rls
+# 7. Verify
+docker compose exec backend alembic current                  # e2c04a7f3b18 (head)
+docker compose exec backend python -m app.devtools.check_rls # check_rls: OK
 docker compose exec -T backend python -m app.modules.ingestion.verify_people_applications
 docker compose logs backend worker_extract worker_ai | Select-String database_role_checked
+# 8. Sign-in accounts (E2-05; README "Signing in locally"): the seed creates them, and with
+#    --if-empty leaves your data alone
+docker compose exec -T backend python -m app.devtools.seed --if-empty
 ```
 
-With `make`: `make db-roles`, then `docker compose run --rm --no-deps backend alembic upgrade head`, then `docker compose up -d --wait`. If you use your own `POSTGRES_DB` or passwords in `.env`, nothing changes: the URLs are built from them.
+With `make`: `docker compose build`, `make db-roles`, then `docker compose run --rm --no-deps backend alembic upgrade head`, then `docker compose up -d --wait`. If you use your own `POSTGRES_DB` or passwords in `.env`, nothing changes: the URLs are built from them.

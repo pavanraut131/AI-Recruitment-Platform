@@ -27,7 +27,7 @@ from app.platform import rls
 from app.platform.config import settings
 from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
-from tests.migrations.tenancy import CONTRACT, EXPAND, backfill
+from tests.migrations.tenancy import EXPAND, backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -35,6 +35,8 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
 from tests.migrations.test_tenancy_e2_01 import IDS, TENANT_TABLES, _insert_rows
 
 RLS = "e2c04a7f3b18"
+IDENTITY = "e2c05b3f7a21"  # E2-05, the revision before RLS
+IDENTITY_TABLES = ("users", "memberships", "membership_clients", "user_sessions", "audit_events")
 ALL_TENANT_TABLES = ("clients", *TENANT_TABLES)
 
 
@@ -61,8 +63,9 @@ def _rls_state(conn: Connection) -> dict[str, Any]:
         "app_grants": conn.execute(
             text(
                 "SELECT count(*) FROM information_schema.role_table_grants "
-                "WHERE grantee = 'hireflow_app'"
-            )
+                "WHERE grantee = 'hireflow_app' AND table_name <> ALL(:identity)"
+            ),
+            {"identity": list(IDENTITY_TABLES)},  # E2-05 grants those itself
         ).scalar_one(),
         "default_privileges": conn.execute(
             text("SELECT count(*) FROM pg_default_acl WHERE defaclrole = 'hireflow_owner'::regrole")
@@ -110,7 +113,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
             _insert_rows(conn)
         command.upgrade(cfg, EXPAND)
         assert backfill(scratch_db).complete
-        command.upgrade(cfg, CONTRACT)
+        command.upgrade(cfg, IDENTITY)
         with engine.connect() as conn:
             values = _values(conn)
             assert _rls_state(conn) == NOTHING
@@ -125,9 +128,9 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
         assert set(_app_counts(scratch_db, None).values()) == {0}  # unbound: nothing
         assert set(_app_counts(scratch_db, uuid.uuid4()).values()) == {0}  # another agency
 
-        command.downgrade(cfg, CONTRACT)
+        command.downgrade(cfg, IDENTITY)
         with engine.connect() as conn:
-            assert _revision(conn) == CONTRACT
+            assert _revision(conn) == IDENTITY
             assert _rls_state(conn) == NOTHING
             assert _values(conn) == values
 
@@ -170,20 +173,20 @@ def test_it_refuses_to_run_as_another_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _alembic_config()
-    command.upgrade(cfg, CONTRACT)
+    command.upgrade(cfg, IDENTITY)
     monkeypatch.setattr(settings, "MIGRATION_DATABASE_URL", postgres.admin_url(scratch_db))
     with pytest.raises(RuntimeError, match="this migration runs as hireflow_owner, not test"):
         command.upgrade(cfg, RLS)
     engine = create_engine(scratch_db)
     with engine.connect() as conn:
-        assert _revision(conn) == CONTRACT
+        assert _revision(conn) == IDENTITY
         assert _rls_state(conn) == NOTHING
     engine.dispose()
 
 
 def test_it_refuses_tables_another_role_owns(scratch_db: str) -> None:  # noqa: F811
     cfg = _alembic_config()
-    command.upgrade(cfg, CONTRACT)
+    command.upgrade(cfg, IDENTITY)
     admin = create_engine(postgres.admin_url(scratch_db))
     with admin.begin() as conn:  # as on a volume db-roles has not handed over yet
         conn.execute(text("ALTER TABLE campaigns OWNER TO test"))
@@ -251,39 +254,42 @@ def test_roles_sql_hands_an_old_database_to_the_owner_and_is_idempotent(
     admin.dispose()
 
 
-def test_identity_tables_migrated_first_keep_their_grants(scratch_db: str) -> None:  # noqa: F811
-    """If E2-05's migration (global identity tables, its own grants) runs before this one:
-    ``audit_events`` stays append-only, the catalogue is clean, and the downgrade leaves the
-    identity tables' grants alone."""
+def test_identity_tables_keep_the_grants_e2_05_gave_them(scratch_db: str) -> None:  # noqa: F811
+    """E2-05's migration (the revision before this one) grants its global identity tables
+    itself: ``audit_events`` append-only. This migration keeps ``audit_events`` at ``SELECT,
+    INSERT``, the catalogue is clean, and its downgrade leaves every identity grant as E2-05 set
+    it."""
     cfg = _alembic_config()
-    command.upgrade(cfg, CONTRACT)
+    command.upgrade(cfg, IDENTITY)
     owner = create_engine(scratch_db)
     privileges = text(
-        "SELECT string_agg(privilege_type, ',' ORDER BY privilege_type) "
+        "SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) "
         "FROM information_schema.role_table_grants "
-        "WHERE grantee = 'hireflow_app' AND table_name = :t"
+        "WHERE grantee = 'hireflow_app' AND table_name = ANY(:t) GROUP BY 1"
+    )
+    sequence = text(
+        "SELECT has_sequence_privilege('hireflow_app', "
+        "pg_get_serial_sequence('audit_events', 'id'), 'USAGE')"
     )
     try:
-        with owner.begin() as conn:  # what E2-05's migration does, in short
-            conn.execute(text("CREATE TABLE users (id uuid PRIMARY KEY)"))
-            conn.execute(
-                text("CREATE TABLE audit_events (id bigint GENERATED ALWAYS AS IDENTITY, x text)")
-            )
-            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON users TO hireflow_app"))
-            conn.execute(text("GRANT SELECT, INSERT ON audit_events TO hireflow_app"))
-            conn.execute(text("GRANT USAGE ON SEQUENCE audit_events_id_seq TO hireflow_app"))
+        with owner.connect() as conn:
+            by_e2_05 = dict(conn.execute(privileges, {"t": list(IDENTITY_TABLES)}).tuples().all())
+        assert by_e2_05["audit_events"] == "INSERT,SELECT"
+        assert by_e2_05["users"] == "DELETE,INSERT,SELECT,UPDATE"
 
         command.upgrade(cfg, RLS)
         with owner.connect() as conn:
-            assert conn.execute(privileges, {"t": "audit_events"}).scalar() == "INSERT,SELECT"
+            after = dict(conn.execute(privileges, {"t": list(IDENTITY_TABLES)}).tuples().all())
+            assert after == by_e2_05
+            assert conn.execute(sequence).scalar_one()
             assert rls.catalogue_problems(conn) == []
 
-        command.downgrade(cfg, CONTRACT)
+        command.downgrade(cfg, IDENTITY)
         with owner.connect() as conn:
-            assert conn.execute(privileges, {"t": "audit_events"}).scalar() == "INSERT,SELECT"
-            assert conn.execute(privileges, {"t": "users"}).scalar() == (
-                "DELETE,INSERT,SELECT,UPDATE"
-            )
-            assert conn.execute(privileges, {"t": "campaigns"}).scalar() is None
+            back = dict(conn.execute(privileges, {"t": list(IDENTITY_TABLES)}).tuples().all())
+            assert back == by_e2_05
+            assert conn.execute(sequence).scalar_one()
+            grants = conn.execute(privileges, {"t": ["campaigns", "agencies"]}).all()
+            assert grants == []  # what this revision granted is gone
     finally:
         owner.dispose()
