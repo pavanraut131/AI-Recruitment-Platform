@@ -123,6 +123,27 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     await expect(candidateRows(page)).toHaveCount(3)
   })
 
+  await test.step("3b. Home queues the new strong match, and opens its review", async () => {
+    await sidebarLink(page, "Home").click()
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
+    await expect(page.getByText(/waiting for a first look/)).toBeVisible()
+    const campaign = page.getByRole("region", { name: "Open campaigns" }).getByRole("listitem").filter({ hasText: title })
+    await expect(campaign.getByRole("link", { name: title })).toBeVisible()
+    await expect(campaign).toContainText("3 applicants · 1 strong")
+    // Only the strong match is queued (possible and unlikely ones are not); it has no stage yet.
+    const queue = page.getByRole("region", { name: "Ready for review" })
+    const item = queue.getByRole("listitem").filter({ hasText: title })
+    await expect(item).toHaveCount(1)
+    await expect(item).toContainText(strong.name)
+    await expect(item).toContainText(String(strong.score))
+    await checkScreen(page, testInfo, "08-home", { docs: ["light", "dark"] })
+
+    // The queue opens the candidate in their campaign, review panel open.
+    await item.getByRole("link", { name: strong.name }).click()
+    await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}\?open=[0-9a-f-]{36}$/)
+    await expect(page.getByRole("dialog", { name: strong.name })).toBeVisible()
+  })
+
   await test.step("4. open the review panel and change the stage", async () => {
     await candidateRows(page).filter({ hasText: strong.name }).getByRole("cell").nth(2).click()
     const panel = page.getByRole("dialog", { name: strong.name })
@@ -239,7 +260,7 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     await expect(page.getByRole("heading", { level: 1, name: strong.name })).toBeVisible()
   })
 
-  await test.step("9. Home shows the day, the campaign, and only strong matches nobody has looked at", async () => {
+  await test.step("9. Home again: the reviewed candidate has left the queue", async () => {
     await sidebarLink(page, "Home").click()
     await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeVisible()
     await expect(page.getByText(/waiting for a first look|has had a first look/)).toBeVisible()
@@ -251,6 +272,6 @@ test("hero flow: campaign → uploads → ranked table → review → profile �
     const queue = page.getByRole("region", { name: "Ready for review" })
     await expect(queue).toBeVisible()
     await expect(queue.locator(`a[href="/campaigns/${campaignId}?open=${applicationId}"]`)).toHaveCount(0)
-    await checkScreen(page, testInfo, "08-home", { docs: ["light", "dark"] })
+    await checkScreen(page, testInfo, "09-home-reviewed")
   })
 })
