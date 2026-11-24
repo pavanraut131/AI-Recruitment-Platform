@@ -73,11 +73,12 @@ export function NewCampaignForm() {
   const busy = create.isPending || create.isSuccess
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">New campaign</h1>
-        <p className="text-muted-foreground">
-          One campaign per opening. Upload resumes to it next, and they are scored against the role and skills.
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 pt-6 pb-14 sm:px-8">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="text-title font-semibold tracking-tight">New campaign</h1>
+        <p className="text-ink-2">
+          One campaign per opening. Upload resumes to it next, and each one is scored against the role and its
+          must-have skills.
         </p>
       </header>
 
@@ -87,7 +88,7 @@ export function NewCampaignForm() {
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="New campaign" className="flex flex-col gap-6">
           <CampaignFields disabled={busy} />
           <FormServerError message={form.formState.errors.root?.server?.message} />
-          <div className="flex items-center justify-end gap-2 border-t pt-4">
+          <div className="flex items-center justify-end gap-2 border-t pt-5">
             <Button variant="ghost" asChild>
               <Link href="/campaigns">Cancel</Link>
             </Button>

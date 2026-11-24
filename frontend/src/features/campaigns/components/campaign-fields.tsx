@@ -26,7 +26,7 @@ export function CampaignFields({ disabled }: { disabled?: boolean }) {
             <FormControl>
               <Input placeholder="Senior backend engineer, Q1" autoComplete="off" disabled={disabled} {...field} />
             </FormControl>
-            <FormDescription>Your name for this campaign, shown in the campaign list.</FormDescription>
+            <FormDescription>Your name for it in the campaign list, for example the client and the role.</FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -40,7 +40,7 @@ export function CampaignFields({ disabled }: { disabled?: boolean }) {
             <FormControl>
               <Input placeholder="Backend Engineer" autoComplete="off" disabled={disabled} {...field} />
             </FormControl>
-            <FormDescription>The job title candidates are matched against.</FormDescription>
+            <FormDescription>The job title resumes are scored against.</FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -57,7 +57,7 @@ export function CampaignFields({ disabled }: { disabled?: boolean }) {
               <Textarea rows={5} placeholder="What the role involves, the team, must-haves…" disabled={disabled} {...field} />
             </FormControl>
             <FormDescription className="flex justify-between gap-4">
-              <span>Used by the AI when it scores resumes.</span>
+              <span>Read alongside the role when resumes are scored.</span>
               <span className="shrink-0 tabular-nums">
                 {description.length.toLocaleString("en")} / {DESCRIPTION_MAX.toLocaleString("en")}
               </span>
@@ -86,7 +86,7 @@ export function CampaignFields({ disabled }: { disabled?: boolean }) {
               />
             </FormControl>
             <FormDescription>
-              Matched against each resume. Press Enter or comma to add; up to {SKILLS_MAX}.
+              The must-haves each resume is checked for. Press Enter or a comma to add one; up to {SKILLS_MAX}.
             </FormDescription>
             <FormMessage />
           </FormItem>
@@ -102,7 +102,7 @@ export function FormServerError({ message }: { message: string | undefined }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+      className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
       <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <p>{message}</p>
