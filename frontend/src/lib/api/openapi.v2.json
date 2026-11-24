@@ -90,6 +90,7 @@
           "score_breakdown": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -379,9 +380,6 @@
         "properties": {
           "action": {
             "const": "delete",
-            "enum": [
-              "delete"
-            ],
             "title": "Action",
             "type": "string"
           },
@@ -409,9 +407,6 @@
         "properties": {
           "action": {
             "const": "reject",
-            "enum": [
-              "reject"
-            ],
             "title": "Action",
             "type": "string"
           },
@@ -439,9 +434,6 @@
         "properties": {
           "action": {
             "const": "stage",
-            "enum": [
-              "stage"
-            ],
             "title": "Action",
             "type": "string"
           },
@@ -1617,6 +1609,7 @@
           },
           "education": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "title": "Education",
@@ -1624,6 +1617,7 @@
           },
           "projects": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "title": "Projects",
@@ -1638,6 +1632,7 @@
           },
           "work_experience": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "title": "Work Experience",
@@ -2795,8 +2790,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maximum": 100.0,
-                  "minimum": 0.0,
+                  "maximum": 100,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
@@ -2813,8 +2808,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maximum": 100.0,
-                  "minimum": 0.0,
+                  "maximum": 100,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
@@ -2851,7 +2846,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "minimum": 0.0,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
@@ -3109,8 +3104,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maximum": 100.0,
-                  "minimum": 0.0,
+                  "maximum": 100,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
@@ -3127,8 +3122,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maximum": 100.0,
-                  "minimum": 0.0,
+                  "maximum": 100,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
@@ -3165,7 +3160,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "minimum": 0.0,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {
