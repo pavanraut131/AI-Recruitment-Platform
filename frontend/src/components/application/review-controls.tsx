@@ -96,7 +96,7 @@ function NotesStatus({
       break
     }
     case "idle":
-      content = "Saved automatically as you type"
+      content = "Saves as you type"
       break
   }
   return (
@@ -161,7 +161,7 @@ export function ApplicationNotes({
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={fieldId} className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <label htmlFor={fieldId} className="text-dense font-semibold text-muted-foreground">
         {label}
       </label>
       <Textarea
@@ -172,8 +172,8 @@ export function ApplicationNotes({
         aria-describedby={statusId}
         aria-invalid={status === "error" || undefined}
         maxLength={NOTES_MAX_LENGTH}
-        placeholder="Add notes about this candidate: calls, impressions, next steps…"
-        className="min-h-24 text-sm"
+        placeholder="Calls, impressions, next steps"
+        className="min-h-24 bg-canvas text-sm dark:bg-canvas"
       />
       <NotesStatus id={statusId} status={status} error={error} onRetry={() => void flush()} />
     </div>

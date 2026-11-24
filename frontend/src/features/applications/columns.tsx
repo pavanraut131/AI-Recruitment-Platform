@@ -1,7 +1,7 @@
 import { createColumnHelper, type RowData } from "@tanstack/react-table"
 import { format, formatDistanceToNowStrict } from "date-fns"
 
-import { CategoryBadge, RowCheckbox, ScoreCell, SkillsCell, StageCell } from "./cells"
+import { MatchLabel, RowCheckbox, ScoreCell, SkillsCell, StageCell } from "./cells"
 import { formatYears, personName, type Application } from "./model"
 import type { SortableColumn } from "./url-state"
 
@@ -68,7 +68,7 @@ export const candidateColumns = [
   column.accessor("category", {
     header: "Category",
     meta: { className: "w-36" },
-    cell: ({ getValue }) => <CategoryBadge category={getValue()} />,
+    cell: ({ getValue }) => <MatchLabel category={getValue()} />,
   }),
   column.accessor("skills", {
     header: "Top skills",

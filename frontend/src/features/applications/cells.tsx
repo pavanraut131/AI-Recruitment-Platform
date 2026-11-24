@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { stageLabel, type Stage } from "./model"
 
 // The score and category cells are shared with the review panel and the Person profile.
-export { CategoryBadge, ScoreCell } from "@/components/application/score"
+export { MatchLabel, ScoreCell } from "@/components/application/score"
 
 /**
  * The top skills: the campaign's required skills the candidate has come first

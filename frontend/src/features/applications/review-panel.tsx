@@ -1,13 +1,13 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLinkIcon, MailIcon, SearchXIcon, UserRoundIcon } from "lucide-react"
+import { MailIcon, SearchXIcon, UserRoundIcon } from "lucide-react"
 import Link from "next/link"
 import { useId, useRef, type ReactNode, type RefObject } from "react"
 
 import { ApplicationEvaluation, EvaluationBlock, SkillChips } from "@/components/application/evaluation"
 import { ApplicationNotes, ApplicationStageSelect } from "@/components/application/review-controls"
-import { CategoryBadge, ScoreCell } from "@/components/application/score"
+import { MatchLabel, ScoreCell } from "@/components/application/score"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
@@ -164,7 +164,7 @@ function ReviewContent({
           </dd>
           <dt className="text-muted-foreground">Category</dt>
           <dd>
-            <CategoryBadge category={application.category} />
+            <MatchLabel category={application.category} />
           </dd>
           <dt className="text-muted-foreground">Experience</dt>
           <dd className="tabular-nums">{formatYears(application.years_of_experience)}</dd>
@@ -260,7 +260,7 @@ function AlsoAppliedTo({ personId, applicationId }: { personId: string; applicat
   }
 
   return (
-    <EvaluationBlock title="Also applied to" icon={ExternalLinkIcon}>
+    <EvaluationBlock title="Also applied to">
       {body}
     </EvaluationBlock>
   )

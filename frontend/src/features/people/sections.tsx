@@ -1,13 +1,13 @@
 "use client"
 
 import type { UseQueryResult } from "@tanstack/react-query"
-import { AwardIcon, BriefcaseIcon, FolderGit2Icon, GraduationCapIcon, SearchXIcon } from "lucide-react"
+import { SearchXIcon } from "lucide-react"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
 import { ApplicationEvaluation, EvaluationBlock, SkillChips } from "@/components/application/evaluation"
 import { ApplicationNotes } from "@/components/application/review-controls"
-import { CategoryBadge, ScoreCell } from "@/components/application/score"
+import { MatchLabel, ScoreCell } from "@/components/application/score"
 import { EmptyState, ErrorState } from "@/components/data-states"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -117,7 +117,7 @@ export function EvaluationSection({
           <div className="flex flex-col gap-5">
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <ScoreCell score={data.score} category={data.category} />
-              <CategoryBadge category={data.category} />
+              <MatchLabel category={data.category} />
             </div>
             <ApplicationEvaluation application={data} />
           </div>
@@ -161,7 +161,7 @@ export function ProfileSection({ person }: { person: Person }) {
         <SkillChips skills={profile.skills} />
       </EvaluationBlock>
       <div className="grid gap-6 md:grid-cols-2">
-        <EvaluationBlock title="Experience" icon={BriefcaseIcon}>
+        <EvaluationBlock title="Experience">
           {work.length === 0 ? (
             <p className="text-sm text-muted-foreground">No work experience extracted.</p>
           ) : (
@@ -174,7 +174,7 @@ export function ProfileSection({ person }: { person: Person }) {
             </EntryList>
           )}
         </EvaluationBlock>
-        <EvaluationBlock title="Education" icon={GraduationCapIcon}>
+        <EvaluationBlock title="Education">
           {education.length === 0 ? (
             <p className="text-sm text-muted-foreground">No education extracted.</p>
           ) : (
@@ -190,7 +190,7 @@ export function ProfileSection({ person }: { person: Person }) {
             </EntryList>
           )}
         </EvaluationBlock>
-        <EvaluationBlock title="Projects" icon={FolderGit2Icon}>
+        <EvaluationBlock title="Projects">
           {projects.length === 0 ? (
             <p className="text-sm text-muted-foreground">No projects extracted.</p>
           ) : (
@@ -206,7 +206,7 @@ export function ProfileSection({ person }: { person: Person }) {
             </EntryList>
           )}
         </EvaluationBlock>
-        <EvaluationBlock title="Certifications" icon={AwardIcon}>
+        <EvaluationBlock title="Certifications">
           {certifications.length === 0 ? (
             <p className="text-sm text-muted-foreground">No certifications extracted.</p>
           ) : (
@@ -277,7 +277,7 @@ export function ApplicationsSection({
                       <ScoreCell score={application.score} category={application.category} />
                     </TableCell>
                     <TableCell>
-                      <CategoryBadge category={application.category} />
+                      <MatchLabel category={application.category} />
                     </TableCell>
                     <TableCell className={cn(application.pipeline_stage === null && "text-muted-foreground")}>
                       {stageLabel(application.pipeline_stage)}
