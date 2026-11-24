@@ -4,6 +4,12 @@ Private to the ingestion module. The async functions serve the HTTP endpoints (t
 ``AsyncSession``); the ``*_sync`` ones serve the Celery tasks, the verification command and the
 storage check, which use a synchronous ``Session``. Only functions named ``commit`` commit; the
 caller decides where a unit of work ends.
+
+**Tenancy (E2-03).** Every query is filtered to the agency the session is bound to
+(:func:`_resumes_of`, through ``app.platform.tenancy.tenant_filter``) and raises
+``TenantNotBound`` on an unbound session; :func:`add` sets ``agency_id`` from the same binding.
+The functions under "Every agency" serve operator commands (``reset_stuck``, the verification,
+``storage_orphans``) and read all agencies on purpose, through an unbound session.
 """
 
 import uuid
@@ -29,8 +35,14 @@ from sqlalchemy.orm import Session
 
 from app.modules.ingestion.models import Resume
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
+from app.platform.tenancy import AnySession, agency_id_of, tenant_filter
 
 FAILED_STATUSES = ("failed", "quota_exceeded")
+
+
+def _resumes_of(db: AnySession) -> ColumnElement[bool]:
+    """Resumes of the session's agency."""
+    return tenant_filter(db, Resume.agency_id)
 
 
 # ── Async (HTTP) ──────────────────────────────────────────────
@@ -40,26 +52,30 @@ async def latest_with_hash(
     """The campaign's most recently uploaded resume with this content hash, if any."""
     result = await db.execute(
         select(Resume)
-        .where(Resume.campaign_id == campaign_id, Resume.file_hash == file_hash)
+        .where(Resume.campaign_id == campaign_id, Resume.file_hash == file_hash, _resumes_of(db))
         .order_by(Resume.uploaded_at.desc())
     )
     return result.scalars().first()
 
 
 def add(db: AsyncSession, resume: Resume) -> None:
+    """Add a new resume to the session, in the session's agency."""
+    resume.agency_id = agency_id_of(db)
     db.add(resume)
 
 
 async def list_for_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
     """The campaign's resumes, newest upload first."""
     result = await db.execute(
-        select(Resume).where(Resume.campaign_id == campaign_id).order_by(Resume.uploaded_at.desc())
+        select(Resume)
+        .where(Resume.campaign_id == campaign_id, _resumes_of(db))
+        .order_by(Resume.uploaded_at.desc())
     )
     return result.scalars().all()
 
 
 async def get(db: AsyncSession, resume_id: uuid.UUID) -> Resume | None:
-    result = await db.execute(select(Resume).where(Resume.id == resume_id))
+    result = await db.execute(select(Resume).where(Resume.id == resume_id, _resumes_of(db)))
     return result.scalar_one_or_none()
 
 
@@ -67,7 +83,9 @@ async def failed_in_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequen
     """The campaign's ``failed`` and ``quota_exceeded`` resumes (unordered)."""
     result = await db.execute(
         select(Resume).where(
-            Resume.campaign_id == campaign_id, Resume.status.in_(list(FAILED_STATUSES))
+            Resume.campaign_id == campaign_id,
+            Resume.status.in_(list(FAILED_STATUSES)),
+            _resumes_of(db),
         )
     )
     return result.scalars().all()
@@ -75,7 +93,7 @@ async def failed_in_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequen
 
 async def status_counts(db: AsyncSession, campaign_id: uuid.UUID | None = None) -> dict[str, int]:
     """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
-    query = select(Resume.status, func.count(Resume.id))
+    query = select(Resume.status, func.count(Resume.id)).where(_resumes_of(db))
     if campaign_id is not None:
         query = query.where(Resume.campaign_id == campaign_id)
     result = await db.execute(query.group_by(Resume.status))
@@ -89,7 +107,9 @@ async def extractions(
     if not resume_ids:
         return {}
     result = await db.execute(
-        select(Resume.id, Resume.extracted).where(Resume.id == any_(uuid_array(resume_ids)))
+        select(Resume.id, Resume.extracted).where(
+            Resume.id == any_(uuid_array(resume_ids)), _resumes_of(db)
+        )
     )
     return {resume_id: extracted for resume_id, extracted in result.tuples()}
 
@@ -100,7 +120,7 @@ async def skill_lists(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> dict
         return {}
     result = await db.execute(
         select(Resume.id, Resume.extracted["skills"]).where(
-            Resume.id == any_(uuid_array(resume_ids))
+            Resume.id == any_(uuid_array(resume_ids)), _resumes_of(db)
         )
     )
     return {resume_id: skills for resume_id, skills in result.tuples()}
@@ -127,7 +147,10 @@ async def matching_extractions(
     """
     if not resume_ids:
         return []
-    clauses: list[ColumnElement[bool]] = [Resume.id == any_(uuid_array(resume_ids))]
+    clauses: list[ColumnElement[bool]] = [
+        Resume.id == any_(uuid_array(resume_ids)),
+        _resumes_of(db),
+    ]
     if search:
         pattern = f"%{escape_like(search)}%"
         clauses.append(
@@ -158,7 +181,7 @@ async def owner(
 ) -> tuple[uuid.UUID, uuid.UUID | None] | None:
     """``(campaign_id, person_id)`` of the resume, or ``None`` if it does not exist."""
     result = await db.execute(
-        select(Resume.campaign_id, Resume.person_id).where(Resume.id == resume_id)
+        select(Resume.campaign_id, Resume.person_id).where(Resume.id == resume_id, _resumes_of(db))
     )
     row = result.one_or_none()
     return (row.campaign_id, row.person_id) if row is not None else None
@@ -188,7 +211,7 @@ async def delete_for_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> list[
 
 
 async def _delete_where(db: AsyncSession, clause: ColumnElement[bool]) -> list[str]:
-    result = await db.execute(select(Resume).where(clause).order_by(Resume.id))
+    result = await db.execute(select(Resume).where(clause, _resumes_of(db)).order_by(Resume.id))
     resumes = result.scalars().all()
     paths = [resume.storage_path for resume in resumes]
     for resume in resumes:
@@ -218,7 +241,7 @@ async def tallies(
         func.count(Resume.id),
         func.count(Resume.id).filter(Resume.uploaded_at >= func.now() - recent),
         func.max(Resume.updated_at),
-    )
+    ).where(_resumes_of(db))
     if campaign_ids is not None:
         query = query.where(Resume.campaign_id == any_(uuid_array(campaign_ids)))
     result = await db.execute(query.group_by(Resume.campaign_id, Resume.status))
@@ -251,6 +274,7 @@ async def page_in_statuses(
 async def _page(
     db: AsyncSession, clauses: Sequence[ColumnElement[bool]], *, offset: int, limit: int
 ) -> tuple[Sequence[Resume], int]:
+    clauses = [_resumes_of(db), *clauses]
     total = await db.scalar(select(func.count(Resume.id)).where(*clauses))
     if not total:
         return [], 0
@@ -270,7 +294,7 @@ async def by_ids(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> Sequence[
         return []
     result = await db.execute(
         select(Resume)
-        .where(Resume.id == any_(uuid_array(resume_ids)))
+        .where(Resume.id == any_(uuid_array(resume_ids)), _resumes_of(db))
         .execution_options(populate_existing=True)
     )
     return result.scalars().all()
@@ -282,7 +306,7 @@ async def names(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.
         return {}
     result = await db.execute(
         select(Resume.id, Resume.extracted["name"].astext).where(
-            Resume.id == any_(uuid_array(resume_ids))
+            Resume.id == any_(uuid_array(resume_ids)), _resumes_of(db)
         )
     )
     return {resume_id: name for resume_id, name in result.tuples()}
@@ -290,22 +314,26 @@ async def names(db: AsyncSession, resume_ids: Sequence[uuid.UUID]) -> dict[uuid.
 
 # ── Sync (Celery tasks) ───────────────────────────────────────
 def get_sync(db: Session, resume_id: uuid.UUID) -> Resume | None:
-    return db.query(Resume).filter(Resume.id == resume_id).first()
+    return db.execute(
+        select(Resume).where(Resume.id == resume_id, _resumes_of(db))
+    ).scalar_one_or_none()
 
 
-def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, str]]:
-    """Set every ``extracting``, ``processing`` or ``failed`` resume back to ``pending`` (retry
-    count and error cleared); returns their ``(id, original_filename)``. The caller commits."""
+# ── Every agency: operator commands and the verification (sync, unbound session) ──
+def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, uuid.UUID | None, str]]:
+    """Set every ``extracting``, ``processing`` or ``failed`` resume of **every agency** back to
+    ``pending`` (retry count and error cleared); returns their ``(id, agency_id,
+    original_filename)`` (``agency_id`` is ``None`` for a row not backfilled yet, E2-02). The
+    caller commits."""
     result = db.execute(
         update(Resume)
         .where(Resume.status.in_(["extracting", "processing", "failed"]))
         .values(status="pending", retry_count=0, error_message=None)
-        .returning(Resume.id, Resume.original_filename)
+        .returning(Resume.id, Resume.agency_id, Resume.original_filename)
     )
-    return [(resume_id, filename) for resume_id, filename in result.tuples()]
+    return [(resume_id, agency_id, filename) for resume_id, agency_id, filename in result.tuples()]
 
 
-# ── Verification and devtools (sync) ──────────────────────────
 def resume_refs_sync(
     db: Session,
 ) -> Sequence[Row[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID | None]]]:

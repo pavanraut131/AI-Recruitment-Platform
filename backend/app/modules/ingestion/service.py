@@ -12,6 +12,14 @@ first the rows, in the caller's transaction, then the PDFs once it has committed
 Ingestion may call the ``hiring``, ``talent`` and ``ai`` services (never their internals); no
 module may call ingestion (it is the top layer). Errors are :class:`IngestionError` subclasses
 carrying the user-facing ``detail``; the router maps them to status codes.
+
+**Tenancy (E2-03).** The session is bound to an agency (``app.platform.tenancy``): the
+repository filters every query to it and new resumes get its ``agency_id``. The use cases that
+list or fetch a campaign's data take the caller's ``AccessScope`` and have hiring check it
+(``hiring.service.check_scope``, ``campaign_exists``). The agency travels on: every queued task
+carries it (``tasks.enqueue_*``), the progress stream subscribes to the agency's channel of the
+campaign (``events.campaign_channel``), and a new upload is stored under the agency's prefix
+(:func:`resume_storage_key`).
 """
 
 import asyncio
@@ -33,14 +41,27 @@ from app.modules.ingestion.models import Resume
 from app.modules.ingestion.schemas import UploadBatchResponse
 from app.platform import storage
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import AccessScope, agency_id_of
 
 logger = structlog.get_logger()
 
 MAX_FILE_SIZE = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 IN_PROGRESS_STATUSES = ("pending", "extracting", "processing")
-# Every uploaded PDF is stored under this prefix (``campaigns/<campaign>/resumes/<resume>/<file>``).
-RESUME_STORAGE_PREFIX = "campaigns/"
+# Uploaded PDFs are stored under the agency's prefix (spec §6.5, E2-03):
+# ``agencies/<agency>/campaigns/<campaign>/resumes/<resume>.pdf``. The file name stays in
+# ``resumes.original_filename``, never in the key, so a crafted name cannot shape a path.
+RESUME_STORAGE_PREFIX = "agencies/"
+# Uploads before E2-03 were stored as ``campaigns/<campaign>/resumes/<resume>/<file name>``. Those
+# objects keep their keys (``resumes.storage_path`` is stored per row, so reads and deletes keep
+# working); moving them is an optional devtool in the backlog.
+LEGACY_RESUME_STORAGE_PREFIX = "campaigns/"
+# Every prefix a stored resume can live under (``app.devtools.storage_orphans`` scans them all).
+RESUME_STORAGE_PREFIXES = (RESUME_STORAGE_PREFIX, LEGACY_RESUME_STORAGE_PREFIX)
+
+
+def resume_storage_key(agency_id: uuid.UUID, campaign_id: uuid.UUID, resume_id: uuid.UUID) -> str:
+    """The object key of a newly uploaded resume's PDF."""
+    return f"{RESUME_STORAGE_PREFIX}{agency_id}/campaigns/{campaign_id}/resumes/{resume_id}.pdf"
 
 
 # ── Errors ────────────────────────────────────────────────────
@@ -81,7 +102,7 @@ def _rejection(content: bytes) -> str | None:
 
 
 async def upload_resumes(
-    db: AsyncSession, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
 ) -> UploadBatchResponse:
     """Accept a batch of PDFs for a campaign and queue each accepted one for extraction.
 
@@ -90,7 +111,7 @@ async def upload_resumes(
     a duplicate of a failed or quota-exceeded resume is accepted again as a new row. Rejected
     files are reported, not raised.
     """
-    accepted_ids, rejected = await _accept_uploads(db, campaign_id, files)
+    accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files)
     return UploadBatchResponse(
         batch_id=str(uuid.uuid4()),
         campaign_id=campaign_id,
@@ -103,11 +124,11 @@ async def upload_resumes(
 
 
 async def _accept_uploads(
-    db: AsyncSession, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
 ) -> tuple[list[uuid.UUID], list[dict[str, str]]]:
     """The upload itself (see :func:`upload_resumes`): stores and queues the accepted files;
     returns their resume ids and the rejected files with the reason."""
-    if not await hiring_service.campaign_exists(db, campaign_id):
+    if not await hiring_service.campaign_exists(db, scope, campaign_id):
         raise NotFoundError("Campaign not found")
 
     if len(files) > settings.MAX_FILES_PER_BATCH:
@@ -155,15 +176,13 @@ async def _accept_uploads(
 
         # Upload to MinIO
         resume_id = uuid.uuid4()
-        object_key = f"{RESUME_STORAGE_PREFIX}{campaign_id}/resumes/{resume_id}/{filename}"
+        object_key = resume_storage_key(agency_id_of(db), campaign_id, resume_id)
         storage.upload_file(content, object_key)
 
-        repository.add(
+        repository.add(  # in the session's agency; no uploading user yet (E2-05)
             db,
             Resume(
                 id=resume_id,
-                # The default agency until tenant context exists (E2-03); no user yet (E2-05).
-                agency_id=DEFAULT_AGENCY_ID,
                 campaign_id=campaign_id,
                 original_filename=filename,
                 storage_path=object_key,
@@ -177,8 +196,9 @@ async def _accept_uploads(
     await repository.commit(db)
 
     # Enqueue extraction tasks
+    agency_id = agency_id_of(db)
     for rid in accepted_ids:
-        tasks.enqueue_extraction(rid)
+        tasks.enqueue_extraction(rid, agency_id)
 
     logger.info(
         "bulk_upload_complete",
@@ -190,19 +210,23 @@ async def _accept_uploads(
 
 
 # ── Resumes ───────────────────────────────────────────────────
-async def list_resumes(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
+async def list_resumes(
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
+) -> Sequence[Resume]:
     """The campaign's resumes, newest first. An unknown campaign has none (not a 404)."""
+    hiring_service.check_scope(db, scope)
     return await repository.list_for_campaign(db, campaign_id)
 
 
-async def get_resume(db: AsyncSession, resume_id: uuid.UUID) -> Resume:
+async def get_resume(db: AsyncSession, scope: AccessScope, resume_id: uuid.UUID) -> Resume:
+    hiring_service.check_scope(db, scope)
     resume = await repository.get(db, resume_id)
     if not resume:
         raise NotFoundError("Resume not found")
     return resume
 
 
-async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
+async def retry_failed(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> int:
     """Re-queue the campaign's ``failed`` and ``quota_exceeded`` resumes; returns how many.
 
     Each resumes from the step it stopped at (spec §5.5): one that failed during AI analysis
@@ -210,6 +234,7 @@ async def retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> int:
     the AI task, which skips the steps already done; any other (failed text extraction, or
     processed before ``processing_step`` existed) starts again with text extraction.
     """
+    hiring_service.check_scope(db, scope)
     return len(await _retry_failed(db, campaign_id))
 
 
@@ -226,20 +251,22 @@ async def _retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Re
 
     await repository.commit(db)
 
+    agency_id = agency_id_of(db)
     for resume in resumes:
         if resume.processing_step in tasks.AI_STEPS:
-            tasks.enqueue_analysis(resume.id)
+            tasks.enqueue_analysis(resume.id, agency_id)
         else:
-            tasks.enqueue_extraction(resume.id)
+            tasks.enqueue_extraction(resume.id, agency_id)
 
     return resumes
 
 
 # ── For other use cases (composed in app.api) ─────────────────
 async def resume_status_counts(
-    db: AsyncSession, campaign_id: uuid.UUID | None = None
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID | None = None
 ) -> dict[str, int]:
     """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
+    hiring_service.check_scope(db, scope)
     return await repository.status_counts(db, campaign_id)
 
 
@@ -298,7 +325,8 @@ async def delete_stored_files(files: StoredFiles) -> list[str]:
 
 
 def stored_resume_paths(db: Session) -> set[str]:
-    """The storage key of every resume row (sync; for ``app.devtools.storage_orphans``)."""
+    """The storage key of every resume row of **every agency** (sync, unbound session; for
+    ``app.devtools.storage_orphans``)."""
     return repository.storage_paths_sync(db)
 
 
@@ -351,24 +379,25 @@ def resume_profiles(db: AsyncSession) -> hiring_service.ResumeProfiles:
 RECENT_UPLOADS = timedelta(hours=24)
 
 
-async def _require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
-    if not await hiring_service.campaign_exists(db, campaign_id):
+async def _require_campaign(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> None:
+    if not await hiring_service.campaign_exists(db, scope, campaign_id):
         raise NotFoundError("Campaign not found")
 
 
 async def open_campaign_stream(
-    db: AsyncSession, campaign_id: uuid.UUID
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
 ) -> AsyncIterator[dict[str, str]]:
     """The campaign's typed progress stream (:func:`events.typed_campaign_event_stream`); 404 for
     an unknown campaign.
 
     The existence check's read transaction is ended before the stream is returned, so the
     request's session holds no database connection while the (long-lived) stream is open,
-    whenever the framework closes the session.
+    whenever the framework closes the session. The stream subscribes to the campaign's channel
+    **of the caller's agency** (spec §6.3).
     """
-    await _require_campaign(db, campaign_id)
+    await _require_campaign(db, scope, campaign_id)
     await repository.commit(db)
-    return events.typed_campaign_event_stream(campaign_id)
+    return events.typed_campaign_event_stream(scope.agency_id, campaign_id)
 
 
 def _resume_resource(resume: Resume, application_id: uuid.UUID | None) -> v2.Resume:
@@ -389,7 +418,9 @@ def _resume_resource(resume: Resume, application_id: uuid.UUID | None) -> v2.Res
     )
 
 
-async def resume_resources(db: AsyncSession, resumes: Sequence[Resume]) -> list[v2.Resume]:
+async def resume_resources(
+    db: AsyncSession, scope: AccessScope, resumes: Sequence[Resume]
+) -> list[v2.Resume]:
     """The v2 ``Resume`` of each resume, with the application it belongs to (the application of
     its Person in its campaign, from hiring): one query for all of them."""
     owners = {
@@ -397,7 +428,7 @@ async def resume_resources(db: AsyncSession, resumes: Sequence[Resume]) -> list[
         for r in resumes
         if r.person_id is not None
     }
-    applications = await hiring_service.application_ids_of(db, list(owners.values()))
+    applications = await hiring_service.application_ids_of(db, scope, list(owners.values()))
     return [
         _resume_resource(r, applications.get(owners[r.id]) if r.id in owners else None)
         for r in resumes
@@ -405,10 +436,10 @@ async def resume_resources(db: AsyncSession, resumes: Sequence[Resume]) -> list[
 
 
 async def upload_resumes_v2(
-    db: AsyncSession, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
 ) -> v2.UploadResult:
     """:func:`upload_resumes`, answering with the accepted resumes themselves."""
-    accepted_ids, rejected = await _accept_uploads(db, campaign_id, files)
+    accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files)
     stored = {r.id: r for r in await repository.by_ids(db, accepted_ids)}
     accepted = [stored[rid] for rid in accepted_ids]
     return v2.UploadResult(
@@ -418,30 +449,40 @@ async def upload_resumes_v2(
 
 
 async def list_resumes_page(
-    db: AsyncSession, campaign_id: uuid.UUID, statuses: Sequence[str], offset: int, limit: int
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    statuses: Sequence[str],
+    offset: int,
+    limit: int,
 ) -> tuple[list[v2.Resume], int]:
     """A page of the campaign's resumes, newest first (404 for an unknown campaign): four
     queries whatever the page size."""
-    await _require_campaign(db, campaign_id)
+    await _require_campaign(db, scope, campaign_id)
     resumes, total = await repository.page_for_campaign(
         db, campaign_id, statuses, offset=offset, limit=limit
     )
-    return await resume_resources(db, resumes), total
+    return await resume_resources(db, scope, resumes), total
 
 
-async def retry_failed_v2(db: AsyncSession, campaign_id: uuid.UUID) -> v2.RetryResult:
+async def retry_failed_v2(
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
+) -> v2.RetryResult:
     """:func:`retry_failed` (404 for an unknown campaign), answering with the resumes queued
     again, oldest upload first."""
-    await _require_campaign(db, campaign_id)
+    await _require_campaign(db, scope, campaign_id)
     resumes = await _retry_failed(db, campaign_id)
     ordered = sorted(resumes, key=lambda r: (r.uploaded_at, r.id))
     return v2.RetryResult(retried=[r.id for r in ordered])
 
 
-async def resumes_in_progress(db: AsyncSession, limit: int) -> tuple[list[v2.Resume], int]:
+async def resumes_in_progress(
+    db: AsyncSession, scope: AccessScope, limit: int
+) -> tuple[list[v2.Resume], int]:
     """The newest resumes still being processed, across campaigns, and how many there are."""
+    hiring_service.check_scope(db, scope)
     resumes, total = await repository.page_in_statuses(db, IN_PROGRESS_STATUSES, limit=limit)
-    return await resume_resources(db, resumes), total
+    return await resume_resources(db, scope, resumes), total
 
 
 def _tally(rows: Sequence[repository.TallyRow]) -> hiring_service.ResumeTally:
@@ -459,9 +500,10 @@ def _tally(rows: Sequence[repository.TallyRow]) -> hiring_service.ResumeTally:
 
 
 async def resume_tally(
-    db: AsyncSession, campaign_id: uuid.UUID | None = None
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID | None = None
 ) -> hiring_service.ResumeTally:
     """The resume tally of one campaign, or (``None``) of every campaign: one query."""
+    hiring_service.check_scope(db, scope)
     ids = [campaign_id] if campaign_id is not None else None
     return _tally(await repository.tallies(db, ids, RECENT_UPLOADS))
 

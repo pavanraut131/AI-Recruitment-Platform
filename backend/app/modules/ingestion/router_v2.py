@@ -17,9 +17,10 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.modules.ingestion import service
 from app.modules.ingestion.schemas_v2 import ResumePage, ResumeStatus, RetryResult, UploadResult
-from app.platform.database import get_db
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
+from app.platform.request_tenant import access_scope, tenant_db
+from app.platform.tenancy import AccessScope
 from app.platform.uploads import UploadRoute
 
 # UploadRoute: the upload body is parsed with explicit limits (app.platform.uploads, S1).
@@ -42,7 +43,8 @@ STATUS_CODES: dict[type[Exception], int] = {
 async def upload_resumes(
     campaign_id: uuid.UUID,
     files: Annotated[list[UploadFile], File(description="PDF resumes (multipart field files).")],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> UploadResult:
     """Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a
     file that is not a PDF, too large, or a duplicate of one already processed or in progress
@@ -50,7 +52,7 @@ async def upload_resumes(
     parsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than
     10 non-file fields, more files than the batch limit plus one)."""
     with errors_as_http(STATUS_CODES):
-        return await service.upload_resumes_v2(db, campaign_id, files)
+        return await service.upload_resumes_v2(db, scope, campaign_id, files)
 
 
 @router.get(
@@ -66,13 +68,14 @@ async def list_campaign_resumes(
         list[ResumeStatus] | None,
         Query(alias="status", description="Only resumes in any of these statuses."),
     ] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> ResumePage:
     """The campaign's resumes, newest upload first."""
     statuses = [s.value for s in resume_status or []]
     with errors_as_http(STATUS_CODES):
         items, total = await service.list_resumes_page(
-            db, campaign_id, statuses, page.offset, page.limit
+            db, scope, campaign_id, statuses, page.offset, page.limit
         )
     return ResumePage(items=items, total=total, page=page.page, page_size=page.page_size)
 
@@ -84,12 +87,14 @@ async def list_campaign_resumes(
     responses=problem_responses(404, 422),
 )
 async def retry_failed_resumes(
-    campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> RetryResult:
     """Queue the campaign's failed and quota-exceeded resumes again; each resumes from the
     step it stopped at."""
     with errors_as_http(STATUS_CODES):
-        return await service.retry_failed_v2(db, campaign_id)
+        return await service.retry_failed_v2(db, scope, campaign_id)
 
 
 @router.get(
@@ -107,9 +112,11 @@ async def retry_failed_resumes(
     },
 )
 async def stream_campaign_events(
-    campaign_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> EventSourceResponse:
     """Live processing progress of the campaign's resumes (one connection per open campaign)."""
     with errors_as_http(STATUS_CODES):
-        stream = await service.open_campaign_stream(db, campaign_id)
+        stream = await service.open_campaign_stream(db, scope, campaign_id)
     return EventSourceResponse(stream)

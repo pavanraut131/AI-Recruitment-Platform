@@ -26,16 +26,22 @@ Flower's history refer to tasks by name, so the tasks keep the names they had wh
 in the old ``workers`` package (:data:`EXTRACT_TASK_NAME`, :data:`AI_TASK_NAME`). Renaming one
 needs a release that registers both names.
 
+**Agency (E2-03, spec §6.3).** Both tasks take the resume's agency explicitly, as the keyword
+argument ``agency_id`` (:func:`enqueue_extraction`, :func:`enqueue_analysis`). Their base class
+(``app.platform.celery_app.TenantTask``) logs it with every line and opens every database
+session bound to it, the failure handlers' too, so the task reads and writes only that agency's
+rows; it publishes progress on that agency's channel of the campaign. A message without
+``agency_id`` (queued before E2-03) runs for the default agency until E2-04.
+
 The tasks run in Celery worker processes, which have no event loop, so they use a synchronous
 engine and ``Session`` (created here, used by nothing else).
 """
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
 from billiard.einfo import ExceptionInfo
-from celery import Task
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -48,7 +54,7 @@ from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.schemas import PersonProfile, ResolveResult
 from app.platform import storage
-from app.platform.celery_app import celery_app
+from app.platform.celery_app import AGENCY_ID_ARG, TenantTask, celery_app
 from app.platform.config import settings
 
 logger = structlog.get_logger()
@@ -82,28 +88,45 @@ AI_RETRY_DELAY = 60
 QUOTA_RETRY_FALLBACK_DELAY = 65.0
 
 
-# celery-types makes Task generic over (params, return); the runtime class is not subscriptable.
-if TYPE_CHECKING:
-    _ResumeTask = Task[[str], None]
-else:
-    _ResumeTask = Task
-
-
 def _resume_id_arg(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     return str(args[0] if args else kwargs.get("resume_id", "unknown"))
 
 
+class ResumeTask(TenantTask):
+    """A pipeline task: a :class:`TenantTask` whose sessions come from :data:`SyncSession`."""
+
+    abstract = True
+
+    def session_factory(self) -> Session:
+        return SyncSession()
+
+    def failure_agency(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any], resume_id: str
+    ) -> uuid.UUID | None:
+        """The agency a failed call ran for, or ``None`` (logged) if its ``agency_id`` is not a
+        valid id: then nothing is written, since no agency can be trusted."""
+        try:
+            return self.agency_of(args, kwargs)
+        except ValueError:
+            logger.error("task_failed_with_invalid_agency_id", task=self.name, resume_id=resume_id)
+            return None
+
+
 # ── Dispatch ──────────────────────────────────────────────────
-def enqueue_extraction(resume_id: uuid.UUID | str) -> None:
-    extract_resume.apply_async(args=(str(resume_id),), queue="extract_queue")
+def enqueue_extraction(resume_id: uuid.UUID | str, agency_id: uuid.UUID) -> None:
+    extract_resume.apply_async(
+        args=(str(resume_id),), kwargs={AGENCY_ID_ARG: str(agency_id)}, queue="extract_queue"
+    )
 
 
-def enqueue_analysis(resume_id: uuid.UUID | str) -> None:
-    process_candidate_ai.apply_async(args=(str(resume_id),), queue="ai_queue")
+def enqueue_analysis(resume_id: uuid.UUID | str, agency_id: uuid.UUID) -> None:
+    process_candidate_ai.apply_async(
+        args=(str(resume_id),), kwargs={AGENCY_ID_ARG: str(agency_id)}, queue="ai_queue"
+    )
 
 
 # ── Step 1: PDF text extraction ───────────────────────────────
-class ExtractTask(_ResumeTask):
+class ExtractTask(ResumeTask):
     abstract = True
 
     def on_failure(
@@ -116,8 +139,11 @@ class ExtractTask(_ResumeTask):
     ) -> None:
         resume_id = _resume_id_arg(args, kwargs)
         logger.error("task_failed", task=self.name, resume_id=resume_id, error=str(exc))
+        agency_id = self.failure_agency(args, kwargs, resume_id)
+        if agency_id is None:
+            return
 
-        with SyncSession() as db:
+        with self.tenant_session(agency_id) as db:
             resume = repository.get_sync(db, uuid.UUID(resume_id))
             if resume:
                 resume.retry_count += 1
@@ -125,7 +151,11 @@ class ExtractTask(_ResumeTask):
                     resume.status = "failed"
                     resume.error_message = str(exc)
                     publish_resume_event(
-                        resume_id, "failed", {"error": str(exc)}, campaign_id=resume.campaign_id
+                        resume_id,
+                        "failed",
+                        {"error": str(exc)},
+                        agency_id=agency_id,
+                        campaign_id=resume.campaign_id,
                     )
                 db.commit()
 
@@ -138,13 +168,14 @@ class ExtractTask(_ResumeTask):
     default_retry_delay=30,
     queue="extract_queue",
 )
-def extract_resume(self: ExtractTask, resume_id: str) -> None:
+def extract_resume(self: ExtractTask, resume_id: str, agency_id: str | None = None) -> None:
     """Download PDF and extract text. Then enqueue AI processing."""
+    agency = self.agency_from(agency_id)
     log = logger.bind(task="extract_resume", resume_id=resume_id)
     log.info("task_started")
 
     # Capture scalar values inside session scope to avoid DetachedInstanceError
-    with SyncSession() as db:
+    with self.tenant_session(agency) as db:
         resume = repository.get_sync(db, uuid.UUID(resume_id))
         if not resume:
             log.error("resume_not_found")
@@ -162,7 +193,11 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
 
     try:
         publish_resume_event(
-            resume_id, "extracting", {"filename": original_filename}, campaign_id=campaign_id
+            resume_id,
+            "extracting",
+            {"filename": original_filename},
+            agency_id=agency,
+            campaign_id=campaign_id,
         )
 
         # Download from MinIO
@@ -188,7 +223,7 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
         log.info("text_extracted", chars=len(raw_text))
 
         # Store the text on the resume, in one transaction with the status
-        with SyncSession() as db:
+        with self.tenant_session(agency) as db:
             resume = repository.get_sync(db, uuid.UUID(resume_id))
             if not resume:
                 raise ValueError("Resume not found")
@@ -196,20 +231,26 @@ def extract_resume(self: ExtractTask, resume_id: str) -> None:
             resume.raw_text = raw_text
             db.commit()
 
-        enqueue_analysis(resume_id)
+        enqueue_analysis(resume_id, agency)
         log.info("ai_task_enqueued")
 
     except Exception as exc:
         log.error("extraction_failed", error=str(exc))
         if self.request.retries >= (self.max_retries or 0):
             # Max retries hit — mark as failed so it doesn't stay stuck in "extracting"
-            with SyncSession() as db:
+            with self.tenant_session(agency) as db:
                 failed = repository.get_sync(db, uuid.UUID(resume_id))
                 if failed:
                     failed.status = "failed"
                     failed.error_message = str(exc)
                     db.commit()
-            publish_resume_event(resume_id, "failed", {"error": str(exc)}, campaign_id=campaign_id)
+            publish_resume_event(
+                resume_id,
+                "failed",
+                {"error": str(exc)},
+                agency_id=agency,
+                campaign_id=campaign_id,
+            )
             return
         raise self.retry(exc=exc, countdown=30) from exc
 
@@ -254,10 +295,12 @@ def _require_resume(db: Session, rid: uuid.UUID) -> Resume:
     return resume
 
 
-def _mark_failed(resume_id: str, error_message: str) -> uuid.UUID | None:
+def _mark_failed(
+    task: ResumeTask, agency_id: uuid.UUID, resume_id: str, error_message: str
+) -> uuid.UUID | None:
     """Mark the resume ``failed``; returns its campaign id (the channel its event goes to), or
-    ``None`` if the resume no longer exists."""
-    with SyncSession() as db:
+    ``None`` if the resume no longer exists (or is not this agency's)."""
+    with task.tenant_session(agency_id) as db:
         resume = repository.get_sync(db, uuid.UUID(resume_id))
         if not resume:
             return None
@@ -267,14 +310,16 @@ def _mark_failed(resume_id: str, error_message: str) -> uuid.UUID | None:
         return resume.campaign_id
 
 
-def _record_failed_step(resume_id: str, step: str, log: Any) -> None:
+def _record_failed_step(
+    task: ResumeTask, agency_id: uuid.UUID, resume_id: str, step: str, log: Any
+) -> None:
     """Persist the step that just failed (its own transaction: the step's was rolled back).
 
     The status is left alone: the task retries, and ``AITask.on_failure`` sets ``failed`` once
     the retries are used up.
     """
     try:
-        with SyncSession() as db:
+        with task.tenant_session(agency_id) as db:
             resume = repository.get_sync(db, uuid.UUID(resume_id))
             if resume:
                 resume.processing_step = step
@@ -283,10 +328,12 @@ def _record_failed_step(resume_id: str, step: str, log: Any) -> None:
         log.error("record_failed_step_failed", step=step, error=str(exc))
 
 
-def _mark_quota_exceeded(resume_id: str, step: str, log: Any) -> None:
+def _mark_quota_exceeded(
+    task: ResumeTask, agency_id: uuid.UUID, resume_id: str, step: str, log: Any
+) -> None:
     """Set ``quota_exceeded`` (and the step it stopped at) now, and tell the UI."""
     log.warning("quota_exceeded", resume_id=resume_id, step=step)
-    with SyncSession() as db:
+    with task.tenant_session(agency_id) as db:
         resume = repository.get_sync(db, uuid.UUID(resume_id))
         if not resume:
             return  # deleted meanwhile: no campaign page to tell
@@ -296,7 +343,11 @@ def _mark_quota_exceeded(resume_id: str, step: str, log: Any) -> None:
         db.commit()
         campaign_id = resume.campaign_id
     publish_resume_event(
-        resume_id, "quota_exceeded", {"error": QUOTA_EXCEEDED_MESSAGE}, campaign_id=campaign_id
+        resume_id,
+        "quota_exceeded",
+        {"error": QUOTA_EXCEEDED_MESSAGE},
+        agency_id=agency_id,
+        campaign_id=campaign_id,
     )
 
 
@@ -308,7 +359,7 @@ def quota_retry_delay(exc: AIQuotaExceeded) -> float:
     return QUOTA_RETRY_FALLBACK_DELAY
 
 
-class AITask(_ResumeTask):
+class AITask(ResumeTask):
     abstract = True
 
     def on_failure(
@@ -321,9 +372,18 @@ class AITask(_ResumeTask):
     ) -> None:
         resume_id = _resume_id_arg(args, kwargs)
         logger.error("ai_task_failed", resume_id=resume_id, error=str(exc))
-        campaign_id = _mark_failed(resume_id, f"AI processing failed: {str(exc)}")
+        agency_id = self.failure_agency(args, kwargs, resume_id)
+        if agency_id is None:
+            return
+        campaign_id = _mark_failed(self, agency_id, resume_id, f"AI processing failed: {str(exc)}")
         if campaign_id is not None:  # a deleted resume has no campaign page to tell
-            publish_resume_event(resume_id, "failed", {"error": str(exc)}, campaign_id=campaign_id)
+            publish_resume_event(
+                resume_id,
+                "failed",
+                {"error": str(exc)},
+                agency_id=agency_id,
+                campaign_id=campaign_id,
+            )
 
 
 @celery_app.task(
@@ -334,7 +394,7 @@ class AITask(_ResumeTask):
     default_retry_delay=AI_RETRY_DELAY,
     queue="ai_queue",
 )
-def process_candidate_ai(self: AITask, resume_id: str) -> None:
+def process_candidate_ai(self: AITask, resume_id: str, agency_id: str | None = None) -> None:
     """Analyse a resume and write its Application (spec §5.1).
 
     Steps, each safe to re-run (a retry runs the whole task again):
@@ -368,6 +428,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
     delay (spec §5.5). Any other error is retried after :data:`AI_RETRY_DELAY` seconds; when the
     retries are used up, ``AITask.on_failure`` marks the resume ``failed``.
     """
+    agency = self.agency_from(agency_id)
     log = logger.bind(task="process_candidate_ai", resume_id=resume_id)
     log.info("task_started")
     rid = uuid.UUID(resume_id)
@@ -375,7 +436,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
 
     try:
         # ── Load the inputs and mark the step (short transaction, no AI call inside) ──
-        with SyncSession() as db:
+        with self.tenant_session(agency) as db:
             resume = repository.get_sync(db, rid)
             if not resume:
                 log.error("resume_not_found")
@@ -412,17 +473,23 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
         # Validate it's actually a resume
         if not is_resume_content(extraction):
             log.warning("not_a_resume", name=extraction.name, skills=extraction.skills)
-            _mark_failed(resume_id, "File does not appear to be a resume (no candidate info found)")
+            _mark_failed(
+                self,
+                agency,
+                resume_id,
+                "File does not appear to be a resume (no candidate info found)",
+            )
             publish_resume_event(
                 resume_id,
                 "failed",
                 {"error": "Not a resume — no candidate information could be extracted"},
+                agency_id=agency,
                 campaign_id=campaign_id,
             )
             return  # Stop here — do NOT retry, this is a data quality issue
 
         step = STEP_SCORE
-        with SyncSession() as db:
+        with self.tenant_session(agency) as db:
             resume = _require_resume(db, rid)
             if snapshot is None:
                 resume.extracted = extraction.model_dump(mode="json")
@@ -444,7 +511,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
 
         # ── resolve_person + save: one transaction, committed once ──
         step = STEP_RESOLVE_PERSON
-        with SyncSession() as db:
+        with self.tenant_session(agency) as db:
             resume = _require_resume(db, rid)
             resolution = _resolve_person(db, resume, extraction)
 
@@ -483,12 +550,13 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
                 "person_id": str(resolution.person_id),
                 "matched_existing": resolution.matched_existing,
             },
+            agency_id=agency,
             campaign_id=campaign_id,
         )
 
     except AIQuotaExceeded as exc:
         # Show it now (the UI's "Quota Limit" state), then try again when the provider says so.
-        _mark_quota_exceeded(resume_id, step, log)
+        _mark_quota_exceeded(self, agency, resume_id, step, log)
         if self.request.retries >= (self.max_retries or 0):
             log.warning("quota_retries_exhausted", step=step)
             return  # stays quota_exceeded; the retry-failed endpoint can re-queue it
@@ -498,7 +566,7 @@ def process_candidate_ai(self: AITask, resume_id: str) -> None:
 
     except Exception as exc:
         log.error("ai_processing_failed", error=str(exc), step=step)
-        _record_failed_step(resume_id, step, log)
+        _record_failed_step(self, agency, resume_id, step, log)
         raise self.retry(exc=exc, countdown=AI_RETRY_DELAY) from exc
 
 

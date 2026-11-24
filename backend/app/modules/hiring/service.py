@@ -71,12 +71,16 @@ the data crosses this interface instead:
    (``app.modules.ingestion.verify_people_applications``) reads applications through
    :func:`application_refs` and :func:`legacy_candidate_map`.
 
-Tenancy (EPIC-02, expand phase E2-01)
--------------------------------------
-Every insert sets ``agency_id``: :func:`_new_campaign` (both create endpoints) and
-:func:`upsert_application`. Until tenant context exists (E2-03) that is the default agency, and
-a new campaign is run for the default client (until E2-06 makes the client a field of the
-request); see :mod:`app.platform.tenancy`. Nothing reads them yet, so no response changes.
+Tenancy (EPIC-02)
+-----------------
+The session is bound to an agency (``app.platform.tenancy``, E2-03): the repository filters
+every query to it, and every insert takes its ``agency_id`` from it (:func:`_new_campaign`,
+:func:`upsert_application`). A new campaign is run for the default client until E2-06 makes the
+client a field of the request.
+
+The use cases that list or fetch campaign data take an ``AccessScope`` (spec §5.3, §5.4), which
+:func:`check_scope` checks against the session's agency. Every scope covers all clients until
+client scoping arrives (E2-06); a narrower one is refused rather than silently widened.
 """
 
 import csv
@@ -110,7 +114,7 @@ from app.modules.hiring.schemas import (
     JDParseResponse,
 )
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_CLIENT_ID, AccessScope, agency_id_of, require_scope
 
 logger = structlog.get_logger()
 
@@ -143,20 +147,35 @@ class JDParseError(HiringError):
     answer failed)."""
 
 
+# ── Tenancy ───────────────────────────────────────────────────
+def check_scope(db: AsyncSession, scope: AccessScope) -> None:
+    """``scope`` must be of the session's agency. Client scoping (spec §5.3) arrives with
+    E2-06: until then a scope limited to some clients is refused, never widened to all."""
+    require_scope(db, scope)
+    if not scope.all_clients:
+        raise NotImplementedError("client-scoped access arrives with E2-06")
+
+
 # ── Campaigns ─────────────────────────────────────────────────
-def _new_campaign(fields: Mapping[str, Any]) -> Campaign:
-    """A campaign to insert, in the default agency, run for its default client (E2-01; the
-    agency comes from tenant context from E2-03, the client from the request from E2-06)."""
-    return Campaign(**fields, agency_id=DEFAULT_AGENCY_ID, client_id=DEFAULT_CLIENT_ID)
+def _new_campaign(db: AsyncSession, fields: Mapping[str, Any]) -> Campaign:
+    """A campaign to insert, in the session's agency, run for the default client (the client
+    comes from the request from E2-06)."""
+    return Campaign(**fields, agency_id=agency_id_of(db), client_id=DEFAULT_CLIENT_ID)
 
 
-async def create_campaign(db: AsyncSession, payload: CampaignCreate) -> Campaign:
-    campaign = await repository.add_campaign(db, _new_campaign(payload.model_dump()))
+async def create_campaign(
+    db: AsyncSession, scope: AccessScope, payload: CampaignCreate
+) -> Campaign:
+    check_scope(db, scope)
+    campaign = await repository.add_campaign(db, _new_campaign(db, payload.model_dump()))
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign
 
 
-async def list_campaigns(db: AsyncSession, skip: int, limit: int) -> Sequence[Campaign]:
+async def list_campaigns(
+    db: AsyncSession, scope: AccessScope, skip: int, limit: int
+) -> Sequence[Campaign]:
+    check_scope(db, scope)
     return await repository.list_campaigns(db, skip, limit)
 
 
@@ -167,16 +186,20 @@ async def _require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Campaig
     return campaign
 
 
-async def get_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> CampaignResponse:
+async def get_campaign(
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
+) -> CampaignResponse:
     """The campaign, without stats (``stats`` is ``None``; see :func:`campaign_stats`)."""
+    check_scope(db, scope)
     campaign = await _require_campaign(db, campaign_id)
     return CampaignResponse.model_validate(campaign)
 
 
 async def update_campaign(
-    db: AsyncSession, campaign_id: uuid.UUID, payload: CampaignUpdate
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, payload: CampaignUpdate
 ) -> Campaign:
     """Apply the fields the client sent (unset fields are left alone)."""
+    check_scope(db, scope)
     campaign = await _require_campaign(db, campaign_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(campaign, field, value)
@@ -184,7 +207,7 @@ async def update_campaign(
     return campaign
 
 
-async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
+async def delete_campaign(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> None:
     """Delete the campaign and its applications (``applications.campaign_id ON DELETE
     CASCADE``; their ``legacy_candidate_map`` rows go with them).
 
@@ -192,6 +215,7 @@ async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
     resumes in the same transaction and commits. Raises :class:`NotFoundError` for an unknown
     campaign.
     """
+    check_scope(db, scope)
     campaign = await _require_campaign(db, campaign_id)
     await repository.delete_campaign(db, campaign)
     logger.info("campaign_deleted", id=str(campaign_id))
@@ -200,6 +224,7 @@ async def delete_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> None:
 # ── Stats ─────────────────────────────────────────────────────
 async def campaign_stats(
     db: AsyncSession,
+    scope: AccessScope,
     campaign_id: uuid.UUID,
     resume_counts: Mapping[str, int],
     profiles: "ResumeProfiles",
@@ -212,6 +237,7 @@ async def campaign_stats(
     of that resume held), taken oldest application first so equal counts keep a stable order.
     An unknown campaign id yields all-zero stats, not a 404.
     """
+    check_scope(db, scope)
     category_rows = await repository.application_category_stats(db, campaign_id)
     resume_ids = await repository.campaign_resume_ids(db, campaign_id)
     skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
@@ -263,9 +289,12 @@ def build_campaign_stats(
     )
 
 
-async def global_stats(db: AsyncSession, resume_counts: Mapping[str, int]) -> GlobalStats:
+async def global_stats(
+    db: AsyncSession, scope: AccessScope, resume_counts: Mapping[str, int]
+) -> GlobalStats:
     """Aggregate counts across all campaigns, given the resume counts by status (from
     ingestion): single-table queries, no joins. ``total_candidates`` counts applications."""
+    check_scope(db, scope)
     campaign_counts = await repository.campaign_status_counts(db)
     total_candidates = await repository.count_applications(db)
     return build_global_stats(campaign_counts, resume_counts, total_candidates)
@@ -506,12 +535,14 @@ async def _find_applications(
 
 async def list_candidates(
     db: AsyncSession,
+    scope: AccessScope,
     filters: CandidateFilters,
     page: int,
     page_size: int,
     profiles: ResumeProfiles,
 ) -> list[CandidateListItem]:
     """One page of matching candidates (applications), best score first (unscored last)."""
+    check_scope(db, scope)
     applications = await _find_applications(
         db, filters, profiles, offset=(page - 1) * page_size, limit=page_size
     )
@@ -537,9 +568,10 @@ CSV_FIELDS = [
 
 
 async def export_candidates_csv(
-    db: AsyncSession, filters: CandidateFilters, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, filters: CandidateFilters, profiles: ResumeProfiles
 ) -> str:
     """All matching candidates (no paging) as a CSV document, best score first."""
+    check_scope(db, scope)
     applications = await _find_applications(db, filters, profiles)
     snapshots = await _snapshots(profiles, applications)
     return render_candidates_csv(
@@ -588,19 +620,21 @@ async def _require_application(db: AsyncSession, candidate_id: uuid.UUID) -> App
 
 
 async def get_candidate(
-    db: AsyncSession, candidate_id: uuid.UUID, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID, profiles: ResumeProfiles
 ) -> CandidateDetail:
     """The candidate (application) with this id, or the application a merged legacy candidate
     with this id was redirected to; the response carries the application's id."""
+    check_scope(db, scope)
     return await _detail(profiles, await _require_application(db, candidate_id))
 
 
 async def get_candidate_by_resume(
-    db: AsyncSession, resume_id: uuid.UUID, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, resume_id: uuid.UUID, profiles: ResumeProfiles
 ) -> CandidateDetail:
     """The application a resume belongs to: the one it is the current resume of, else (an
     older resume of a merged application) the application of its Person in its campaign.
     404 while the resume is not processed yet (no application)."""
+    check_scope(db, scope)
     application = await repository.get_application_by_resume(db, resume_id)
     if application is None:
         owner = await profiles.owner(resume_id)
@@ -628,9 +662,14 @@ def _check_pipeline_stage(stage: str) -> None:
 
 
 async def update_candidate_category(
-    db: AsyncSession, candidate_id: uuid.UUID, category: str, profiles: ResumeProfiles
+    db: AsyncSession,
+    scope: AccessScope,
+    candidate_id: uuid.UUID,
+    category: str,
+    profiles: ResumeProfiles,
 ) -> CandidateDetail:
     """Recruiter override of the AI category. The value is checked before the lookup."""
+    check_scope(db, scope)
     _check_category(category)
     application = await _require_application(db, candidate_id)
     application.category = category
@@ -645,8 +684,13 @@ async def update_candidate_category(
 
 
 async def update_candidate_notes(
-    db: AsyncSession, candidate_id: uuid.UUID, notes: str, profiles: ResumeProfiles
+    db: AsyncSession,
+    scope: AccessScope,
+    candidate_id: uuid.UUID,
+    notes: str,
+    profiles: ResumeProfiles,
 ) -> CandidateDetail:
+    check_scope(db, scope)
     application = await _require_application(db, candidate_id)
     application.notes = notes
     await repository.commit_and_refresh(db, application)
@@ -655,9 +699,14 @@ async def update_candidate_notes(
 
 
 async def update_candidate_pipeline(
-    db: AsyncSession, candidate_id: uuid.UUID, stage: str, profiles: ResumeProfiles
+    db: AsyncSession,
+    scope: AccessScope,
+    candidate_id: uuid.UUID,
+    stage: str,
+    profiles: ResumeProfiles,
 ) -> CandidateDetail:
     """Move one candidate to a pipeline stage. The stage is checked before the lookup."""
+    check_scope(db, scope)
     _check_pipeline_stage(stage)
     application = await _require_application(db, candidate_id)
     application.pipeline_stage = stage
@@ -672,10 +721,15 @@ async def update_candidate_pipeline(
 
 
 async def bulk_update_pipeline(
-    db: AsyncSession, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID], stage: str
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    candidate_ids: Sequence[uuid.UUID],
+    stage: str,
 ) -> int:
     """Move the campaign's candidates (applications) that ``candidate_ids`` name to ``stage``;
     returns how many applications."""
+    check_scope(db, scope)
     _check_pipeline_stage(stage)
     applications = await repository.applications_in_campaign(
         db, campaign_id, candidate_ids, for_update=True
@@ -699,7 +753,7 @@ class DeletedApplication:
 
 
 async def bulk_delete_candidates(
-    db: AsyncSession, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID]
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID]
 ) -> list[DeletedApplication]:
     """Delete the campaign's candidates (applications) that ``candidate_ids`` name (others are
     ignored).
@@ -707,6 +761,7 @@ async def bulk_delete_candidates(
     Flushes but does not commit: the caller deletes their resumes in the same transaction and
     commits.
     """
+    check_scope(db, scope)
     applications = await repository.applications_in_campaign(
         db, campaign_id, candidate_ids, for_update=True
     )
@@ -715,9 +770,12 @@ async def bulk_delete_candidates(
     return deleted
 
 
-async def delete_candidate(db: AsyncSession, candidate_id: uuid.UUID) -> DeletedApplication:
+async def delete_candidate(
+    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID
+) -> DeletedApplication:
     """Delete one candidate (application). Flushes but does not commit: the caller deletes its
     resumes in the same transaction and commits."""
+    check_scope(db, scope)
     application = await _require_application(db, candidate_id)
     (deleted,) = await _delete_applications(db, [application])
     logger.info("candidate_deleted", candidate_id=str(candidate_id), application_id=str(deleted.id))
@@ -875,34 +933,49 @@ def _campaign_clauses(query: CampaignQuery) -> list[ColumnElement[bool]]:
 
 
 async def list_campaigns_page(
-    db: AsyncSession, query: CampaignQuery, offset: int, limit: int, tallies: ResumeTallies
+    db: AsyncSession,
+    scope: AccessScope,
+    query: CampaignQuery,
+    offset: int,
+    limit: int,
+    tallies: ResumeTallies,
 ) -> tuple[list[v2.Campaign], int]:
     """A page of campaigns, newest first, and how many match: four queries."""
+    check_scope(db, scope)
     campaigns, total = await repository.find_campaigns(
         db, _campaign_clauses(query), offset=offset, limit=limit
     )
     return await _campaign_resources(db, campaigns, tallies), total
 
 
-async def create_campaign_v2(db: AsyncSession, payload: v2.CampaignCreate) -> v2.Campaign:
+async def create_campaign_v2(
+    db: AsyncSession, scope: AccessScope, payload: v2.CampaignCreate
+) -> v2.Campaign:
     """Create a campaign. A new campaign has no resumes or applications yet, so its counts are
     zero without asking ingestion."""
-    campaign = await repository.add_campaign(db, _new_campaign(payload.model_dump(mode="json")))
+    check_scope(db, scope)
+    campaign = await repository.add_campaign(db, _new_campaign(db, payload.model_dump(mode="json")))
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign_resource(campaign, None, ResumeTally())
 
 
 async def get_campaign_v2(
-    db: AsyncSession, campaign_id: uuid.UUID, tallies: ResumeTallies
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, tallies: ResumeTallies
 ) -> v2.Campaign:
+    check_scope(db, scope)
     (resource,) = await _campaign_resources(db, [await _require_campaign(db, campaign_id)], tallies)
     return resource
 
 
 async def update_campaign_v2(
-    db: AsyncSession, campaign_id: uuid.UUID, payload: v2.CampaignUpdate, tallies: ResumeTallies
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    payload: v2.CampaignUpdate,
+    tallies: ResumeTallies,
 ) -> v2.Campaign:
     """Apply the fields the client sent (unset fields are left alone)."""
+    check_scope(db, scope)
     campaign = await _require_campaign(db, campaign_id)
     changes = payload.model_dump(exclude_unset=True, mode="json")
     for name, value in changes.items():
@@ -914,12 +987,17 @@ async def update_campaign_v2(
 
 
 async def campaign_insights(
-    db: AsyncSession, campaign_id: uuid.UUID, resumes: ResumeTally, profiles: ResumeProfiles
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    resumes: ResumeTally,
+    profiles: ResumeProfiles,
 ) -> v2.CampaignStats:
     """The Insights numbers of one campaign (404 for an unknown one): resume counts by status,
     application counts by category and stage, the mean score, a score histogram and the top
     skills (from each application's current resume, oldest application first so equal counts
     keep a stable order), flagged when the campaign requires them. Six queries."""
+    check_scope(db, scope)
     campaign = await _require_campaign(db, campaign_id)
     category_rows = await repository.category_score_rows(db, campaign_id)
     stages = await repository.stage_counts(db, campaign_id)
@@ -994,9 +1072,12 @@ def top_skills(
     ]
 
 
-async def workspace_stats(db: AsyncSession, resumes: ResumeTally) -> v2.WorkspaceStats:
+async def workspace_stats(
+    db: AsyncSession, scope: AccessScope, resumes: ResumeTally
+) -> v2.WorkspaceStats:
     """Counts across every campaign, given every resume's tally (from ingestion): three
     single-table queries."""
+    check_scope(db, scope)
     campaign_counts = await repository.campaign_status_counts(db)
     category_rows = await repository.category_score_rows(db)
     stages = await repository.stage_counts(db)
@@ -1164,6 +1245,7 @@ async def _resource(profiles: ResumeProfiles, application: Application) -> v2.Ap
 
 async def list_applications_page(
     db: AsyncSession,
+    scope: AccessScope,
     query: ApplicationQuery,
     offset: int,
     limit: int,
@@ -1171,6 +1253,7 @@ async def list_applications_page(
 ) -> tuple[list[v2.Application], int]:
     """A page of the campaign's applications (404 for an unknown campaign) and how many match:
     at most 6 queries whatever the page size (campaign, at most 4 for the page, extractions)."""
+    check_scope(db, scope)
     await _require_campaign(db, query.campaign_id)
     applications, total = await _application_page(db, query, profiles, offset=offset, limit=limit)
     snapshots = await _snapshots(profiles, applications)
@@ -1178,10 +1261,11 @@ async def list_applications_page(
 
 
 async def export_applications_csv(
-    db: AsyncSession, query: ApplicationQuery, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, query: ApplicationQuery, profiles: ResumeProfiles
 ) -> str:
     """Every matching application (no paging) as CSV, in the query's order, with the columns
     of the legacy export (:data:`CSV_FIELDS`). 404 for an unknown campaign."""
+    check_scope(db, scope)
     await _require_campaign(db, query.campaign_id)
     applications, _ = await _application_page(db, query, profiles, offset=None, limit=None)
     snapshots = await _snapshots(profiles, applications)
@@ -1198,18 +1282,21 @@ async def _require_application_v2(db: AsyncSession, application_id: uuid.UUID) -
 
 
 async def get_application_v2(
-    db: AsyncSession, application_id: uuid.UUID, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, application_id: uuid.UUID, profiles: ResumeProfiles
 ) -> v2.Application:
+    check_scope(db, scope)
     return await _resource(profiles, await _require_application_v2(db, application_id))
 
 
 async def update_application_v2(
     db: AsyncSession,
+    scope: AccessScope,
     application_id: uuid.UUID,
     payload: v2.ApplicationUpdate,
     profiles: ResumeProfiles,
 ) -> v2.Application:
     """The recruiter's changes: stage, notes, category override (only the fields sent)."""
+    check_scope(db, scope)
     application = await _require_application_v2(db, application_id)
     changes = payload.model_dump(exclude_unset=True, mode="json")
     for name, value in changes.items():
@@ -1219,16 +1306,19 @@ async def update_application_v2(
     return await _resource(profiles, application)
 
 
-async def delete_application_v2(db: AsyncSession, application_id: uuid.UUID) -> DeletedApplication:
+async def delete_application_v2(
+    db: AsyncSession, scope: AccessScope, application_id: uuid.UUID
+) -> DeletedApplication:
     """Delete one application. Flushes but does not commit: the caller deletes its resumes in
     the same transaction and commits."""
+    check_scope(db, scope)
     (deleted,) = await _delete_applications(db, [await _require_application_v2(db, application_id)])
     logger.info("application_deleted", application_id=str(application_id))
     return deleted
 
 
 async def bulk_applications(
-    db: AsyncSession, campaign_id: uuid.UUID, action: v2.BulkAction
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, action: v2.BulkAction
 ) -> tuple[v2.BulkApplicationResult, list[DeletedApplication]]:
     """Apply a bulk action to the campaign's applications that ``action.ids`` names (404 for an
     unknown campaign). Ids that are not applications of this campaign are reported as
@@ -1238,6 +1328,7 @@ async def bulk_applications(
     the deleted applications: the caller deletes their resumes in the same transaction and
     commits.
     """
+    check_scope(db, scope)
     await _require_campaign(db, campaign_id)
     requested = list(dict.fromkeys(action.ids))
     applications = await repository.lock_campaign_applications(db, campaign_id, requested)
@@ -1269,18 +1360,22 @@ class PersonActivity:
 
 
 async def people_activity(
-    db: AsyncSession, person_ids: Sequence[uuid.UUID]
+    db: AsyncSession, scope: AccessScope, person_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, PersonActivity]:
     """The activity of each of these people (one grouped query); people without applications
     get an empty :class:`PersonActivity`."""
+    check_scope(db, scope)
     rows = await repository.person_activity(db, person_ids)
     return {
         pid: PersonActivity(*rows[pid]) if pid in rows else PersonActivity() for pid in person_ids
     }
 
 
-async def person_applications(db: AsyncSession, person_id: uuid.UUID) -> list[v2.PersonApplication]:
+async def person_applications(
+    db: AsyncSession, scope: AccessScope, person_id: uuid.UUID
+) -> list[v2.PersonApplication]:
     """Every application of the Person, newest first, with its campaign (one query)."""
+    check_scope(db, scope)
     return [
         v2.PersonApplication(
             id=a.id,
@@ -1297,9 +1392,10 @@ async def person_applications(db: AsyncSession, person_id: uuid.UUID) -> list[v2
 
 
 async def recent_strong_matches(
-    db: AsyncSession, limit: int, profiles: ResumeProfiles
+    db: AsyncSession, scope: AccessScope, limit: int, profiles: ResumeProfiles
 ) -> list[v2.RecentMatch]:
     """The newest strong-match applications across campaigns (two queries)."""
+    check_scope(db, scope)
     rows = await repository.recent_applications_in_category(db, STRONG_MATCH, limit)
     snapshots = await _snapshots(profiles, [a for a, _ in rows])
     return [
@@ -1317,9 +1413,10 @@ async def recent_strong_matches(
 
 
 async def active_campaigns(
-    db: AsyncSession, limit: int, tallies: ResumeTallies
+    db: AsyncSession, scope: AccessScope, limit: int, tallies: ResumeTallies
 ) -> list[v2.Campaign]:
     """The most recently updated active campaigns, with their counts (three queries)."""
+    check_scope(db, scope)
     campaigns = await repository.recently_updated_campaigns(
         db, v2.CampaignStatus.active.value, limit
     )
@@ -1327,18 +1424,20 @@ async def active_campaigns(
 
 
 async def campaign_refs(
-    db: AsyncSession, campaign_ids: Sequence[uuid.UUID]
+    db: AsyncSession, scope: AccessScope, campaign_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, v2.CampaignRef]:
     """``id -> CampaignRef`` of the campaigns among ``campaign_ids`` that exist."""
+    check_scope(db, scope)
     return {c.id: _campaign_ref(c) for c in await repository.campaigns_by_id(db, campaign_ids)}
 
 
 async def application_ids_of(
-    db: AsyncSession, owners: Sequence[ResumeOwner]
+    db: AsyncSession, scope: AccessScope, owners: Sequence[ResumeOwner]
 ) -> dict[ResumeOwner, uuid.UUID]:
     """The application of each resolved resume owner (campaign and Person), in one query: the
     application a resume belongs to, for the v2 resume list. Owners without a Person or without
     an application (yet) are left out."""
+    check_scope(db, scope)
     pairs = list(
         dict.fromkeys((o.campaign_id, o.person_id) for o in owners if o.person_id is not None)
     )
@@ -1355,7 +1454,8 @@ async def application_ids_of(
 # tasks run in worker processes without an event loop and use a synchronous SQLAlchemy Session,
 # so these take that Session and never commit: the task writes the resume and the application
 # in one transaction and commits it.
-async def campaign_exists(db: AsyncSession, campaign_id: uuid.UUID) -> bool:
+async def campaign_exists(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> bool:
+    check_scope(db, scope)
     return await repository.get_campaign(db, campaign_id) is not None
 
 
@@ -1415,8 +1515,9 @@ def upsert_application(
         raise ValueError("resume_uploaded_at must be timezone-aware")
     values: dict[str, Any] = {
         "id": application_id or uuid.uuid4(),
-        # Inserted only: an existing row keeps its agency (E2-01; from tenant context in E2-03).
-        "agency_id": DEFAULT_AGENCY_ID,
+        # Inserted only: an existing row keeps its agency (one written before E2-01 keeps NULL
+        # until the E2-02 backfill).
+        "agency_id": agency_id_of(db),
         "campaign_id": campaign_id,
         "person_id": person_id,
         "resume_id": resume_id,

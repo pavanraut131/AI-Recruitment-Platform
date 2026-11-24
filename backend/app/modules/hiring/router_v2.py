@@ -21,8 +21,9 @@ from app.modules.hiring.schemas_v2 import (
     JobDescription,
     ParsedJobDescription,
 )
-from app.platform.database import get_db
 from app.platform.problems import errors_as_http, problem_responses
+from app.platform.request_tenant import access_scope, tenant_db
+from app.platform.tenancy import AccessScope
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -40,9 +41,13 @@ STATUS_CODES: dict[type[Exception], int] = {
     response_model=Campaign,
     responses=problem_responses(422),
 )
-async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(get_db)) -> Campaign:
+async def create_campaign(
+    payload: CampaignCreate,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
+) -> Campaign:
     """Create a campaign (status ``active`` unless given)."""
-    return await service.create_campaign_v2(db, payload)
+    return await service.create_campaign_v2(db, scope, payload)
 
 
 @router.post(
