@@ -89,9 +89,9 @@ function CommandPalette({
       description="Go to a page or run an action"
     >
       <Command>
-        <CommandInput placeholder="Type a command or search…" />
+        <CommandInput placeholder="Go to a page or run an action" />
         <CommandList>
-          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandEmpty>Nothing matches. Try a page name, like Campaigns.</CommandEmpty>
           <CommandGroup heading="Go to">
             {[...mainNav, settingsNav].map((item) => (
               <CommandItem
