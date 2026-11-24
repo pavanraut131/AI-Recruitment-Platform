@@ -30,7 +30,7 @@ export function TalentList() {
   const query = usePeople(params.apiParams)
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
       <header className="flex flex-col gap-1.5">
         <h1 className="text-title font-semibold tracking-tight">Talent</h1>
         <p className="text-ink-2">Everyone who has applied to any campaign, one row per person.</p>

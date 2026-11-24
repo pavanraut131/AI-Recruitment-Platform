@@ -23,7 +23,7 @@ export function CampaignList() {
   const query = useCampaigns(params.apiParams)
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-title font-semibold tracking-tight">Campaigns</h1>

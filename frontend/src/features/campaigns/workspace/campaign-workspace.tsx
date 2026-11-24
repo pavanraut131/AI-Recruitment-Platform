@@ -109,7 +109,9 @@ export function CampaignWorkspace({
 }
 
 function WorkspaceFrame({ children }: { children: React.ReactNode }) {
-  return <div className="flex w-full max-w-[1440px] flex-col gap-5 px-4 pt-3 pb-10 sm:px-6 lg:px-10">{children}</div>
+  // A working surface: it uses the whole window (each tab decides how to fill it), and the
+  // review panel docks on the right of a full-width table instead of over empty space.
+  return <div className="flex w-full flex-col gap-5 px-4 pt-3 pb-10 sm:px-6 lg:px-10 2xl:px-14">{children}</div>
 }
 
 function BackToCampaigns() {

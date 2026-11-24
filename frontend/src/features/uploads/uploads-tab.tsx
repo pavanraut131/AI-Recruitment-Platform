@@ -118,47 +118,52 @@ export function UploadsTab({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <ResumeDropzone onFiles={onFiles} />
+    // Wide screens: a compact dropzone on the left that stays in view, the live list on the right.
+    <div className="grid gap-6 xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] xl:items-start xl:gap-10">
+      <div className="xl:sticky xl:top-4">
+        <ResumeDropzone onFiles={onFiles} />
+      </div>
 
-      {/* Live regions (spec §8): what was added, then the upload's progress. */}
-      <p role="status" className="sr-only">
-        {dropMessage}
-      </p>
-      <p role="status" className="sr-only">
-        {uploadAnnouncement(batches, progress)}
-      </p>
+      <div className="flex min-w-0 flex-col gap-6">
+        {/* Live regions (spec §8): what was added, then the upload's progress. */}
+        <p role="status" className="sr-only">
+          {dropMessage}
+        </p>
+        <p role="status" className="sr-only">
+          {uploadAnnouncement(batches, progress)}
+        </p>
 
-      {pending.length > 0 && (
-        <section aria-labelledby="uploads-this-session" className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <h2 id="uploads-this-session" className="text-section font-semibold">
-              This upload
-            </h2>
-            {finishedPending && (
-              <Button variant="ghost" size="sm" onClick={clearFinished}>
-                Clear
-              </Button>
-            )}
-          </div>
-          <ul className="border-t" aria-label="Files of this upload">
-            {pending.map((row) => (
-              <PendingRowItem key={row.key} row={row} onRetryBatch={onRetryBatch} />
-            ))}
-          </ul>
-        </section>
-      )}
+        {pending.length > 0 && (
+          <section aria-labelledby="uploads-this-session" className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="uploads-this-session" className="text-section font-semibold">
+                This upload
+              </h2>
+              {finishedPending && (
+                <Button variant="ghost" size="sm" onClick={clearFinished}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <ul className="border-t" aria-label="Files of this upload">
+              {pending.map((row) => (
+                <PendingRowItem key={row.key} row={row} onRetryBatch={onRetryBatch} />
+              ))}
+            </ul>
+          </section>
+        )}
 
-      <ResumesSection
-        campaignId={campaignId}
-        resumes={resumes}
-        counts={counts}
-        page={page}
-        onPage={setPage}
-        retry={retry}
-        hasPending={pending.length > 0}
-        now={now}
-      />
+        <ResumesSection
+          campaignId={campaignId}
+          resumes={resumes}
+          counts={counts}
+          page={page}
+          onPage={setPage}
+          retry={retry}
+          hasPending={pending.length > 0}
+          now={now}
+        />
+      </div>
     </div>
   )
 }
