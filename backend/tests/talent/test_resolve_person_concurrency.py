@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
+from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 from tests import postgres
 
 WORKERS = 20
@@ -93,6 +94,7 @@ def run_concurrently(engine: Engine, calls: list[Call]) -> list[ResolveResult]:
     def worker(index: int, call: Call) -> None:
         try:
             with Session(engine) as session:
+                bind(session, DEFAULT_AGENCY_ID)
                 session.connection()  # check out the connection before the start line
                 barrier.wait(timeout=30)
                 results[index] = service.resolve_person(
@@ -210,6 +212,7 @@ def test_concurrent_retries_of_one_resume_resolve_it_once(engine: Engine) -> Non
 # ── Cross-overs: no deadlock, deterministic final state ──────
 def _seed(engine: Engine, email: str, phone: str) -> uuid.UUID:
     with Session(engine) as session:
+        bind(session, DEFAULT_AGENCY_ID)
         result = service.resolve_person(
             session,
             email=email,

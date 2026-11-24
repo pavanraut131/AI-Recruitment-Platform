@@ -29,9 +29,12 @@ def sync_engine() -> Iterator[Engine]:
 
 @pytest.fixture
 def sync_session(sync_engine: Engine) -> Iterator[Session]:
+    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+
     with sync_engine.connect() as conn:
         outer = conn.begin()
         session = Session(bind=conn, join_transaction_mode="create_savepoint")
+        bind(session, DEFAULT_AGENCY_ID)  # resolve_person writes the session's agency (E2-03)
         try:
             yield session
         finally:

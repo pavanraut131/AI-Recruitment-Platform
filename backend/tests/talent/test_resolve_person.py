@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import repository, service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
+from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
@@ -474,6 +475,7 @@ def test_resolving_the_same_resume_twice_returns_the_same_answer(
 def test_resolve_person_does_not_commit(sync_engine: Any) -> None:
     resume_id = uuid.uuid4()
     with Session(sync_engine) as session:
+        bind(session, DEFAULT_AGENCY_ID)
         result = resolve(session, email=f"{resume_id}@example.com", resume_id=resume_id)
         session.rollback()
     with Session(sync_engine) as session:

@@ -178,6 +178,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -190,6 +191,7 @@
           '<uuid:2>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -340,6 +342,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -351,6 +354,7 @@
           '<uuid:2>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -362,6 +366,7 @@
           '<uuid:3>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -400,7 +405,7 @@
         'original_filename': 'alice.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:1>/alice.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:1>.pdf',
       }),
       dict({
         'campaign_id': '<uuid:5>',
@@ -412,7 +417,7 @@
         'original_filename': 'BOB_UPPERCASE.PDF',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:2>/BOB_UPPERCASE.PDF',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:2>.pdf',
       }),
       dict({
         'campaign_id': '<uuid:5>',
@@ -424,25 +429,25 @@
         'original_filename': 'name with spaces.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:5>/resumes/<uuid:3>/name with spaces.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:3>.pdf',
       }),
     ]),
     'stored_objects': list([
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:5>/resumes/<uuid:1>/alice.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:1>.pdf',
         'size': 17,
         'starts_with': b'%PDF-1.4',
       }),
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:5>/resumes/<uuid:2>/BOB_UPPERCASE.PDF',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:2>.pdf',
         'size': 15,
         'starts_with': b'%PDF-1.4',
       }),
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:5>/resumes/<uuid:3>/name with spaces.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:5>/resumes/<uuid:3>.pdf',
         'size': 17,
         'starts_with': b'%PDF-1.4',
       }),
@@ -525,6 +530,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -536,6 +542,7 @@
           '<uuid:2>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -547,6 +554,7 @@
           '<uuid:3>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -558,6 +566,7 @@
           '<uuid:4>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -617,7 +626,7 @@
         'original_filename': 'again_failed.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:1>/again_failed.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:1>.pdf',
       }),
       dict({
         'campaign_id': '<uuid:6>',
@@ -629,7 +638,7 @@
         'original_filename': 'again_other_campaign.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:3>/again_other_campaign.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:3>.pdf',
       }),
       dict({
         'campaign_id': '<uuid:6>',
@@ -641,7 +650,7 @@
         'original_filename': 'again_quota_exceeded.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:2>/again_quota_exceeded.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:2>.pdf',
       }),
       dict({
         'campaign_id': '<uuid:6>',
@@ -749,31 +758,31 @@
         'original_filename': 'twice_in_batch_1.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:6>/resumes/<uuid:4>/twice_in_batch_1.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:4>.pdf',
       }),
     ]),
     'stored_objects': list([
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:6>/resumes/<uuid:1>/again_failed.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:1>.pdf',
         'size': 18,
         'starts_with': b'%PDF-1.4',
       }),
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:6>/resumes/<uuid:2>/again_quota_exceeded.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:2>.pdf',
         'size': 26,
         'starts_with': b'%PDF-1.4',
       }),
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:6>/resumes/<uuid:3>/again_other_campaign.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:3>.pdf',
         'size': 26,
         'starts_with': b'%PDF-1.4',
       }),
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:6>/resumes/<uuid:4>/twice_in_batch_1.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:6>/resumes/<uuid:4>.pdf',
         'size': 17,
         'starts_with': b'%PDF-1.4',
       }),
@@ -843,6 +852,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -895,13 +905,13 @@
         'original_filename': 'valid.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:1>/valid.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:3>/resumes/<uuid:1>.pdf',
       }),
     ]),
     'stored_objects': list([
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:3>/resumes/<uuid:1>/valid.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:3>/resumes/<uuid:1>.pdf',
         'size': 17,
         'starts_with': b'%PDF-1.4',
       }),
@@ -916,6 +926,7 @@
           '<uuid:1>',
         ]),
         'kwargs': dict({
+          'agency_id': '<default-agency>',
         }),
         'options': dict({
           'queue': 'extract_queue',
@@ -956,13 +967,13 @@
         'original_filename': 'at_limit.pdf',
         'retry_count': 0,
         'status': 'pending',
-        'storage_path': 'campaigns/<uuid:3>/resumes/<uuid:1>/at_limit.pdf',
+        'storage_path': 'agencies/<default-agency>/campaigns/<uuid:3>/resumes/<uuid:1>.pdf',
       }),
     ]),
     'stored_objects': list([
       dict({
         'content_type': 'application/pdf',
-        'key': 'campaigns/<uuid:3>/resumes/<uuid:1>/at_limit.pdf',
+        'key': 'agencies/<default-agency>/campaigns/<uuid:3>/resumes/<uuid:1>.pdf',
         'size': 10485760,
         'starts_with': b'%PDF-1.4',
       }),

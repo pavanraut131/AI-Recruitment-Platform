@@ -1,10 +1,10 @@
 """E2-01: every insert path writes the tenant key (EPIC-02 spec §7.1 phase 1).
 
-Until tenant context exists (E2-03) that is the default agency
-(``app.platform.tenancy.DEFAULT_AGENCY_ID``), and a new campaign is run for the default client.
-One test per insert path: campaigns (v1 and v2), resumes (the upload), the pipeline's writes
-(People, identifiers, conflicts, ``person_resumes``, applications) and the seed. When E2-03 takes
-the agency from the session, these become "writes the bound agency".
+Since E2-03 every insert path writes the agency its session is bound to; every request is bound
+to the default agency (``app.platform.tenancy.DEFAULT_AGENCY_ID``) until E2-05, and a new
+campaign is run for the default client. One test per insert path: campaigns (v1 and v2), resumes
+(the upload), the pipeline's writes (People, identifiers, conflicts, ``person_resumes``,
+applications) and the seed. Writes in another agency: ``tests/tenancy/test_repository_filters.py``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, AccessScope
 from tests.factories import make_campaign
 from tests.ingestion.test_service import PDF, FakeUpload
 
@@ -73,7 +73,7 @@ async def test_a_new_campaign_is_in_the_default_agency_and_client(
 async def test_an_uploaded_resume_is_in_the_default_agency(db_session: AsyncSession) -> None:
     campaign = await make_campaign(db_session)
     result = await ingestion_service.upload_resumes(
-        db_session, campaign.id, [FakeUpload("cv.pdf", PDF)]
+        db_session, AccessScope(DEFAULT_AGENCY_ID), campaign.id, [FakeUpload("cv.pdf", PDF)]
     )
     [resume_id] = result.resume_ids
     resume = await db_session.get_one(Resume, resume_id)
