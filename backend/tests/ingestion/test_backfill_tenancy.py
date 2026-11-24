@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.devtools import seed
 from app.modules.ingestion import backfill_tenancy, verify_people_applications
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
 from tests import postgres
 from tests.ingestion.test_people_applications import make_application, make_campaign
 
@@ -66,6 +66,7 @@ def manifest(engine: Engine, sessions: sessionmaker[Session]) -> dict[str, Any]:
         )
         conn.execute(text("DELETE FROM agencies WHERE id <> :id"), {"id": DEFAULT_AGENCY_ID})
     with sessions() as db:
+        bind(db, DEFAULT_AGENCY_ID)  # the seed writes the session's agency (E2-03)
         generated = seed.generate(db, people=60, campaigns=4, seed=7)
         db.commit()
     with engine.begin() as conn:

@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 from tests import postgres
 
 WORKERS = 20
@@ -99,6 +99,7 @@ def run_concurrently(engine: Engine, calls: list[Call]) -> list[ResolveResult]:
     def worker(index: int, call: Call) -> None:
         try:
             with Session(engine) as session:
+                bind(session, call.agency_id)
                 session.connection()  # check out the connection before the start line
                 barrier.wait(timeout=30)
                 results[index] = service.resolve_person(
@@ -217,6 +218,7 @@ def test_concurrent_retries_of_one_resume_resolve_it_once(engine: Engine) -> Non
 # ── Cross-overs: no deadlock, deterministic final state ──────
 def _seed(engine: Engine, email: str, phone: str) -> uuid.UUID:
     with Session(engine) as session:
+        bind(session, DEFAULT_AGENCY_ID)
         result = service.resolve_person(
             session,
             agency_id=DEFAULT_AGENCY_ID,
@@ -395,14 +397,17 @@ def test_an_agency_never_waits_on_another_agencys_locks(engine: Engine) -> None:
     from sqlalchemy.exc import OperationalError
 
     with Session(engine) as holder:
+        bind(holder, DEFAULT_AGENCY_ID)
         _resolve_holding_locks(holder, DEFAULT_AGENCY_ID)  # locks held until rollback
 
         with Session(engine) as other:
+            bind(other, OTHER_AGENCY)
             other.execute(text("SET LOCAL lock_timeout = '500ms'"))
             _resolve_holding_locks(other, OTHER_AGENCY)  # would raise if it had to wait
             other.commit()
 
         with Session(engine) as same, pytest.raises(OperationalError, match="lock timeout"):
+            bind(same, DEFAULT_AGENCY_ID)
             same.execute(text("SET LOCAL lock_timeout = '500ms'"))
             _resolve_holding_locks(same, DEFAULT_AGENCY_ID)
         holder.rollback()

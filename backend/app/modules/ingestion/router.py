@@ -17,7 +17,8 @@ from sse_starlette.sse import EventSourceResponse
 from app.modules.ingestion import events, service
 from app.modules.ingestion.models import Resume
 from app.modules.ingestion.schemas import ResumeResponse, UploadBatchResponse
-from app.platform.database import get_db
+from app.platform.request_tenant import default_agency_db, default_agency_scope
+from app.platform.tenancy import AccessScope
 from app.platform.uploads import UploadRoute
 
 # UploadRoute: the upload body is parsed with explicit limits (app.platform.uploads, S1).
@@ -46,24 +47,30 @@ def _http_errors() -> Iterator[None]:
 async def bulk_upload_resumes(
     campaign_id: uuid.UUID,
     files: list[UploadFile] = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
 ) -> UploadBatchResponse:
     with _http_errors():
-        return await service.upload_resumes(db, campaign_id, files)
+        return await service.upload_resumes(db, scope, campaign_id, files)
 
 
 @router.get("/campaigns/{campaign_id}/resumes", response_model=list[ResumeResponse])
 async def list_campaign_resumes(
     campaign_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
 ) -> Sequence[Resume]:
-    return await service.list_resumes(db, campaign_id)
+    return await service.list_resumes(db, scope, campaign_id)
 
 
 @router.get("/resumes/{resume_id}", response_model=ResumeResponse)
-async def get_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Resume:
+async def get_resume(
+    resume_id: uuid.UUID,
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
+) -> Resume:
     with _http_errors():
-        return await service.get_resume(db, resume_id)
+        return await service.get_resume(db, scope, resume_id)
 
 
 # response_model=None: no response schema was ever published, and FastAPI would otherwise
@@ -71,16 +78,19 @@ async def get_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
 @router.post("/campaigns/{campaign_id}/resumes/retry-failed", response_model=None)
 async def retry_failed_resumes(
     campaign_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(default_agency_db),
+    scope: AccessScope = Depends(default_agency_scope),
 ) -> dict[str, int]:
     """Re-queue all failed and quota_exceeded resumes for a campaign."""
-    return {"retried": await service.retry_failed(db, campaign_id)}
+    return {"retried": await service.retry_failed(db, scope, campaign_id)}
 
 
 @router.get("/campaigns/{campaign_id}/stream")
-async def stream_campaign_status(campaign_id: uuid.UUID) -> EventSourceResponse:
+async def stream_campaign_status(
+    campaign_id: uuid.UUID, scope: AccessScope = Depends(default_agency_scope)
+) -> EventSourceResponse:
     """
     SSE endpoint — streams real-time processing updates for a campaign.
     Frontend subscribes and receives events as each resume finishes.
     """
-    return EventSourceResponse(events.campaign_event_stream(campaign_id))
+    return EventSourceResponse(events.campaign_event_stream(scope.agency_id, campaign_id))

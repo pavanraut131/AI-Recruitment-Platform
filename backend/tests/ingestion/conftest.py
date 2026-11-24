@@ -43,10 +43,12 @@ def sync_connection() -> Iterator[Connection]:
 @pytest.fixture
 def sync_db(sync_connection: Connection, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     from app.modules.ingestion import tasks
+    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 
     factory = sessionmaker(bind=sync_connection, join_transaction_mode="create_savepoint")
     monkeypatch.setattr(tasks, "SyncSession", factory)
     with factory() as session:
+        bind(session, DEFAULT_AGENCY_ID)  # the tasks bind their own sessions (TenantTask)
         yield session
 
 
@@ -60,7 +62,7 @@ def events(fake_redis: FakeRedis) -> Iterator[Events]:
     from app.modules.ingestion.events import campaign_channel
 
     pubsub = fake_redis.sync_client().pubsub()
-    pubsub.psubscribe(campaign_channel("*"))
+    pubsub.psubscribe(campaign_channel("*", "*"))
     received: list[dict[str, Any]] = []
 
     def drain() -> list[dict[str, Any]]:

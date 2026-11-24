@@ -18,16 +18,17 @@ a resume whose processing then fails. The advisory locks it takes are held until
 callers should commit promptly after it returns. It needs ``READ COMMITTED`` (Postgres' default):
 each statement must see rows committed while it waited for a lock.
 
-**Tenancy (E2-01, E2-02).** :func:`resolve_person` works within one agency, which the caller
-passes (``agency_id``; the callers pass the default agency until tenant context exists, E2-03):
-every row it inserts (the Person, its identifiers, a conflict, the resume's resolution) gets
-that agency, it matches only that agency's identifiers (``UNIQUE(agency_id, kind,
-value_normalized)``), and its advisory-lock keys start with the agency (``agency_id:kind:value``),
-so two agencies never wait on each other's locks and the same human in two agencies is two
-People (spec §3.4). **Transition:** for the default agency it also matches identifiers that have
+**Tenancy (E2-01 to E2-03).** :func:`resolve_person` works within one agency: the caller passes
+it (``agency_id``, the agency its session is bound to, ``app.platform.tenancy.agency_id_of``) and
+it must be the session's (:class:`~app.platform.tenancy.TenantMismatch` otherwise). Every row it
+inserts (the Person, its identifiers, a conflict, the resume's resolution) gets that agency; its
+lookups (identifiers, the Person it locks, the stored resolution) are filtered to it with
+``tenant_filter``, which matches ``UNIQUE(agency_id, kind, value_normalized)``; and its
+advisory-lock keys start with the agency (``agency_id:kind:value``), so two agencies never wait
+on each other's locks and the same human in two agencies is two People (spec §3.4).
+**Transition:** while the default agency is bound, ``tenant_filter`` also matches rows that have
 no agency yet (stored before E2-01 and not yet backfilled), so uploads during the backfill still
-find the existing People. After the contract migration there are none; the fallback goes with
-the default-agency constant (E2-12).
+find the existing People. After the E2-02 contract there are none; the branch goes with E2-04.
 """
 
 import uuid
@@ -46,7 +47,7 @@ from app.modules.talent import schemas_v2 as v2
 from app.modules.talent.identity import classify_phone, normalize_email
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import TenantMismatch, agency_id_of
 
 logger = structlog.get_logger()
 
@@ -91,8 +92,9 @@ def resolve_person(
 ) -> ResolveResult:
     """Attach a resume to an existing Person or create one, and refresh the Person's profile.
 
-    ``agency_id`` is the agency the resume belongs to: matching, the locks and every row written
-    stay within it (see the module docstring).
+    ``agency_id`` is the agency the resume belongs to, and must be the one ``session`` is bound
+    to (``TenantMismatch`` otherwise): matching, the locks and every row written stay within it
+    (see the module docstring).
 
     ``email`` and ``phone`` are the raw values from the resume; they are normalised here
     (``talent.identity``). ``default_region`` is normally ``settings.PHONE_DEFAULT_REGION``.
@@ -123,6 +125,10 @@ def resolve_person(
     """
     if uploaded_at.tzinfo is None:
         raise ValueError("uploaded_at must be timezone-aware")
+    if agency_id != agency_id_of(session):
+        raise TenantMismatch(
+            f"resolve_person for agency {agency_id} on a session of {agency_id_of(session)}"
+        )
 
     identifiers = _normalise(email, phone, default_region)
     repository.take_advisory_locks(
@@ -374,13 +380,7 @@ def _resolve_locked(
             conflict_id=done.conflict_id,
         )
 
-    stored = repository.find_identifiers(
-        session,
-        agency_id,
-        [ident.key for ident in identifiers],
-        # Transition (module docstring): rows not yet backfilled belong to the default agency.
-        include_unassigned=agency_id == DEFAULT_AGENCY_ID,
-    )
+    stored = repository.find_identifiers(session, [ident.key for ident in identifiers])
     owners: dict[str, uuid.UUID] = {}
     for ident in identifiers:
         row = stored.get(ident.key)

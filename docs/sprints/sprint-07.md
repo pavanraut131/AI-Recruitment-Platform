@@ -67,7 +67,7 @@ Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenan
 
 **Notes:**
 - Deploy order and commands: [runbook](../runbooks/tenancy-backfill.md). Deploy the E2-02 code, run the backfill and the verification, then `alembic upgrade head`; the contract migration refuses to run before the backfill has finished.
-- `resolve_person(..., agency_id=...)` takes the agency explicitly. Every caller passes `DEFAULT_AGENCY_ID` for now; E2-03 passes the bound agency instead. Until the contract the default agency also matches identifiers not yet backfilled (a transition clause, in the backlog to remove).
+- `resolve_person(..., agency_id=...)` takes the agency explicitly; it must be the session's. Since the merge with E2-03 the callers pass `agency_id_of(session)` and the matching lookups use `tenant_filter`. Until the contract the default agency also matches identifiers not yet backfilled (`tenant_filter`'s transition branch, removed with E2-04).
 - After this merges, rebuild nothing (no new dependency), but a database at E2-01 needs the backfill before `alembic upgrade head`. On a fresh volume, `make setup` works as before (empty tables pass the check).
 
 ---
@@ -76,6 +76,10 @@ Goal and acceptance criteria: [spec §12, E2-02](../specs/EPIC-02-identity-tenan
 **Status:** todo  ·  **Size:** L  ·  **Branch:** `e2-03-tenant-context`
 
 Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenancy.md#e2-03--tenant-context). Design: spec §6.3, §6.5 and §6.6.
+
+**Notes:**
+- **Overlap with E2-02** (whichever merges second rebases): `talent.service` (the four `agency_id=` lines in `_resolve_locked` / `_attach` read `agency_id_of(session)`; E2-02's explicit agency parameter replaces them), `talent.repository` (E2-03 filters the people reads and `get_person_resume`, and leaves `find_identifiers`, `lock_person` and the lock keys to E2-02), the test fixtures that now bind their sessions (`tests/conftest.py`, `tests/talent/conftest.py`, `tests/ingestion/conftest.py`, the concurrency test's workers), and `reset_stuck_sync`, which now returns each row's agency. E2-03 adds no migration and does not touch `verify_people_applications`.
+- After E2-02's contract, the `agency_id IS NULL` branch of `tenancy.tenant_filter` is dead; E2-04 removes it (backlog).
 
 ---
 

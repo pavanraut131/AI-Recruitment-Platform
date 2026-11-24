@@ -20,9 +20,10 @@ What it does
     ``docs/specs/EPIC-00-platform-core.md`` §6.4); ``verify_people_applications --manifest``
     compares them (§6.3).
 
-    Tenancy (EPIC-02, E2-01): everything is created in the default agency
-    (``app.platform.tenancy.DEFAULT_AGENCY_ID``) and every campaign is run for its default client,
-    as the API and the pipeline do until tenant context exists (E2-03).
+    Tenancy (EPIC-02): everything is created in the default agency
+    (``app.platform.tenancy.DEFAULT_AGENCY_ID``) and every campaign is run for its default client.
+    ``generate`` needs a session bound to the default agency (E2-03: the services it calls take
+    the agency from the session); the CLI binds its own. Seeding several agencies comes with E2-05.
 
     Why through the services, not direct inserts (E0-20): until the contract phase the seed
     wrote legacy ``candidates`` and the backfill turned them into People and Applications. With
@@ -163,7 +164,7 @@ from app.modules.ingestion.tasks import person_profile
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of, bind
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "seed-manifest.json"
@@ -715,8 +716,11 @@ def generate(
     through the pipeline's services: ``talent.resolve_person`` (stored as
     ``resumes.person_id``) and ``hiring.upsert_application``. Only flushes, unless ``on_batch``
     is given: it is called after every :data:`BATCH_SIZE` resumes (the CLI commits there).
+    ``session`` must be bound to the default agency (``app.platform.tenancy.bind``).
     """
     ensure_not_production()
+    if agency_id_of(session) != DEFAULT_AGENCY_ID:
+        raise SeedRefused("the seed writes the default agency: bind the session to it")
     if existing_counts(session)["applications"]:
         raise SeedRefused("refusing to seed: applications already exist (use --reset)")
     plan = build_plan(people, campaigns, seed)
@@ -730,7 +734,7 @@ def generate(
         extraction = ExtractionResult.model_validate(row["extracted"])
         resolution = talent_service.resolve_person(
             session,
-            agency_id=DEFAULT_AGENCY_ID,
+            agency_id=agency_id_of(session),
             email=sub.email,
             phone=sub.phone,
             profile=person_profile(extraction),
@@ -814,6 +818,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         case_sizes(args.people)  # validate sizes before touching the database
         engine = create_engine(settings.SYNC_DATABASE_URL)
         with Session(engine) as session:
+            bind(session, DEFAULT_AGENCY_ID)
             before = existing_counts(session)
             if before["applications"] and args.if_empty:
                 print(f"seed: skipped, {before['applications']} applications already exist")

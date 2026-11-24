@@ -55,3 +55,14 @@ def test_datetimes_are_masked() -> None:
 def test_other_values_are_untouched() -> None:
     data = {"n": 1, "f": 52.5, "none": None, "flag": True, "s": "2025", "t": ("x", 1)}
     assert Masker().mask(data) == data
+
+
+def test_the_default_agency_is_named_not_numbered() -> None:
+    from app.platform.tenancy import DEFAULT_AGENCY_ID
+
+    masker = Masker()
+    key = f"agencies/{DEFAULT_AGENCY_ID}/campaigns/{A}/resumes/{B}.pdf"
+    assert masker.mask({"agency_id": str(DEFAULT_AGENCY_ID), "key": key}) == {
+        "agency_id": "<default-agency>",
+        "key": "agencies/<default-agency>/campaigns/<uuid:1>/resumes/<uuid:2>.pdf",
+    }

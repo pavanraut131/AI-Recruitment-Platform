@@ -25,6 +25,9 @@ from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.conftest import Events
 
+# The task message's agency (EPIC-02 §6.3); one without it is tests/tenancy's.
+DEFAULT_AGENCY = {"agency_id": str(DEFAULT_AGENCY_ID)}
+
 RESUME_TEXT = """Jane Doe
 jane.doe@example.com | +1 555 0100
 Senior Backend Engineer at Acme, 6 years of experience
@@ -85,7 +88,7 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_application(
     resume = _arrange(sync_db, fake_storage, make_pdf(RESUME_TEXT))
     rid = str(resume.id)
 
-    tasks.extract_resume.apply(args=(rid,))
+    tasks.extract_resume.apply(args=(rid,), kwargs=DEFAULT_AGENCY)
 
     sync_db.refresh(resume)
     assert resume.raw_text is not None and "Jane Doe" in resume.raw_text
@@ -96,7 +99,7 @@ def test_pipeline_with_the_fake_ai_creates_a_scored_application(
         (tasks.AI_TASK_NAME, (rid,), {"queue": "ai_queue"})
     ]
 
-    tasks.process_candidate_ai.apply(args=(rid,))
+    tasks.process_candidate_ai.apply(args=(rid,), kwargs=DEFAULT_AGENCY)
 
     application = _application(sync_db, resume.id)
     assert application is not None
@@ -134,17 +137,18 @@ def test_events_go_to_the_resumes_campaign_channel_only(
     # campaign's channel never sees this resume's events.
     resume = _arrange(sync_db, fake_storage, make_pdf(RESUME_TEXT))
     pubsub = fake_redis.sync_client().pubsub()
-    pubsub.psubscribe(campaign_channel("*"))
+    pubsub.psubscribe(campaign_channel("*", "*"))
 
-    tasks.extract_resume.apply(args=(str(resume.id),))
-    tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    tasks.extract_resume.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
+    tasks.process_candidate_ai.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
     channels = []
     while (message := pubsub.get_message()) is not None:
         if message["type"] == "pmessage":
             channels.append(message["channel"].decode())
     pubsub.close()
-    assert channels == [f"campaign:{resume.campaign_id}:events"] * 2  # extracting, done
+    # extracting, done; on the campaign's channel in the task's agency (E2-03)
+    assert channels == [f"agency:{DEFAULT_AGENCY_ID}:campaign:{resume.campaign_id}:events"] * 2
 
 
 def test_a_resume_deleted_while_processing_publishes_nothing(
@@ -155,7 +159,9 @@ def test_a_resume_deleted_while_processing_publishes_nothing(
 
     einfo: Any = None  # unused by on_failure
     tasks.process_candidate_ai.on_failure(RuntimeError("boom"), "task-id", (gone,), {}, einfo)
-    tasks._mark_quota_exceeded(gone, tasks.STEP_SCORE, tasks.logger)
+    tasks._mark_quota_exceeded(
+        tasks.process_candidate_ai, DEFAULT_AGENCY_ID, gone, tasks.STEP_SCORE, tasks.logger
+    )
 
     assert events() == []
 
@@ -165,7 +171,7 @@ def test_scanned_pdf_falls_back_to_ocr_through_the_ai_service(
 ) -> None:
     resume = _arrange(sync_db, fake_storage, make_pdf(""))  # a page without a text layer
 
-    tasks.extract_resume.apply(args=(str(resume.id),))
+    tasks.extract_resume.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
     sync_db.refresh(resume)
     assert resume.raw_text is not None and "Scanned resume (1 page(s)" in resume.raw_text
@@ -183,10 +189,10 @@ def test_quota_exceeded_on_every_retry_leaves_the_resume_quota_exceeded(
     events: Events,
 ) -> None:
     resume = _arrange(sync_db, fake_storage, make_pdf(RESUME_TEXT))
-    tasks.extract_resume.apply(args=(str(resume.id),))
+    tasks.extract_resume.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
     monkeypatch.setattr(tasks, "get_ai_service", _QuotaExhaustedAI)
 
-    result = tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    result = tasks.process_candidate_ai.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
     # The first run and its 3 retries all hit the quota; then it stops, without failing.
     assert result.successful()
@@ -209,9 +215,9 @@ def test_text_that_is_not_a_resume_fails_without_retry(
 ) -> None:
     text = "Quarterly report. Revenue grew in every region this quarter. " * 5
     resume = _arrange(sync_db, fake_storage, make_pdf(text))
-    tasks.extract_resume.apply(args=(str(resume.id),))
+    tasks.extract_resume.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
-    result = tasks.process_candidate_ai.apply(args=(str(resume.id),))
+    result = tasks.process_candidate_ai.apply(args=(str(resume.id),), kwargs=DEFAULT_AGENCY)
 
     assert result.successful()
     sync_db.refresh(resume)

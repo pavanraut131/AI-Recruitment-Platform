@@ -26,9 +26,10 @@ from app.modules.hiring.schemas_v2 import (
     PipelineStage,
 )
 from app.modules.ingestion import service as ingestion
-from app.platform.database import get_db
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
+from app.platform.request_tenant import access_scope, tenant_db
+from app.platform.tenancy import AccessScope
 
 router = APIRouter(tags=["applications"])
 
@@ -90,12 +91,13 @@ Filters = Annotated[hiring.ApplicationQuery, Depends(application_filters)]
 async def list_campaign_applications(
     filters: Filters,
     page: Annotated[PageParams, Depends()],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> ApplicationPage:
     """The campaign's applications matching the filters, best score first by default."""
     with errors_as_http(HIRING_ERRORS):
         items, total = await hiring.list_applications_page(
-            db, filters, page.offset, page.limit, ingestion.resume_profiles(db)
+            db, scope, filters, page.offset, page.limit, ingestion.resume_profiles(db)
         )
     return ApplicationPage(items=items, total=total, page=page.page, page_size=page.page_size)
 
@@ -119,12 +121,15 @@ async def export_campaign_applications(
         list[uuid.UUID] | None,
         Query(max_length=500, description="Only these applications (export a selection)."),
     ] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> Response:
     """Every application matching the filters (no paging) as CSV."""
     query = replace(filters, ids=ids) if ids else filters
     with errors_as_http(HIRING_ERRORS):
-        csv_text = await hiring.export_applications_csv(db, query, ingestion.resume_profiles(db))
+        csv_text = await hiring.export_applications_csv(
+            db, scope, query, ingestion.resume_profiles(db)
+        )
     return Response(
         content=csv_text,
         media_type="text/csv; charset=utf-8",
@@ -141,13 +146,14 @@ async def export_campaign_applications(
 async def bulk_application_action(
     campaign_id: uuid.UUID,
     payload: BulkApplicationAction,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> BulkApplicationResult:
     """Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them
     (with their resumes). Ids that are not this campaign's applications are reported in
     ``not_found``; the others are acted on."""
     with errors_as_http(HIRING_ERRORS):
-        result, deleted = await hiring.bulk_applications(db, campaign_id, payload.root)
+        result, deleted = await hiring.bulk_applications(db, scope, campaign_id, payload.root)
     files = await ingestion.delete_application_resumes(db, deleted)
     await db.commit()
     await ingestion.delete_stored_files(files)
@@ -161,10 +167,14 @@ async def bulk_application_action(
     responses=problem_responses(404, 422),
 )
 async def get_application(
-    application_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    application_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> Application:
     with errors_as_http(HIRING_ERRORS):
-        return await hiring.get_application_v2(db, application_id, ingestion.resume_profiles(db))
+        return await hiring.get_application_v2(
+            db, scope, application_id, ingestion.resume_profiles(db)
+        )
 
 
 @router.patch(
@@ -174,12 +184,15 @@ async def get_application(
     responses=problem_responses(404, 422),
 )
 async def update_application(
-    application_id: uuid.UUID, payload: ApplicationUpdate, db: AsyncSession = Depends(get_db)
+    application_id: uuid.UUID,
+    payload: ApplicationUpdate,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
 ) -> Application:
     """The recruiter's changes: pipeline stage, notes, category override (only those sent)."""
     with errors_as_http(HIRING_ERRORS):
         return await hiring.update_application_v2(
-            db, application_id, payload, ingestion.resume_profiles(db)
+            db, scope, application_id, payload, ingestion.resume_profiles(db)
         )
 
 
@@ -189,10 +202,14 @@ async def update_application(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=problem_responses(404, 422),
 )
-async def delete_application(application_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_application(
+    application_id: uuid.UUID,
+    db: AsyncSession = Depends(tenant_db),
+    scope: AccessScope = Depends(access_scope),
+) -> None:
     """Delete the application with its resumes and their stored PDFs."""
     with errors_as_http(HIRING_ERRORS):
-        deleted = await hiring.delete_application_v2(db, application_id)
+        deleted = await hiring.delete_application_v2(db, scope, application_id)
     files = await ingestion.delete_application_resumes(db, [deleted])
     await db.commit()
     await ingestion.delete_stored_files(files)

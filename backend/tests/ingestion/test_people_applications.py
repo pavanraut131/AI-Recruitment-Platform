@@ -55,9 +55,12 @@ from app.modules.ingestion import tasks, verify_people_applications
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
 from tests import postgres
 from tests.fakes import InMemoryStorage
+
+# The task message's agency (EPIC-02 §6.3); one without it is tests/tenancy's.
+DEFAULT_AGENCY = {"agency_id": str(DEFAULT_AGENCY_ID)}
 
 API = "/api/v1"
 REGION = "IN"
@@ -120,6 +123,7 @@ def seed_db(
     sessions: sessionmaker[Session], people: int = 60, campaigns: int = 4, seed_: int = 7
 ) -> dict[str, Any]:
     with sessions() as db:
+        bind(db, DEFAULT_AGENCY_ID)
         manifest = seed.generate(db, people=people, campaigns=campaigns, seed=seed_)
         db.commit()
     return manifest
@@ -160,6 +164,7 @@ def make_application(
     through the same services; returns the application id."""
     extraction = ExtractionResult(name=name, email=email, phone=phone, skills=["Python"])
     with sessions() as db:
+        bind(db, DEFAULT_AGENCY_ID)  # the services write the session's agency (E2-03)
         resume = Resume(
             campaign_id=campaign,
             original_filename="cv.pdf",
@@ -438,7 +443,7 @@ async def test_an_upload_after_the_contract_is_processed_and_verified(
     resp = await api.get(f"{API}/resumes/{rid}/candidate")
     assert (resp.status_code, resp.json()) == (404, {"detail": "Candidate not yet processed"})
 
-    result = tasks.process_candidate_ai.apply(args=(str(rid),))
+    result = tasks.process_candidate_ai.apply(args=(str(rid),), kwargs=DEFAULT_AGENCY)
     assert result.successful(), result.result
 
     body = (await api.get(f"{API}/resumes/{rid}/candidate")).json()
@@ -484,7 +489,13 @@ async def test_the_list_queries_use_the_indexes(
         finally:
             event.remove(async_engine.sync_engine, "before_cursor_execute", record)
         assert resp.status_code == 200 and resp.json()
-        reads = [(s, p) for s, p in statements if s.lstrip().upper().startswith("SELECT")]
+        # Every transaction of the request's (bound) session starts with the tenant setting
+        # (E2-03): not a read of the list.
+        reads = [
+            (s, p)
+            for s, p in statements
+            if s.lstrip().upper().startswith("SELECT") and "set_config" not in s
+        ]
         assert len(reads) == expected, [s for s, _ in reads]
 
         plans: list[str] = []

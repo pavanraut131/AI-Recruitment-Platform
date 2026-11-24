@@ -4,6 +4,13 @@
 workers, the seed generator and a command, which have no event loop (see
 ``app.modules.ingestion.tasks``). The ``/api/v2`` people reads at the end (E1-02) take the
 request's ``AsyncSession``.
+
+**Tenancy (E2-03, E2-02).** Every query of ``resolve_person`` and the people reads is filtered to
+the agency the session is bound to (``app.platform.tenancy.tenant_filter``): the identifier
+lookup (:func:`find_identifiers`, per agency like ``UNIQUE(agency_id, kind, value_normalized)``),
+the Person it locks and the stored resolution. The advisory-lock keys are per agency too (the
+service builds them). The verification reads and the tenancy backfill read **every agency** on
+purpose (operator commands, unbound sessions).
 """
 
 import uuid
@@ -17,6 +24,11 @@ from sqlalchemy.orm import Session
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform import backfill
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
+from app.platform.tenancy import AnySession, tenant_filter
+
+
+def _people_of(db: AnySession) -> ColumnElement[bool]:
+    return tenant_filter(db, Person.agency_id)
 
 
 def take_advisory_locks(session: Session, keys: Iterable[str]) -> list[int]:
@@ -47,32 +59,22 @@ def take_advisory_locks(session: Session, keys: Iterable[str]) -> list[int]:
 def get_person_resume(session: Session, resume_id: uuid.UUID) -> PersonResume | None:
     return session.execute(
         select(PersonResume)
-        .where(PersonResume.resume_id == resume_id)
+        .where(PersonResume.resume_id == resume_id, tenant_filter(session, PersonResume.agency_id))
         .execution_options(populate_existing=True)
     ).scalar_one_or_none()
 
 
 def find_identifiers(
-    session: Session,
-    agency_id: uuid.UUID,
-    kind_values: Sequence[tuple[str, str]],
-    *,
-    include_unassigned: bool = False,
+    session: Session, kind_values: Sequence[tuple[str, str]]
 ) -> dict[tuple[str, str], PersonIdentifier]:
-    """The agency's stored identifiers among ``(kind, value_normalized)`` pairs, keyed by that
-    pair. ``include_unassigned`` also returns identifiers with no agency yet (stored before the
-    E2-01 expand and not yet backfilled): the service passes it for the default agency only,
-    which those rows belong to. Once ``agency_id`` is ``NOT NULL`` (the E2-02 contract) there
-    are none."""
+    """The stored identifiers of the session's agency among ``(kind, value_normalized)`` pairs,
+    keyed by that pair (``UNIQUE(agency_id, kind, value_normalized)``: at most one each)."""
     if not kind_values:
         return {}
-    agency = PersonIdentifier.agency_id == agency_id
-    if include_unassigned:
-        agency = or_(agency, PersonIdentifier.agency_id.is_(None))
     rows = session.execute(
         select(PersonIdentifier)
         .where(
-            agency,
+            tenant_filter(session, PersonIdentifier.agency_id),
             tuple_(PersonIdentifier.kind, PersonIdentifier.value_normalized).in_(kind_values),
         )
         .execution_options(populate_existing=True)
@@ -89,13 +91,13 @@ def lock_person(session: Session, person_id: uuid.UUID) -> Person:
     """
     return session.execute(
         select(Person)
-        .where(Person.id == person_id)
+        .where(Person.id == person_id, _people_of(session))
         .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     ).scalar_one()
 
 
-# ── Reads for the verification (spec §6.3) ────────────────────
+# ── Reads for the verification (spec §6.3): every agency, unbound session ──
 def table_counts(session: Session) -> dict[str, int]:
     def count(model: type[Person | PersonIdentifier | IdentityConflict | PersonResume]) -> int:
         return session.execute(select(func.count()).select_from(model)).scalar_one()
@@ -149,7 +151,7 @@ def identity_conflict_resume_ids(session: Session) -> list[uuid.UUID]:
     return list(session.execute(select(IdentityConflict.resume_id)).scalars())
 
 
-# ── Tenancy backfill (``app.modules.ingestion.backfill_tenancy``, E2-02) ──
+# ── Tenancy backfill (``app.modules.ingestion.backfill_tenancy``, E2-02): every agency ──
 _TENANT_TABLES = {
     "people": cast(Table, Person.__table__),
     "person_identifiers": cast(Table, PersonIdentifier.__table__),
@@ -206,7 +208,7 @@ async def search_people(
 ) -> tuple[Sequence[Person], int]:
     """A page of people (matching ``q`` if given), most recently updated first (ties by id), and
     how many match in all (two queries)."""
-    clauses = [_search_clause(q)] if q else []
+    clauses = [_people_of(db), *([_search_clause(q)] if q else [])]
     total = await db.scalar(select(func.count(Person.id)).where(*clauses))
     if not total:
         return [], 0
@@ -229,6 +231,7 @@ async def first_emails(db: AsyncSession, person_ids: Sequence[uuid.UUID]) -> dic
         .where(
             PersonIdentifier.person_id == any_(uuid_array(person_ids)),
             PersonIdentifier.kind == "email",
+            tenant_filter(db, PersonIdentifier.agency_id),
         )
         .order_by(PersonIdentifier.created_at, PersonIdentifier.id)
     )
@@ -239,14 +242,18 @@ async def first_emails(db: AsyncSession, person_ids: Sequence[uuid.UUID]) -> dic
 
 
 async def get_person(db: AsyncSession, person_id: uuid.UUID) -> Person | None:
-    return await db.get(Person, person_id)
+    result = await db.execute(select(Person).where(Person.id == person_id, _people_of(db)))
+    return result.scalar_one_or_none()
 
 
 async def identifiers_of(db: AsyncSession, person_id: uuid.UUID) -> Sequence[PersonIdentifier]:
     """The Person's identifiers, emails first, then in the order they were stored."""
     result = await db.execute(
         select(PersonIdentifier)
-        .where(PersonIdentifier.person_id == person_id)
+        .where(
+            PersonIdentifier.person_id == person_id,
+            tenant_filter(db, PersonIdentifier.agency_id),
+        )
         .order_by(PersonIdentifier.kind, PersonIdentifier.created_at, PersonIdentifier.id)
     )
     return result.scalars().all()
@@ -260,7 +267,8 @@ async def conflicts_of(db: AsyncSession, person_id: uuid.UUID) -> Sequence[Ident
             or_(
                 IdentityConflict.chosen_person_id == person_id,
                 IdentityConflict.conflicting_person_id == person_id,
-            )
+            ),
+            tenant_filter(db, IdentityConflict.agency_id),
         )
         .order_by(IdentityConflict.created_at, IdentityConflict.id)
     )
@@ -268,4 +276,4 @@ async def conflicts_of(db: AsyncSession, person_id: uuid.UUID) -> Sequence[Ident
 
 
 async def count_people(db: AsyncSession) -> int:
-    return await db.scalar(select(func.count(Person.id))) or 0
+    return await db.scalar(select(func.count(Person.id)).where(_people_of(db))) or 0

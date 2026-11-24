@@ -8,6 +8,15 @@ serve the upload pipeline's Celery tasks and the verification command, which use
 
 Hiring never queries another module's tables (the ``resumes`` counts, extractions and deletes
 live in ``app.modules.ingestion``).
+
+**Tenancy (E2-03).** Every query on ``campaigns`` and ``applications`` is filtered to the agency
+the session is bound to (:func:`_campaigns_of` / :func:`_applications_of`, through
+``app.platform.tenancy.tenant_filter``), and raises ``TenantNotBound`` on an unbound session. The
+caller sets ``agency_id`` on what it inserts (``service._new_campaign``,
+``service.upsert_application``) from the same binding. The verification reads at the end read
+**every agency** on purpose (an operator command, unbound session). ``legacy_candidate_map`` is
+not a tenant table (spec §6.4): it holds only id pairs, and the applications it leads to are
+filtered.
 """
 
 import uuid
@@ -34,6 +43,17 @@ from sqlalchemy.orm import Session
 from app.modules.hiring.models import Application, Campaign, Client, LegacyCandidateMap
 from app.platform import backfill
 from app.platform.sql import uuid_array
+from app.platform.tenancy import AnySession, tenant_filter
+
+
+def _campaigns_of(db: AnySession) -> ColumnElement[bool]:
+    """Campaigns of the session's agency."""
+    return tenant_filter(db, Campaign.agency_id)
+
+
+def _applications_of(db: AnySession) -> ColumnElement[bool]:
+    """Applications of the session's agency."""
+    return tenant_filter(db, Application.agency_id)
 
 
 # ── Campaigns ─────────────────────────────────────────────────
@@ -46,13 +66,17 @@ async def add_campaign(db: AsyncSession, campaign: Campaign) -> Campaign:
 
 async def list_campaigns(db: AsyncSession, skip: int, limit: int) -> Sequence[Campaign]:
     result = await db.execute(
-        select(Campaign).order_by(Campaign.created_at.desc()).offset(skip).limit(limit)
+        select(Campaign)
+        .where(_campaigns_of(db))
+        .order_by(Campaign.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return result.scalars().all()
 
 
 async def get_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Campaign | None:
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, _campaigns_of(db)))
     return result.scalar_one_or_none()
 
 
@@ -66,7 +90,9 @@ async def delete_campaign(db: AsyncSession, campaign: Campaign) -> None:
 
 async def campaign_status_counts(db: AsyncSession) -> dict[str, int]:
     result = await db.execute(
-        select(Campaign.status, func.count(Campaign.id)).group_by(Campaign.status)
+        select(Campaign.status, func.count(Campaign.id))
+        .where(_campaigns_of(db))
+        .group_by(Campaign.status)
     )
     return {status: count for status, count in result.tuples()}
 
@@ -88,7 +114,7 @@ async def list_applications(
 
     ``offset``/``limit`` are applied only when given (the CSV export pages nothing).
     """
-    query = select(Application).where(and_(*filters)).order_by(*_LIST_ORDER)
+    query = select(Application).where(_applications_of(db), *filters).order_by(*_LIST_ORDER)
     if offset is not None:
         query = query.offset(offset)
     if limit is not None:
@@ -101,26 +127,30 @@ async def application_resume_ids(
     db: AsyncSession, filters: Sequence[ColumnElement[bool]]
 ) -> list[uuid.UUID]:
     """The ``resume_id`` of every application matching ``filters`` (unordered)."""
-    result = await db.execute(select(Application.resume_id).where(and_(*filters)))
+    result = await db.execute(select(Application.resume_id).where(_applications_of(db), *filters))
     return list(result.scalars())
 
 
 async def get_application(db: AsyncSession, application_id: uuid.UUID) -> Application | None:
     """The application with this id, else the one ``legacy_candidate_map`` redirects this
     (merged legacy candidate's) id to; ``None`` if neither exists."""
-    application = await db.get(Application, application_id)
+    application = await get_application_by_id(db, application_id)
     if application is not None:
         return application
     redirect = select(LegacyCandidateMap.application_id).where(
         LegacyCandidateMap.candidate_id == application_id
     )
-    result = await db.execute(select(Application).where(Application.id.in_(redirect)))
+    result = await db.execute(
+        select(Application).where(Application.id.in_(redirect), _applications_of(db))
+    )
     return result.scalar_one_or_none()
 
 
 async def get_application_by_resume(db: AsyncSession, resume_id: uuid.UUID) -> Application | None:
     """The application whose current resume is ``resume_id``."""
-    result = await db.execute(select(Application).where(Application.resume_id == resume_id))
+    result = await db.execute(
+        select(Application).where(Application.resume_id == resume_id, _applications_of(db))
+    )
     return result.scalars().first()
 
 
@@ -129,7 +159,9 @@ async def get_application_of_person(
 ) -> Application | None:
     result = await db.execute(
         select(Application).where(
-            Application.campaign_id == campaign_id, Application.person_id == person_id
+            Application.campaign_id == campaign_id,
+            Application.person_id == person_id,
+            _applications_of(db),
         )
     )
     return result.scalar_one_or_none()
@@ -156,6 +188,7 @@ async def applications_in_campaign(
         .where(
             Application.campaign_id == campaign_id,
             or_(Application.id == any_(uuid_array(ids)), Application.id.in_(redirected)),
+            _applications_of(db),
         )
         .order_by(Application.id)
     )
@@ -175,7 +208,7 @@ async def application_category_stats(
             func.count(Application.id),
             func.avg(Application.score),
         )
-        .where(Application.campaign_id == campaign_id)
+        .where(Application.campaign_id == campaign_id, _applications_of(db))
         .group_by(Application.category)
     )
     return [(category, count, avg) for category, count, avg in result.tuples()]
@@ -185,14 +218,14 @@ async def campaign_resume_ids(db: AsyncSession, campaign_id: uuid.UUID) -> list[
     """The current resume of each of the campaign's applications, oldest application first."""
     result = await db.execute(
         select(Application.resume_id)
-        .where(Application.campaign_id == campaign_id)
+        .where(Application.campaign_id == campaign_id, _applications_of(db))
         .order_by(Application.created_at, Application.id)
     )
     return list(result.scalars())
 
 
 async def count_applications(db: AsyncSession) -> int:
-    result = await db.execute(select(func.count(Application.id)))
+    result = await db.execute(select(func.count(Application.id)).where(_applications_of(db)))
     return result.scalar_one() or 0
 
 
@@ -225,10 +258,11 @@ async def find_campaigns(
 ) -> tuple[Sequence[Campaign], int]:
     """A page of the campaigns matching ``filters``, newest first (ties by id), and how many
     match in all (two queries)."""
-    total = await db.scalar(select(func.count(Campaign.id)).where(*filters))
+    clauses = [_campaigns_of(db), *filters]
+    total = await db.scalar(select(func.count(Campaign.id)).where(*clauses))
     result = await db.execute(
         select(Campaign)
-        .where(*filters)
+        .where(*clauses)
         .order_by(Campaign.created_at.desc(), Campaign.id)
         .offset(offset)
         .limit(limit)
@@ -241,7 +275,7 @@ async def recently_updated_campaigns(
 ) -> Sequence[Campaign]:
     result = await db.execute(
         select(Campaign)
-        .where(Campaign.status == status)
+        .where(Campaign.status == status, _campaigns_of(db))
         .order_by(Campaign.updated_at.desc(), Campaign.id)
         .limit(limit)
     )
@@ -251,7 +285,9 @@ async def recently_updated_campaigns(
 async def campaigns_by_id(db: AsyncSession, ids: Sequence[uuid.UUID]) -> Sequence[Campaign]:
     if not ids:
         return []
-    result = await db.execute(select(Campaign).where(Campaign.id == any_(uuid_array(ids))))
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == any_(uuid_array(ids)), _campaigns_of(db))
+    )
     return result.scalars().all()
 
 
@@ -269,7 +305,7 @@ async def application_tallies(
             func.count(Application.id).filter(Application.category == strong_category),
             func.max(Application.updated_at),
         )
-        .where(Application.campaign_id == any_(uuid_array(campaign_ids)))
+        .where(Application.campaign_id == any_(uuid_array(campaign_ids)), _applications_of(db))
         .group_by(Application.campaign_id)
     )
     return {cid: (count, strong, latest) for cid, count, strong, latest in result.tuples()}
@@ -285,7 +321,7 @@ async def category_score_rows(
         func.count(Application.id),
         func.count(Application.score),
         func.sum(Application.score),
-    )
+    ).where(_applications_of(db))
     if campaign_id is not None:
         query = query.where(Application.campaign_id == campaign_id)
     result = await db.execute(query.group_by(Application.category))
@@ -295,7 +331,9 @@ async def category_score_rows(
 async def stage_counts(
     db: AsyncSession, campaign_id: uuid.UUID | None = None
 ) -> dict[str | None, int]:
-    query = select(Application.pipeline_stage, func.count(Application.id))
+    query = select(Application.pipeline_stage, func.count(Application.id)).where(
+        _applications_of(db)
+    )
     if campaign_id is not None:
         query = query.where(Application.campaign_id == campaign_id)
     result = await db.execute(query.group_by(Application.pipeline_stage))
@@ -308,14 +346,20 @@ async def score_buckets(db: AsyncSession, campaign_id: uuid.UUID) -> dict[int, i
     bucket = func.least(func.greatest(func.floor(Application.score / 10), 0), 9).label("bucket")
     result = await db.execute(
         select(bucket, func.count(Application.id))
-        .where(Application.campaign_id == campaign_id, Application.score.is_not(None))
+        .where(
+            Application.campaign_id == campaign_id,
+            Application.score.is_not(None),
+            _applications_of(db),
+        )
         .group_by(bucket)
     )
     return {int(b): count for b, count in result.tuples()}
 
 
 async def count_where(db: AsyncSession, filters: Sequence[ColumnElement[bool]]) -> int:
-    total = await db.scalar(select(func.count(Application.id)).where(and_(*filters)))
+    total = await db.scalar(
+        select(func.count(Application.id)).where(_applications_of(db), *filters)
+    )
     return total or 0
 
 
@@ -327,7 +371,7 @@ async def page_of_applications(
     offset: int | None = None,
     limit: int | None = None,
 ) -> Sequence[Application]:
-    query = select(Application).where(and_(*filters)).order_by(*order)
+    query = select(Application).where(_applications_of(db), *filters).order_by(*order)
     if offset is not None:
         query = query.offset(offset)
     if limit is not None:
@@ -340,7 +384,9 @@ async def application_resume_pairs(
     db: AsyncSession, filters: Sequence[ColumnElement[bool]]
 ) -> list[tuple[uuid.UUID, uuid.UUID]]:
     """``(id, resume_id)`` of every application matching ``filters`` (unordered)."""
-    result = await db.execute(select(Application.id, Application.resume_id).where(and_(*filters)))
+    result = await db.execute(
+        select(Application.id, Application.resume_id).where(_applications_of(db), *filters)
+    )
     return [(application_id, resume_id) for application_id, resume_id in result.tuples()]
 
 
@@ -348,14 +394,19 @@ async def applications_by_id(db: AsyncSession, ids: Sequence[uuid.UUID]) -> Sequ
     """The applications with these ids (unordered; unknown ids are left out)."""
     if not ids:
         return []
-    result = await db.execute(select(Application).where(Application.id == any_(uuid_array(ids))))
+    result = await db.execute(
+        select(Application).where(Application.id == any_(uuid_array(ids)), _applications_of(db))
+    )
     return result.scalars().all()
 
 
 async def get_application_by_id(db: AsyncSession, application_id: uuid.UUID) -> Application | None:
     """The application with this id; unlike :func:`get_application`, a merged legacy candidate's
     id is not redirected (v2 clients only ever hold application ids)."""
-    return await db.get(Application, application_id)
+    result = await db.execute(
+        select(Application).where(Application.id == application_id, _applications_of(db))
+    )
+    return result.scalar_one_or_none()
 
 
 async def lock_campaign_applications(
@@ -367,7 +418,11 @@ async def lock_campaign_applications(
         return []
     result = await db.execute(
         select(Application)
-        .where(Application.campaign_id == campaign_id, Application.id == any_(uuid_array(ids)))
+        .where(
+            Application.campaign_id == campaign_id,
+            Application.id == any_(uuid_array(ids)),
+            _applications_of(db),
+        )
         .order_by(Application.id)
         .with_for_update()
     )
@@ -381,7 +436,7 @@ async def applications_of_person(
     result = await db.execute(
         select(Application, Campaign)
         .join(Campaign, Campaign.id == Application.campaign_id)
-        .where(Application.person_id == person_id)
+        .where(Application.person_id == person_id, _applications_of(db), _campaigns_of(db))
         .order_by(Application.created_at.desc(), Application.id)
     )
     return [(application, campaign) for application, campaign in result.tuples()]
@@ -401,7 +456,7 @@ async def person_activity(
             func.count(Application.id),
             func.max(func.coalesce(Application.resume_uploaded_at, Application.created_at)),
         )
-        .where(Application.person_id == any_(uuid_array(person_ids)))
+        .where(Application.person_id == any_(uuid_array(person_ids)), _applications_of(db))
         .group_by(Application.person_id)
     )
     return {pid: (count, latest) for pid, count, latest in result.tuples()}
@@ -414,7 +469,7 @@ async def recent_applications_in_category(
     result = await db.execute(
         select(Application, Campaign)
         .join(Campaign, Campaign.id == Application.campaign_id)
-        .where(Application.category == category)
+        .where(Application.category == category, _applications_of(db), _campaigns_of(db))
         .order_by(Application.created_at.desc(), Application.id)
         .limit(limit)
     )
@@ -429,7 +484,8 @@ async def application_ids_of(
         return {}
     result = await db.execute(
         select(Application.campaign_id, Application.person_id, Application.id).where(
-            tuple_(Application.campaign_id, Application.person_id).in_(list(owners))
+            tuple_(Application.campaign_id, Application.person_id).in_(list(owners)),
+            _applications_of(db),
         )
     )
     return {(cid, pid): application_id for cid, pid, application_id in result.tuples()}
@@ -437,7 +493,9 @@ async def application_ids_of(
 
 # ── Upload pipeline (sync, Celery tasks) ──────────────────────
 def get_campaign_sync(db: Session, campaign_id: uuid.UUID) -> Campaign | None:
-    return db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    return db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, _campaigns_of(db))
+    ).scalar_one_or_none()
 
 
 # Columns the pipeline owns on an application: the resume it holds and that resume's scoring.
@@ -459,7 +517,7 @@ APPLICATION_PIPELINE_COLUMNS = (
 def upsert_application_sync(db: Session, values: dict[str, Any]) -> Application:
     """``INSERT … ON CONFLICT (campaign_id, person_id) DO UPDATE`` one application.
 
-    ``values`` holds ``id``, ``agency_id``, ``campaign_id``, ``person_id`` and every column in
+    ``values`` holds ``id``, ``agency_id`` (the session's agency), ``campaign_id``, ``person_id`` and every column in
     :data:`APPLICATION_PIPELINE_COLUMNS`. On a conflict the pipeline columns are replaced only
     when the incoming resume is not older than the stored one, comparing ``(resume_uploaded_at,
     resume_id)`` as a tuple; a stored row whose upload time is unknown (``NULL``) always counts
@@ -487,12 +545,14 @@ def upsert_application_sync(db: Session, values: dict[str, Any]) -> Application:
         .where(
             Application.campaign_id == values["campaign_id"],
             Application.person_id == values["person_id"],
+            _applications_of(db),
         )
         .execution_options(populate_existing=True)
     ).scalar_one()
 
 
 # ── Verification (sync, ``app.modules.ingestion.verify_people_applications``) ──
+# Every agency on purpose: an operator command checks all rows (unbound session).
 def legacy_map_rows_sync(db: Session) -> dict[uuid.UUID, uuid.UUID]:
     """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id``."""
     query = select(LegacyCandidateMap.candidate_id, LegacyCandidateMap.application_id)
@@ -523,7 +583,7 @@ def client_agencies_sync(db: Session) -> dict[uuid.UUID, uuid.UUID]:
     return {client_id: agency_id for client_id, agency_id in rows}
 
 
-# ── Tenancy backfill (sync, ``app.modules.ingestion.backfill_tenancy``, E2-02) ──
+# ── Tenancy backfill (sync, ``app.modules.ingestion.backfill_tenancy``, E2-02): every agency ──
 _TENANT_TABLES = {
     "campaigns": cast(Table, Campaign.__table__),
     "applications": cast(Table, Application.__table__),

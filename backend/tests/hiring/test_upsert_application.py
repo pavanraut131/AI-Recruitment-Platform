@@ -47,11 +47,13 @@ HIGH = ScoringResult(
 @pytest.fixture
 def db() -> Iterator[Session]:
     from app.platform.config import settings
+    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 
     engine = create_engine(settings.SYNC_DATABASE_URL, poolclass=NullPool)
     with engine.connect() as conn:
         outer = conn.begin()
         session = Session(bind=conn, join_transaction_mode="create_savepoint")
+        bind(session, DEFAULT_AGENCY_ID)  # the pipeline's sessions are bound (E2-03)
         try:
             yield session
         finally:

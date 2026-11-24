@@ -7,12 +7,15 @@ Usage (from ``backend/``, or inside the backend container)::
 Why: the delete endpoints (campaign, candidate, bulk candidate) delete the resume rows in one
 transaction and the stored PDFs only after it commits (``app.api``, E0-20). If a storage call
 fails at that point the request still succeeds and the error is logged
-(``stored_file_delete_failed``); the PDF stays behind as an **orphan**: an object under
-``campaigns/`` with no ``resumes.storage_path`` pointing at it. Deletes before E0-20 left every
+(``stored_file_delete_failed``); the PDF stays behind as an **orphan**: a stored resume object
+with no ``resumes.storage_path`` pointing at it. Deletes before E0-20 left every
 PDF behind (bug B6), so an older stack has many.
 
 What it does
-    Lists every object under ``campaigns/`` and every resume's ``storage_path``, and prints:
+    Lists every object under the resume prefixes, ``agencies/`` (uploads since E2-03,
+    ``agencies/<agency>/campaigns/<campaign>/resumes/<resume>.pdf``) and ``campaigns/`` (older
+    uploads, which keep their keys), and every resume's ``storage_path`` in **every agency** (an
+    unbound session: an operator command spanning agencies, spec §6.3), and prints:
 
     * **orphans**: objects no resume refers to (each key, then the count). Objects modified less
       than ``--min-age-minutes`` ago are skipped: an upload stores the PDF before it commits its
@@ -89,7 +92,9 @@ def main(
         return 2
 
     try:
-        objects = storage.list_objects(ingestion_service.RESUME_STORAGE_PREFIX)
+        objects: dict[str, datetime] = {}
+        for prefix in ingestion_service.RESUME_STORAGE_PREFIXES:
+            objects.update(storage.list_objects(prefix))
         if session_factory is None:
             engine = create_engine(settings.SYNC_DATABASE_URL)
             try:

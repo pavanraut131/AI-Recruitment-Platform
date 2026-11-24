@@ -1,7 +1,8 @@
 """Characterization: GET /campaigns/{id}/stream (Server-Sent Events).
 
 How the endpoint works today: it subscribes to the Redis pub/sub channel of the requested
-campaign, ``campaign:<campaign id>:events``, sends a ``connected`` event, then forwards every
+campaign in its agency, ``agency:<agency id>:campaign:<campaign id>:events`` (the agency since
+E2-03), sends a ``connected`` event, then forwards every
 message on that channel as a ``resume_update`` event (data = the published JSON, unchanged). The
 Celery tasks publish those messages with ``publish_resume_event`` (``app/modules/ingestion/
 events.py``, called from ``app/modules/ingestion/tasks.py``; before E0-10 ``_publish_sse_event``
@@ -32,6 +33,7 @@ from sse_starlette.sse import AppStatus
 from syrupy.assertion import SnapshotAssertion
 
 from app.modules.ingestion.events import publish_resume_event
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.characterization.snapshot_utils import response_data
 from tests.characterization.sse import read_sse
 from tests.factories import make_campaign, make_resume
@@ -83,11 +85,19 @@ async def test_stream_event_for_each_resume_status(
     publishers: list[Callable[[], None]] = [
         # tasks.extract_resume: task started
         lambda: publish_resume_event(
-            rid, "extracting", {"filename": "jane_doe_resume.pdf"}, campaign_id=cid
+            rid,
+            "extracting",
+            {"filename": "jane_doe_resume.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=cid,
         ),
         # tasks.extract_resume: retries exhausted
         lambda: publish_resume_event(
-            rid, "failed", {"error": "Could not extract meaningful text from PDF"}, campaign_id=cid
+            rid,
+            "failed",
+            {"error": "Could not extract meaningful text from PDF"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=cid,
         ),
         # tasks.process_candidate_ai: success. person_id and matched_existing were added in E0-16
         # (additive: the Person the resume was attached to, and whether it existed before).
@@ -102,6 +112,7 @@ async def test_stream_event_for_each_resume_status(
                 "person_id": person_id,
                 "matched_existing": True,
             },
+            agency_id=DEFAULT_AGENCY_ID,
             campaign_id=cid,
         ),
         # tasks.process_candidate_ai: extraction found no candidate data
@@ -109,15 +120,24 @@ async def test_stream_event_for_each_resume_status(
             rid,
             "failed",
             {"error": "Not a resume — no candidate information could be extracted"},
+            agency_id=DEFAULT_AGENCY_ID,
             campaign_id=cid,
         ),
         # tasks.AITask.on_failure (retries exhausted) / tasks.ExtractTask.on_failure
         lambda: publish_resume_event(
-            rid, "failed", {"error": "Gemini returned invalid JSON"}, campaign_id=cid
+            rid,
+            "failed",
+            {"error": "Gemini returned invalid JSON"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=cid,
         ),
         # tasks._mark_quota_exceeded
         lambda: publish_resume_event(
-            rid, "quota_exceeded", {"error": QUOTA_MESSAGE}, campaign_id=cid
+            rid,
+            "quota_exceeded",
+            {"error": QUOTA_MESSAGE},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=cid,
         ),
     ]
     result = await read_sse(
@@ -135,7 +155,7 @@ async def test_stream_event_for_each_resume_status(
     # After the client disconnects the stream unsubscribes from its campaign's channel. (Until
     # E0-21 the tasks also published to a per-resume channel, resume:status:<id>, that nothing
     # subscribed to; it was removed.)
-    channel = f"campaign:{campaign.id}:events"
+    channel = f"agency:{DEFAULT_AGENCY_ID}:campaign:{campaign.id}:events"
     assert fake_redis.sync_client().pubsub_numsub(channel) == [(channel.encode(), 0)]
 
 
@@ -152,15 +172,24 @@ async def test_stream_delivers_only_its_campaigns_events(
     other_resume = await make_resume(db_session, other, original_filename="other.pdf")
     publishers: list[Callable[[], None]] = [
         lambda: publish_resume_event(
-            str(other_resume.id), "extracting", {"filename": "other.pdf"}, campaign_id=other.id
+            str(other_resume.id),
+            "extracting",
+            {"filename": "other.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=other.id,
         ),
         lambda: publish_resume_event(
-            str(other_resume.id), "failed", {"error": "x"}, campaign_id=other.id
+            str(other_resume.id),
+            "failed",
+            {"error": "x"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=other.id,
         ),
         lambda: publish_resume_event(
             str(watched_resume.id),
             "extracting",
             {"filename": "watched.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
             campaign_id=watched.id,
         ),
     ]
@@ -182,7 +211,11 @@ async def test_stream_receives_nothing_for_another_campaign(
     other_resume = await make_resume(db_session, other, original_filename="other.pdf")
     publishers: list[Callable[[], None]] = [
         lambda: publish_resume_event(
-            str(other_resume.id), "extracting", {"filename": "other.pdf"}, campaign_id=other.id
+            str(other_resume.id),
+            "extracting",
+            {"filename": "other.pdf"},
+            agency_id=DEFAULT_AGENCY_ID,
+            campaign_id=other.id,
         ),
     ]
     with pytest.raises(TimeoutError):

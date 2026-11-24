@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.modules.talent import repository, service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
@@ -481,6 +481,7 @@ def test_resolving_the_same_resume_twice_returns_the_same_answer(
 def test_resolve_person_does_not_commit(sync_engine: Any) -> None:
     resume_id = uuid.uuid4()
     with Session(sync_engine) as session:
+        bind(session, DEFAULT_AGENCY_ID)
         result = resolve(session, email=f"{resume_id}@example.com", resume_id=resume_id)
         session.rollback()
     with Session(sync_engine) as session:
@@ -583,12 +584,26 @@ def test_get_resolution_returns_the_stored_result(sync_session: Session) -> None
 OTHER_AGENCY = uuid.UUID("00000000-0000-4000-8000-0000000000b2")
 
 
+def session_of(sync_session: Session, agency_id: uuid.UUID) -> Session:
+    """A session bound to ``agency_id`` on the test's connection (rolled back with it)."""
+    session = Session(bind=sync_session.connection(), join_transaction_mode="create_savepoint")
+    bind(session, agency_id)
+    return session
+
+
+def test_resolve_person_refuses_an_agency_other_than_the_sessions(sync_session: Session) -> None:
+    from app.platform.tenancy import TenantMismatch
+
+    with pytest.raises(TenantMismatch):
+        resolve(sync_session, email="asha@example.com", agency_id=OTHER_AGENCY)
+
+
 def test_the_same_identifiers_in_two_agencies_are_two_people(sync_session: Session) -> None:
+    other = session_of(sync_session, OTHER_AGENCY)
     ours = resolve(sync_session, email="asha@example.com", phone=IN_MOBILE)
-    theirs = resolve(
-        sync_session, email="Asha@Example.com", phone=IN_MOBILE, agency_id=OTHER_AGENCY
-    )
-    again = resolve(sync_session, email="asha@example.com", agency_id=OTHER_AGENCY)
+    theirs = resolve(other, email="Asha@Example.com", phone=IN_MOBILE, agency_id=OTHER_AGENCY)
+    again = resolve(other, email="asha@example.com", agency_id=OTHER_AGENCY)
+    other.flush()
 
     assert theirs.person_id != ours.person_id
     assert theirs.matched_existing is False and theirs.conflict_id is None
@@ -619,7 +634,9 @@ def test_the_same_identifiers_in_two_agencies_are_two_people(sync_session: Sessi
 
 def test_a_conflict_is_recorded_within_one_agency_only(sync_session: Session) -> None:
     resolve(sync_session, email="asha@example.com")
-    resolve(sync_session, phone=IN_MOBILE, agency_id=OTHER_AGENCY)
+    other = session_of(sync_session, OTHER_AGENCY)
+    resolve(other, phone=IN_MOBILE, agency_id=OTHER_AGENCY)
+    other.flush()
     # The email is the default agency's, the phone the other agency's: no conflict in either.
     mixed = resolve(sync_session, email="asha@example.com", phone=IN_MOBILE)
 
