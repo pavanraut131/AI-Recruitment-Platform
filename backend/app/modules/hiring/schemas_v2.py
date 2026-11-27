@@ -130,6 +130,15 @@ class CampaignRef(BaseModel):
     status: CampaignStatus
 
 
+class ClientRef(BaseModel):
+    """One of the agency's clients, by name."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
 # ── Campaign stats (Insights) ─────────────────────────────────
 class ResumeCounts(BaseModel):
     total: int = 0

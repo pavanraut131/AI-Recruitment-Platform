@@ -107,7 +107,7 @@ from app.modules.ai import service as ai_service
 from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import repository
 from app.modules.hiring import schemas_v2 as v2
-from app.modules.hiring.models import Application, Campaign
+from app.modules.hiring.models import Application, Campaign, ClientStatus
 from app.modules.hiring.schemas import (
     CampaignCreate,
     CampaignResponse,
@@ -160,6 +160,28 @@ def check_scope(db: AsyncSession, scope: AccessScope) -> None:
     require_scope(db, scope)
     if not scope.all_clients:
         raise NotImplementedError("client-scoped access arrives with E2-06")
+
+
+# ── Clients (E2-07: team members' and invitations' client access) ──
+async def client_refs(
+    db: AsyncSession, client_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, v2.ClientRef]:
+    """The session's agency's clients with these ids, archived ones included (a member keeps
+    access to an archived client's campaigns), by id. Ids of no client of the agency are left
+    out."""
+    rows = await repository.clients_by_ids(db, sorted(set(client_ids)))
+    return {client.id: v2.ClientRef.model_validate(client) for client in rows}
+
+
+async def check_grantable_clients(db: AsyncSession, client_ids: Collection[uuid.UUID]) -> None:
+    """Every id must be an **active** client of the session's agency, else
+    :class:`InvalidInputError` (the same message whether a client is archived, another
+    agency's or unknown)."""
+    wanted = set(client_ids)
+    rows = await repository.clients_by_ids(db, sorted(wanted))
+    active = {client.id for client in rows if client.status == ClientStatus.active.value}
+    if wanted - active:
+        raise InvalidInputError("Choose clients of this agency that are not archived")
 
 
 # ── Campaigns ─────────────────────────────────────────────────
