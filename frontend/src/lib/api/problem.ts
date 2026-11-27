@@ -14,6 +14,7 @@ type ApiProblemInit = {
   type?: string
   detail?: string
   errors?: FieldError[]
+  retryAfter?: number
   cause?: unknown
 }
 
@@ -38,14 +39,20 @@ export class ApiProblem extends Error {
   readonly detail: string | undefined
   /** One entry per invalid field (422 only); empty otherwise. */
   readonly errors: readonly FieldError[]
+  /**
+   * Seconds to wait before trying again, from the `Retry-After` header (a 429
+   * from the rate limits, EPIC-02 §4.6); `undefined` when the response had none.
+   */
+  readonly retryAfter: number | undefined
 
-  constructor({ status, title, type = "about:blank", detail, errors = [], cause }: ApiProblemInit) {
+  constructor({ status, title, type = "about:blank", detail, errors = [], retryAfter, cause }: ApiProblemInit) {
     super(detail ?? title, cause === undefined ? undefined : { cause })
     this.status = status
     this.title = title
     this.type = type
     this.detail = detail
     this.errors = errors
+    this.retryAfter = retryAfter
   }
 
   /** The request never got a response (offline, DNS, CORS, server down). */
@@ -102,6 +109,7 @@ export async function problemFromResponse(response: Response): Promise<ApiProble
   const fallback = {
     status: response.status,
     title: response.statusText || `HTTP ${response.status}`,
+    retryAfter: parseRetryAfter(response.headers.get("Retry-After")),
   }
   const contentType = response.headers.get("Content-Type") ?? ""
   if (!contentType.includes("json")) return new ApiProblem(fallback)
@@ -112,6 +120,20 @@ export async function problemFromResponse(response: Response): Promise<ApiProble
     return new ApiProblem(fallback)
   }
   return new ApiProblem({ ...fallback, ...problemFields(body) })
+}
+
+/**
+ * A `Retry-After` value in seconds: either delay-seconds or an HTTP date
+ * (RFC 9110 §10.2.3). The API sends seconds; it is readable cross-origin
+ * because the CORS policy exposes it.
+ */
+export function parseRetryAfter(value: string | null, now: number = Date.now()): number | undefined {
+  if (value === null) return undefined
+  const text = value.trim()
+  if (/^\d+$/.test(text)) return Number(text)
+  const date = Date.parse(text)
+  if (Number.isNaN(date)) return undefined
+  return Math.max(0, Math.ceil((date - now) / 1000))
 }
 
 /** The problem fields of a JSON body, each only when it has the right type. */

@@ -55,8 +55,24 @@ If the containerised frontend is used anyway, recreate it after a pull that adds
 
 `/api/v2` requires a session (E2-05). The seed creates one account per role in two agencies
 (password `hireflow-dev-password`, development only; the list is in the README under "Signing in
-locally"). Until the login screen arrives (E2-09) the dev and E2E stacks run with
-`AUTH_REQUIRED=false`, so the frontend works without signing in. In backend tests the `client`
+locally"). The app signs in at `/login` (E2-09): open it on `localhost` (the session cookie is the
+API's, and `127.0.0.1` is another site), sign in as one of those accounts, and the page you asked
+for comes back; the user menu at the foot of the sidebar signs you out. The dev stack still runs
+with `AUTH_REQUIRED=false` until E2-11 (an API request without a cookie acts as the default
+agency's owner, handy for `curl`), but the app never relies on it, and the E2E stack requires a
+session.
+
+In the frontend, every request carries the session through the generated client
+(`src/lib/api/transport.ts`: credentials, the CSRF header, one retry after a CSRF 403, a 401
+reported to the `SessionWatcher`); the upload XHR and the event stream do the same. Pages inside
+the app shell are signed in already (`AuthGate`); read the user with `useSignedInUser()` from
+`@/lib/auth/session`. In Vitest a readable `hf_csrf` cookie is set for every test
+(`vitest.setup.ts`), and `src/test/auth.ts` has a signed-in `Me` and a fake API that records each
+request's headers. In Playwright, specs start signed in as the seeded recruiter
+(`e2e/auth.setup.ts`); a spec that needs to start signed out uses
+`test.use({ storageState: { cookies: [], origins: [] } })`.
+
+In backend tests the `client`
 fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
 need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`
 (never both in one test: the `client` override applies to every request of the app);

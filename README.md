@@ -292,11 +292,15 @@ What each role may do is the permission matrix of the
 `client_ids` on an invitation or `PATCH /api/v2/team/members/{id}`); they then see only those
 clients' campaigns, and every other campaign, application or client is a 404.
 
-The frontend has no login screen until E2-09, so the development stack runs with
-**`AUTH_REQUIRED=false`**: a request **without** a session cookie acts as the owner of the
-default agency (the dev Compose file defaults it to `false`; `.env.example` sets it). A request
-with a session cookie is always checked, so you can sign in with `curl` or the API docs
-(http://localhost:8000/api/v2/docs):
+**Sign in at http://localhost:3000/login** (or the port your `next dev` runs on) with one of
+these accounts. The app sends a signed-out visitor there and back to the page they asked for
+afterwards; the user menu at the foot of the sidebar shows who you are and signs you out. Open the
+app on `localhost`, not `127.0.0.1`: the session cookie belongs to the API's host, and the browser
+sends it only to the same site. "Forgot password?" emails a reset link to Mailpit (below). With
+Google or Microsoft set up ("Enable Google/Microsoft sign-in", below) the page offers those
+too.
+
+For scripts, sign in with `curl` (or the API docs, http://localhost:8000/api/v2/docs):
 
 ```bash
 API=http://localhost:8000/api/v2
@@ -307,7 +311,11 @@ curl -s -c jar -b jar -H "X-CSRF-Token: $TOKEN" -H 'Content-Type: application/js
 curl -s -b jar $API/me                                      # the signed-in user and agency
 ```
 
-Set `AUTH_REQUIRED=true` in `.env` to make the API refuse requests without a session, as it does
+The development stack still runs with **`AUTH_REQUIRED=false`** until E2-11 removes it: an API
+request **without** a session cookie acts as the owner of the default agency (the dev Compose
+file defaults it to `false`; `.env.example` sets it). The app does not rely on it (it signs in
+and sends the cookie with every request), and the E2E stack runs with `AUTH_REQUIRED=true`. Set
+`AUTH_REQUIRED=true` in `.env` to make your API refuse requests without a session, as it does
 by default everywhere else. `AUTH_REQUIRED=false` and `SESSION_COOKIE_SECURE=false` are refused
 outside development and test, and so is a weak or template `SECRET_KEY`.
 
@@ -331,31 +339,28 @@ another port, e.g. `http://localhost:3001`). The token is in the link's `#fragme
 Compose, `EMAIL_BACKEND=console` logs the messages instead (development and test only).
 
 #### Inviting a teammate locally
-There are no Team screens before E2-10, so use `curl` (or http://localhost:8000/api/v2/docs).
-Sign in as an owner or admin as above, then:
+There are no Team screens before E2-10, so send the invitation with `curl` (or
+http://localhost:8000/api/v2/docs), signed in as an owner or admin as above:
 
 ```bash
 API=http://localhost:8000/api/v2
 TOKEN=$(grep hf_csrf jar | cut -f7)
 curl -s -b jar -H "X-CSRF-Token: $TOKEN" -H 'Content-Type: application/json' \
   -d '{"email":"nina@example.com","role":"recruiter"}' $API/team/invitations      # 201
-# Open http://localhost:8025, copy the token from the link (…/accept-invite#token=<token>), and
-# accept it as the new user, in a fresh cookie jar:
-curl -s -c jar2 -b jar2 $API/auth/csrf >/dev/null; T2=$(grep hf_csrf jar2 | cut -f7)
-curl -s -c jar2 -b jar2 -H "X-CSRF-Token: $T2" -H 'Content-Type: application/json' \
-  -d '{"token":"<token>"}' $API/auth/invitations/preview                       # agency, role, inviter
-curl -s -c jar2 -b jar2 -H "X-CSRF-Token: $T2" -H 'Content-Type: application/json' \
-  -d '{"token":"<token>","display_name":"Nina","password":"a long passphrase"}' \
-  $API/auth/invitations/accept                                                 # signed in as Nina
 ```
+
+Then open the email in Mailpit (http://localhost:8025) and follow its link
+(`/accept-invite#token=…`, in a private window if you are signed in as someone else): the page
+shows the agency, who invited you and the role, and creates the account with a name and a
+password (an address that already has an account signs in first, then joins).
 
 Admins invite recruiters and viewers; owners invite any role. An invitation link works for 7
 days (resend it for a new one), a reset link for 30 minutes, once. `GET /team/members` lists the
 team; `PATCH /team/members/{id}`, `POST /team/members/{id}/deactivate` and `/reactivate` manage
-it (spec §8.2). A forgotten password: `POST /auth/password-reset {"email": …}` emails a link
-(the answer is the same whether or not the account exists), and `POST
-/auth/password-reset/confirm {"token": …, "new_password": …}` sets the new one and signs the
-account out everywhere.
+it (spec §8.2). A forgotten password: "Forgot password?" on the login page emails a link (the
+answer is the same whether or not the account exists; the API is `POST /auth/password-reset`), and
+the link's page (`/reset-password#token=…`) sets the new password and signs the account out
+everywhere.
 
 #### Enable Google/Microsoft sign-in
 "Continue with Google" and "Continue with Microsoft" (EPIC-02 §4.3, E2-08) are optional and off
@@ -397,12 +402,13 @@ accounts only):
    domain), so without it an identity that is not linked yet can only join through an
    invitation. **API permissions**: Microsoft Graph `openid`, `email`, `profile` (delegated).
 
-`GET http://localhost:8000/api/v2/auth/providers` then lists the provider. Until the login page
-has its buttons (E2-09), try the flow from the API docs (http://localhost:8000/api/v2/docs) in
-your browser: `getCsrfToken`, then **Authorize** with that token as `csrfToken`, then
-`startOidcLogin`, then open
-the `authorization_url` in the same browser; you land on `FRONTEND_URL` signed in, or on
-`/login?error=…`.
+`GET http://localhost:8000/api/v2/auth/providers` then lists the provider, and the login page
+(and an invitation's page) shows **Continue with Google / Microsoft** above the email form. The
+button starts the flow and opens the provider; you come back to `FRONTEND_URL` signed in (on the
+page you asked for), or to `/login?error=…`, which says what went wrong (no account for the
+address, no agency access, the address not verified by the provider, a used invitation, a
+cancelled or expired sign-in, too many attempts). `FRONTEND_URL` must be the address your
+frontend runs on, since that is where the API sends you back.
 
 ### 4. Open the app
 | Service | URL |
@@ -489,7 +495,11 @@ make e2e                  # or: bash scripts/e2e.sh (no make needed, e.g. Git Ba
 [Playwright](https://playwright.dev) runs the hero flow in Chromium (`frontend/e2e/`): create a
 campaign with JD extraction, upload 3 PDFs and watch them reach Done, filter the ranked table,
 change a candidate's stage in the review panel, open the Person profile, export CSV, then the
-campaign's Insights, Talent (with a search) and Home. Every page it visits is checked with
+campaign's Insights, Talent (with a search) and Home. It runs signed in as the seeded
+`recruiter@default.example`: a `setup` project signs in once through the login page and saves the
+browser state for the other specs (`frontend/e2e/auth.setup.ts`). `auth.spec.ts` starts signed
+out: sign in and out, a wrong password, coming back to the page you asked for, a password reset
+and an invitation read from Mailpit. Every page these visit is checked with
 [axe](https://github.com/dequelabs/axe-core) in light and dark (no serious or critical violations)
 and screenshotted in both themes.
 
@@ -497,7 +507,7 @@ and screenshotted in both themes.
 touching it: its own containers and volumes, the frontend on port **13000** and the API on
 **18000** (`E2E_FRONTEND_PORT`, `E2E_BACKEND_PORT`), its own Mailpit on **18025**
 (`E2E_MAILPIT_PORT`, by default the API port + 25; Playwright gets it as `E2E_MAILPIT_URL` to read
-invitation and reset links), `AI_PROVIDER=fake`, configured from
+invitation and reset links), `AI_PROVIDER=fake`, `AUTH_REQUIRED=true`, configured from
 `.env.example` (your `.env` is not read) and a production build of the frontend
 (`docker-compose.e2e.yml`). It migrates, seeds a small deterministic dataset, runs the suite and
 removes the project again. The tests create the data they check (a new campaign, generated PDFs
@@ -609,7 +619,7 @@ for existing integrations until it is removed after E2:
 |---|---|---|
 | `APP_ENV` | `development`, `test`, or anything else for a deployment (`production`, `staging`): deployments refuse the development-only settings below | `development` |
 | `SECRET_KEY` | Signs the CSRF tokens and encrypts the Google/Microsoft sign-in cookie. Outside development/test it must be at least 32 bytes and not the template value (`openssl rand -hex 32`) | `change_me` |
-| `AUTH_REQUIRED` | `false` lets `/api/v2` requests without a session act as the default agency's owner (until the login screen, E2-09). Development/test only | `true` (`false` in `.env.example` and the dev Compose stack) |
+| `AUTH_REQUIRED` | `false` lets `/api/v2` requests without a session act as the default agency's owner (the app signs in since E2-09; the setting goes in E2-11). Development/test only | `true` (`false` in `.env.example` and the dev Compose stack; `true` in the E2E stack) |
 | `SESSION_COOKIE_SECURE` | Secure session and CSRF cookies with the `__Host-` prefix; `false` only in development/test | on outside development/test |
 | `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT` | Session lifetimes (seconds or ISO 8601) | `PT8H`, `P7D` |
 | `LOGIN_MAX_FAILURES_PER_EMAIL`, `LOGIN_MAX_ATTEMPTS_PER_IP`, `LOGIN_RATE_LIMIT_WINDOW` | Sign-in throttling (429 with `Retry-After`, never a lockout) | `5`, `30`, 15 min |

@@ -73,4 +73,18 @@ const stats = {
   all: ["stats"] as const,
 }
 
-export const queryKeys = { campaigns, applications, resumes, people, home, stats } as const
+/**
+ * `GET /me`: the signed-in user, their agencies and the active one (EPIC-02
+ * §9.4). The auth gate loads it; signing in, out or switching agency clears
+ * the whole cache instead of invalidating it.
+ */
+const me = {
+  all: ["me"] as const,
+}
+
+/** `GET /auth/providers`: the Google / Microsoft sign-in this deployment offers (E2-08). */
+const authProviders = {
+  all: ["auth-providers"] as const,
+}
+
+export const queryKeys = { campaigns, applications, resumes, people, home, stats, me, authProviders } as const

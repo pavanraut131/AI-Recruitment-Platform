@@ -19,12 +19,14 @@ import {
 class MockEventSource {
   static instances: MockEventSource[] = []
   readonly url: string
+  readonly withCredentials: boolean
   closed = false
   onerror: ((event: Event) => void) | null = null
   private listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>()
 
-  constructor(url: string) {
+  constructor(url: string, init?: EventSourceInit) {
     this.url = url
+    this.withCredentials = init?.withCredentials ?? false
     MockEventSource.instances.push(this)
   }
 
@@ -141,6 +143,8 @@ describe("useCampaignEvents", () => {
     expect(MockEventSource.instances).toHaveLength(1)
     expect(MockEventSource.latest().url).toBe(campaignEventsUrl(CAMPAIGN))
     expect(MockEventSource.latest().url).toMatch(/\/api\/v2\/campaigns\/11111111-[\w-]+\/events$/)
+    // The session cookie is on the API's origin (EPIC-02 §9.4).
+    expect(MockEventSource.latest().withCredentials).toBe(true)
     expect(result.current).toBe("connecting")
 
     act(() => MockEventSource.latest().emit("connected", { campaign_id: CAMPAIGN }))

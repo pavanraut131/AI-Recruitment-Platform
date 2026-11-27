@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 
+import { RECRUITER_STATE } from "./e2e/support/users"
+
 /*
  * End-to-end tests (EPIC-01 §9): the hero flow in Chromium against the Compose
  * stack with the fake AI provider. Start the stack with `make e2e` (or
@@ -12,6 +14,10 @@ import { defineConfig, devices } from "@playwright/test"
  *
  * No fixed sleeps: web-first assertions and auto-waiting only. One retry in CI,
  * none locally, so a flaky step shows up locally rather than being retried away.
+ *
+ * Signed in (EPIC-02 §11.4): the `setup` project signs in once through the
+ * login page as a seeded recruiter and saves the browser state; the specs
+ * start from it. `auth.spec.ts` starts signed out instead.
  */
 const CI = !!process.env.CI
 
@@ -40,5 +46,12 @@ export default defineConfig({
     timezoneId: "UTC",
     colorScheme: "light",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    { name: "setup", testMatch: /auth\.setup\.ts$/, use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      dependencies: ["setup"],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: RECRUITER_STATE },
+    },
+  ],
 })

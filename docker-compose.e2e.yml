@@ -18,7 +18,8 @@
 #   docker-compose.yml, so the Postgres and MinIO credentials match the URLs in the template.
 #   The few E2E settings are in `environment` below (it takes precedence over env_file).
 # - Fake AI (AI_PROVIDER=fake): deterministic, offline, no API key.
-# - AUTH_REQUIRED=false until the frontend signs in (E2-09).
+# - AUTH_REQUIRED=true: the tests sign in through the login page (E2-09), so a request that
+#   forgot its session cookie fails instead of acting as the development fallback owner.
 # - Code baked into the images (no bind mounts, no --reload) and a production build of the
 #   frontend (frontend/Dockerfile.e2e): what CI tests is what was built, and pages do not compile
 #   on first visit while a test waits.
@@ -32,9 +33,8 @@ x-e2e-backend-env: &e2e-backend-env
   DEBUG: "false"
   AI_PROVIDER: fake
   GEMINI_API_KEY: ""
-  # The frontend has no login screen until E2-09: requests without a session act as the
-  # default agency's owner (development only). E2-09 removes it and the tests sign in.
-  AUTH_REQUIRED: "false"
+  # Every request needs a session, as everywhere but the dev stack (E2-11 removes the setting).
+  AUTH_REQUIRED: "true"
   CORS_ORIGINS: http://localhost:${E2E_FRONTEND_PORT:-13000},http://127.0.0.1:${E2E_FRONTEND_PORT:-13000}
   # Emails go to this project's Mailpit, with links to this project's frontend (E2-07).
   EMAIL_BACKEND: smtp

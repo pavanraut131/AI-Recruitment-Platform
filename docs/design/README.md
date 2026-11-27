@@ -146,11 +146,24 @@ colleague.
 
 | Mock-up | App | Where the data differs |
 |---|---|---|
-| Home (`Main.dc.html`) | `/`, `features/home` | The mock's greeting is dropped (D3, owner review): without a name it read as filler, so Home has a plain title and the day's numbers as one quiet row, like a campaign's. It uses the window like the workspace. A short "Good afternoon, <name>" can return after E2 adds sign-in. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign) and the role instead of a client (no client field). The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
+| Home (`Main.dc.html`) | `/`, `features/home` | The mock's greeting was dropped (D3, owner review): without a name it read as filler, so Home has a plain title and the day's numbers as one quiet row, like a campaign's. It uses the window like the workspace. Since sign-in (E2-09) a short "Good afternoon, <first name>" is back, small and ink-3 above the title, where the mock had the date. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign) and the role instead of a client (no client field). The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
 | Agency switcher (sidebar top) | Product header ("HireFlow AI") | E2-10 adds agencies; until then the header names the product only. |
+| User (sidebar foot: avatar, name, role) | `UserMenu` (`components/app-shell`) | As drawn, under a hairline: initials on the accent tint, the name, then role · agency. Its menu adds the email and Sign out. |
 | Candidates (`Candidates.dc.html`) | `/campaigns/[id]`, `features/campaigns` + `features/applications` | Header: "Created 12 Nov" (no opened-at date), average instead of median score (the stats have no median). Table rows show the email under the name (no current role on an application). "Applied" is "Updated", the column the API sorts by. The panel overlays the table on narrow screens and sits beside it on wide ones; it is non-modal, so J/K keep working. Location is not shown (not extracted). |
 | Candidates, dark (`CandidatesDark.dc.html`) | Same, `.dark` tokens | Follows the system theme, or the sidebar's Theme menu. |
 
 Screens the mock-ups did not draw (campaign list, new campaign, Uploads, Insights, Brief,
 Person profile, Talent, `/dev/ui`) follow the same rules: page frame, hairlines, one
 primary action, the score display, the voice.
+
+The sign-in pages (`/login`, `/forgot-password`, `/reset-password`, `/accept-invite`,
+`/select-agency`; E2-09) have no sidebar: the paper (`bg-canvas`) with the mark and the
+product name, then one white panel (400px, 12px radius, a hairline) holding a 20px title,
+the form and one full-width primary button. When Google or Microsoft sign-in is configured,
+"Continue with Google" / "Continue with Microsoft" come first as full-width outline buttons
+with the providers' own marks (the one place colours are not tokens: their branding asks for
+it), then a hairline with "or". Messages above or under the form are tinted
+blocks (`FormAlert`: an error in the destructive tint, a notice in sunken grey, a success in
+the accent tint), never toasts. Wording follows the voice: "Sign in to HireFlow AI", "Email
+me a link", "Change password", "Join Northbank Talent"; errors say what happened and what to
+try ("Too many attempts. Try again in 14 minutes.").

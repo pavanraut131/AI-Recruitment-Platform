@@ -10,6 +10,8 @@ features/
   uploads/        dropzone, processing list
   people/         person profile, Talent list
   home/           the dashboard at `/`
+  auth/           the sign-in pages: login, forgot and reset password,
+                  accept an invitation, choose an agency (E2-09)
 ```
 
 Folders are created by the tickets that need them (E1-03 onwards).
@@ -34,13 +36,15 @@ the uploads feature's tab into them.
    import from `src/features/<b>/**`. If two features need the same thing, it
    is shared code: move it to
    - `src/components/` for UI (`ui/` holds the shadcn primitives,
-     `app-shell/` the sidebar, top bar and ⌘K palette), or
+     `app-shell/` the sidebar, top bar, ⌘K palette and user menu, `auth/`
+     the auth gate and the sign-in pages' layout), or
    - `src/lib/` for non-UI code: the API client and query keys (`lib/api`),
      the Query provider and shared data hooks such as `useCampaignEvents`
      (`lib/query`; the campaign workspace and the Uploads tab both use it),
-     the vocabulary several screens show (`lib/applications.ts`,
-     `lib/campaigns.ts`), links between features' screens (`lib/routes.ts`),
-     utilities.
+     the signed-in user and the session (`lib/auth`: `useSignedInUser`,
+     sign-out, the sign-in URLs), the vocabulary several screens show
+     (`lib/applications.ts`, `lib/campaigns.ts`), links between features'
+     screens (`lib/routes.ts`), utilities.
 3. **Charts** use Recharts through `@/components/ui/chart` (shadcn's
    wrapper), coloured by token variables in the chart config
    (`var(--category-strong)`, `var(--chart-1)`), never hex. Each chart needs a

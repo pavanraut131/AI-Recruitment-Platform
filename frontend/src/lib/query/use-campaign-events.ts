@@ -87,7 +87,8 @@ export function useCampaignEvents(
     let disposed = false
 
     const connect = () => {
-      const current = new EventSource(campaignEventsUrl(active))
+      // The session cookie is on the API's origin: send it (EPIC-02 §9.4).
+      const current = new EventSource(campaignEventsUrl(active), { withCredentials: true })
       source = current
       current.addEventListener(CAMPAIGN_EVENT.connected, () => {
         attempt = 0

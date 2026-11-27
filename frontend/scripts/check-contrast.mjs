@@ -94,6 +94,9 @@ const pairs = [
   ["primary (link text) / canvas", "primary", "canvas", TEXT],
   ["primary (link text) / row-active", "primary", "row-active", TEXT],
   ["primary / primary-soft (chip, avatar)", "primary", "primary-soft", TEXT],
+  // The sign-in pages' notices (FormAlert, E2-09): a success on the accent tint, a notice on sunken grey.
+  ["foreground / primary-soft (success notice)", "foreground", "primary-soft", TEXT],
+  ["ink-2 / muted (notice)", "ink-2", "muted", TEXT],
   ["secondary-foreground / secondary", "secondary-foreground", "secondary", TEXT],
   ["accent-foreground / accent", "accent-foreground", "accent", TEXT],
   ["destructive (text) / background", "destructive", "background", TEXT],

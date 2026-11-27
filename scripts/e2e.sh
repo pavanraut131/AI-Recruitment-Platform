@@ -12,7 +12,8 @@
 # (E2E_FRONTEND_PORT 13000, E2E_BACKEND_PORT 18000, and E2E_MAILPIT_PORT for Mailpit's HTTP API:
 # by default E2E_BACKEND_PORT + 25, so projects on different ports never share it), configured
 # from .env.example; it never touches the dev stack or reads .env. Playwright gets
-# E2E_MAILPIT_URL to read the emails (invitation and reset links). See docker-compose.e2e.yml.
+# E2E_MAILPIT_URL to read the emails (invitation and reset links) and E2E_API_URL for the few
+# steps a test does without the UI (sending an invitation). See docker-compose.e2e.yml.
 #
 # Playwright runs on the host: `cd frontend && npm ci && npx playwright install chromium` once.
 set -euo pipefail
@@ -49,6 +50,7 @@ up() {
 run_tests() {
   echo "▶ Running Playwright against http://localhost:$E2E_FRONTEND_PORT"
   (cd frontend && E2E_BASE_URL="http://localhost:$E2E_FRONTEND_PORT" \
+    E2E_API_URL="http://localhost:$E2E_BACKEND_PORT" \
     E2E_MAILPIT_URL="http://localhost:$E2E_MAILPIT_PORT" npx playwright test "$@")
 }
 

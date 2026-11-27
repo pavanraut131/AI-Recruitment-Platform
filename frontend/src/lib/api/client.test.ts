@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ApiProblem, createApiClient, unwrap } from "./client"
-import { errorMessage, NETWORK_ERROR_STATUS, PROBLEM_MEDIA_TYPE } from "./problem"
+import { errorMessage, NETWORK_ERROR_STATUS, parseRetryAfter, PROBLEM_MEDIA_TYPE } from "./problem"
 
 const BASE = "http://api.test/api/v2"
 
@@ -190,6 +190,18 @@ describe("the /api/v2 client", () => {
     })
 
     expect(unwrap(result)).toBeUndefined()
+  })
+})
+
+describe("parseRetryAfter", () => {
+  it("reads delay-seconds and HTTP dates, and ignores anything else", () => {
+    const now = Date.parse("2026-11-27T12:00:00Z")
+    expect(parseRetryAfter("840", now)).toBe(840)
+    expect(parseRetryAfter(" 0 ", now)).toBe(0)
+    expect(parseRetryAfter("Fri, 27 Nov 2026 12:01:30 GMT", now)).toBe(90)
+    expect(parseRetryAfter("Fri, 27 Nov 2026 11:00:00 GMT", now)).toBe(0)
+    expect(parseRetryAfter("soon", now)).toBeUndefined()
+    expect(parseRetryAfter(null, now)).toBeUndefined()
   })
 })
 
