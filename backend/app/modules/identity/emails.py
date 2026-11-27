@@ -1,5 +1,5 @@
-"""The emails identity sends (EPIC-02 spec §4.4): invitation, password reset and "your password
-was changed". Each is plain text plus a minimal HTML version, with links to ``FRONTEND_URL``.
+"""The emails identity sends (EPIC-02 spec §4.4): invitation, password reset, "your password
+was changed" and "a new sign-in method was added" (E2-08). Each is plain text plus a minimal HTML version, with links to ``FRONTEND_URL``.
 
 Private to identity: ``service`` builds a message here and queues it (``identity.tasks``); the
 platform's ``app.platform.email`` sends it. Values that come from people (agency and user
@@ -142,5 +142,39 @@ def password_changed(*, to: str, display_name: str) -> EmailMessage:
                 "Reset your password",
                 forgot,
             ),
+        ),
+    )
+
+
+def sign_in_method_linked(
+    *, to: str, display_name: str, provider_name: str, provider_email: str | None
+) -> EmailMessage:
+    """A Google or Microsoft identity can now sign in to the account (spec §4.3, E2-08): sent
+    when one is linked to an existing account, so its holder notices a link they did not make."""
+    name = one_line(display_name)
+    provider = one_line(provider_name)
+    which = (
+        f"the {provider} account {one_line(provider_email)}"
+        if provider_email
+        else f"a {provider} account"
+    )
+    intro = f"Hi {name}, you can now sign in to {PRODUCT} with {which}."
+    forgot = frontend_url("/forgot-password")
+    warning = (
+        "If this wasn't you, tell your agency's owner or admin right away, and reset your "
+        f"password: {forgot}"
+    )
+    text = f"{intro}\n\n{warning}\n\n{PRODUCT}\n"
+    return EmailMessage(
+        to=to,
+        subject=f"{provider} sign-in was added to your {PRODUCT} account",
+        text=text,
+        html=_html(
+            [
+                intro,
+                "If this wasn't you, tell your agency's owner or admin right away, and reset "
+                "your password.",
+            ],
+            link=("Reset your password", forgot),
         ),
     )

@@ -33,8 +33,9 @@ with exactly one of:
   ``team:manage``);
 - :func:`any_member`: any signed-in user, no permission needed (``/me``, ``/me/*``, ``POST
   /auth/logout``; spec §5.2's "any member" row);
-- :func:`public`: anonymous (``GET /auth/csrf``, ``POST /auth/login``, password reset and the
-  invitation endpoints; accepting an invitation also takes an optional session).
+- :func:`public`: anonymous (``GET /auth/csrf``, ``POST /auth/login``, password reset, the
+  invitation endpoints, and E2-08's providers list and Google / Microsoft flow; accepting an
+  invitation also takes an optional session).
 
 Permissions that depend on the request's data (a bulk *delete*; a team change that targets or
 grants an owner or admin, ``team:manage_privileged``) are checked in the handler or the service
@@ -231,13 +232,14 @@ SERVICE_ERRORS = (
     service.InvalidInput,
     service.ConflictError,
     service.TokenGone,
+    service.ProviderUnavailable,
 )
 """The identity service errors :func:`http_error` maps (anything else propagates)."""
 
 
 def http_error(exc: Exception) -> HTTPException | ProblemError:
     """The problem for an identity service error: 429 (with ``Retry-After``), 401, 403, 404,
-    409, 410, or a 422 naming the rejected body field."""
+    409, 410, 502 (a sign-in provider unreachable), or a 422 naming the rejected body field."""
     if isinstance(exc, service.RateLimited):
         return HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -254,6 +256,8 @@ def http_error(exc: Exception) -> HTTPException | ProblemError:
         return HTTPException(status.HTTP_409_CONFLICT, exc.detail)
     if isinstance(exc, service.TokenGone):
         return HTTPException(status.HTTP_410_GONE, exc.detail)
+    if isinstance(exc, service.ProviderUnavailable):
+        return HTTPException(status.HTTP_502_BAD_GATEWAY, exc.detail)
     if isinstance(exc, service.InvalidInput):
         # A 422 naming the body field the service rejected, like a validation error.
         return ProblemError(

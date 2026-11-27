@@ -26,6 +26,44 @@ class Role(str, enum.Enum):
     viewer = "viewer"
 
 
+class OidcProvider(str, enum.Enum):
+    """A sign-in provider (OpenID Connect, spec §4.3; E2-08). Offered only when configured."""
+
+    google = "google"
+    microsoft = "microsoft"
+
+
+class OidcLoginError(str, enum.Enum):
+    """Why a Google or Microsoft sign-in signed nobody in: the `error` of the callback's redirect
+    to `{FRONTEND_URL}/login?error=…&provider=…` (E2-08). The login page words each one; none
+    says more than the person who signed in at the provider may know."""
+
+    # No HireFlow account for the provider's (verified) address: ask the agency for an invite.
+    no_account = "no_account"
+    # The account is disabled, or is no longer an active member of an active agency.
+    no_access = "no_access"
+    # The provider does not vouch for the address (Google email_verified, Microsoft xms_edov),
+    # so it cannot be used to find the account; sign in with the password, or be invited.
+    email_not_verified = "email_not_verified"
+    # Accepting an invitation: it expired, was revoked, replaced or already used.
+    invitation_invalid = "invitation_invalid"
+    # Accepting an invitation: the identity signs in to an account with another address.
+    invitation_mismatch = "invitation_mismatch"
+    # Accepting an invitation: its address has an account the provider does not vouch for;
+    # sign in with the password first, then accept.
+    account_exists = "account_exists"
+    # Accepting an invitation to an agency the account is already a member of.
+    already_member = "already_member"
+    # The person cancelled at the provider.
+    cancelled = "cancelled"
+    # The sign-in took longer than 10 minutes, or this browser did not start it.
+    expired = "expired"
+    # Anything else (the provider's answer could not be verified); try again.
+    oidc_failed = "oidc_failed"
+    # Too many sign-ins from this network; try again in a few minutes.
+    rate_limited = "rate_limited"
+
+
 class AgencySummary(BaseModel):
     """An agency as other code sees it."""
 

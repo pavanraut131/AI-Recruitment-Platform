@@ -50,6 +50,10 @@ Fixtures
         tasks' ``publish_resume_event``) and ``redis.asyncio.Redis.from_url`` (the SSE stream) return
         fakeredis clients on one in-memory server per test, so a sync ``publish`` reaches an async
         subscriber. Set ``fake_redis.server.connected = False`` to simulate Redis being down.
+    ``no_real_oidc_provider`` (function, autouse)
+        Every request to a Google or Microsoft sign-in endpoint (``app.modules.identity.oidc``)
+        raises, unless the test uses ``fake_oidc`` (``tests/identity/conftest.py``, E2-08): no
+        test reaches a real provider, and the discovery and key caches start empty.
     ``fake_gemini`` (function, autouse)
         :class:`tests.fakes.FakeGemini`. Replaces ``google.generativeai.GenerativeModel``, which
         ``app.modules.ai.gemini.GeminiAIService`` (the default ``AI_PROVIDER``) instantiates on
@@ -70,7 +74,7 @@ Test data
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -216,6 +220,25 @@ def fake_storage(monkeypatch: pytest.MonkeyPatch) -> InMemoryStorage:
 
     monkeypatch.setattr(storage, "get_s3_client", no_real_s3)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def no_real_oidc_provider(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """No test reaches Google or Microsoft: every request of ``app.modules.identity.oidc`` fails
+    loudly unless a test installs the fake providers (``fake_oidc``, tests/identity)."""
+    import httpx
+
+    from app.modules.identity import oidc
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError(
+            f"tests must not reach a real OIDC provider ({request.url}); use the fake_oidc fixture"
+        )
+
+    monkeypatch.setattr(oidc, "TRANSPORT", httpx.MockTransport(refuse))
+    oidc.clear_caches()
+    yield
+    oidc.clear_caches()
 
 
 @pytest.fixture(autouse=True)

@@ -60,6 +60,9 @@ EXPECTED: dict[str, Permission | str] = {
     "confirmPasswordReset": PUBLIC,
     "previewInvitation": PUBLIC,
     "acceptInvitation": PUBLIC,  # anonymous, or with the invitee's own session
+    "listAuthProviders": PUBLIC,  # E2-08
+    "startOidcLogin": PUBLIC,
+    "completeOidcLogin": PUBLIC,  # protected by the flow's state, not a session
     "logout": ANY_MEMBER,
     "getMe": ANY_MEMBER,
     "updateMe": ANY_MEMBER,
@@ -235,7 +238,7 @@ async def test_each_role_gets_exactly_its_permissions(
     assert (await users.login(email)).status_code == 200
 
     calls = _calls()
-    assert len(calls) == 35  # every operation but the 11 public and any-member ones
+    assert len(calls) == 35  # every operation but the 14 public and any-member ones
     wrong: list[str] = []
     for operation_id, method, url, permission in calls:
         kwargs: dict[str, Any] = (
