@@ -10,13 +10,15 @@ A FastAPI **sub-application** of its own, not routers on the root app, because:
   the generated TypeScript client (E1-03), which can also export it without a server
   (``app.v2.v2_app.openapi()``). It holds only v2 operations, with stable operation ids, and
   declares ``/api/v2`` as its server, so paths read ``/campaigns`` etc.
-- **Authentication (E2-05)** is on v2 alone: every route needs a session
-  (``app.modules.identity.dependencies.current_principal``, added to each router included here,
-  or ``current_session`` for ``/me``), except the anonymous auth endpoints marked ``public``;
-  :func:`_check_authentication` refuses to start otherwise (deny by default). The CSRF and
-  security-header middlewares wrap this app only, and the document declares the ``cookieAuth``
-  and ``csrfToken`` security schemes and the 401/403 problems of each protected operation
-  (:func:`_add_security`). v1 is removed rather than secured (E2-12).
+- **Authentication (E2-05) and authorization (E2-06)** are on v2 alone. Every route declares
+  who may call it (``app.modules.identity.dependencies``): a permission of the §5.2 matrix
+  (``require_permission``, which needs a session in an active agency), ``any_member`` (a
+  session, no permission: ``/me``, sign-out) or ``public`` (the anonymous auth endpoints).
+  :func:`_check_authentication` refuses to start when a route declares none, or more than one
+  kind (deny by default, spec §5.4). The CSRF and security-header middlewares wrap this app
+  only, and the document declares the ``cookieAuth`` and ``csrfToken`` security schemes, the
+  401/403 problems of each protected operation and the permissions it needs
+  (``x-permissions``, :func:`_add_security`). v1 is removed rather than secured (E2-12).
 
 It includes the module-owned v2 routers (endpoints that need one module) and the composed ones
 from ``app.api.v2`` (endpoints that span modules, ADR 0005). Nothing here may import v1 HTTP code
@@ -26,7 +28,7 @@ from ``app.api.v2`` (endpoints that span modules, ADR 0005). Nothing here may im
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute, iter_route_contexts
@@ -35,9 +37,14 @@ from app.api import v2 as composed
 from app.modules.hiring import router_v2 as hiring
 from app.modules.identity import router_v2 as identity
 from app.modules.identity.dependencies import (
+    ACCESS_MARKERS,
     AUTH_DEPENDENCIES,
+    Permission,
+    any_member,
     current_principal,
     current_session,
+    permission_of,
+    public,
 )
 from app.modules.ingestion import router_v2 as ingestion
 from app.modules.ingestion.schemas_v2 import ConnectedEvent, ResumeEvent
@@ -69,6 +76,7 @@ TAGS: list[dict[str, Any]] = [
     {"name": "auth", "description": "Sign-in, sign-out and the CSRF token."},
     {"name": "me", "description": "The signed-in user: profile, password, active agency."},
     {"name": "agency", "description": "The active agency."},
+    {"name": "clients", "description": "The agency's clients, whom campaigns are run for."},
 ]
 
 # Schemas the document lists although no operation's JSON body refers to them: the problem
@@ -114,14 +122,51 @@ def _auth_of(route: Any) -> Callable[..., Any] | None:
     return next((dep for dep in AUTH_DEPENDENCIES if dep in calls), None)
 
 
+def route_permissions(route: Any) -> frozenset[Permission]:
+    """The permissions a route declares (``require_permission``); all of them are required."""
+    calls = _calls(getattr(route, "dependant", None))
+    return frozenset(p for p in map(permission_of, calls) if p is not None)
+
+
+Access = frozenset[Permission] | Callable[..., Any]
+
+
+def route_access(route: Any) -> Access:
+    """Who may call the route: its permissions, or the ``any_member`` / ``public`` marker.
+
+    Raises ``RuntimeError`` unless the route declares exactly one of the three kinds, and, for
+    the first two, depends on a session (deny by default, spec §5.4).
+    """
+    calls = _calls(getattr(route, "dependant", None))
+    permissions = route_permissions(route)
+    markers = [marker for marker in ACCESS_MARKERS if marker in calls]
+    declared = len(markers) + (1 if permissions else 0)
+    if declared == 0:
+        raise RuntimeError(
+            f"/api/v2 route {route.path} declares no permission (require_permission) and is not "
+            "marked any_member or public"
+        )
+    if declared > 1:
+        raise RuntimeError(
+            f"/api/v2 route {route.path} declares more than one kind of access: permissions "
+            f"{sorted(p.value for p in permissions)}, markers {[m.__name__ for m in markers]}"
+        )
+    if markers == [public]:
+        return public
+    if _auth_of(route) not in (current_principal, current_session):
+        raise RuntimeError(
+            f"/api/v2 route {route.path} declares any_member but requires no session "
+            "(current_session)"
+        )
+    return any_member if markers else permissions
+
+
 def _check_authentication(app: FastAPI) -> None:
-    """Deny by default (spec §5.4): every v2 route requires a session, unless it is explicitly
-    ``public``. Refuses to start otherwise."""
+    """Deny by default (spec §5.4): every v2 route declares a permission, or is explicitly for
+    any signed-in member or ``public`` (:func:`route_access`). Refuses to start otherwise."""
     for route in iter_route_contexts(app.routes):
-        if isinstance(route.original_route, APIRoute) and _auth_of(route) is None:
-            raise RuntimeError(
-                f"/api/v2 route {route.path} requires no session and is not marked public"
-            )
+        if isinstance(route.original_route, APIRoute):
+            route_access(route)
 
 
 def create_v2_app() -> FastAPI:
@@ -142,13 +187,9 @@ def create_v2_app() -> FastAPI:
     app.add_middleware(CSRFMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
-    for router in identity.routers:  # each endpoint declares its own session or public marker
+    # Each endpoint declares who may call it: a permission, any_member or public.
+    for router in (*identity.routers, *hiring.routers, ingestion.router, *composed.routers):
         app.include_router(router)
-    signed_in = [Depends(current_principal)]
-    app.include_router(hiring.router, dependencies=signed_in)
-    app.include_router(ingestion.router, dependencies=signed_in)
-    for router in composed.routers:
-        app.include_router(router, dependencies=signed_in)
     _check_operation_ids(app)
     _check_authentication(app)
 
@@ -203,16 +244,21 @@ SECURITY_SCHEMES: dict[str, Any] = {
 def _add_security(app: FastAPI, document: dict[str, Any]) -> None:
     """Declare the security schemes, and on each operation which ones it needs and the problems
     they cause: 401 without a valid session; 403 for a missing or invalid CSRF token (unsafe
-    methods) and, on agency-scoped operations, for a session without an active agency."""
+    methods) and, on agency-scoped operations, for a session without an active agency or a role
+    without the permission. ``x-permissions`` lists the permissions an operation needs (spec
+    §5.2; ``Me.permissions`` lists the user's)."""
     document["components"]["securitySchemes"] = SECURITY_SCHEMES
     for route in iter_route_contexts(app.routes):
         if not isinstance(route.original_route, APIRoute) or not route.include_in_schema:
             continue
         auth = _auth_of(route)
+        permissions = [p.value for p in Permission if p in route_permissions(route)]
         for method in route.methods or ():
             operation = document["paths"].get(route.path_format, {}).get(method.lower())
             if operation is None:
                 continue
+            if permissions:
+                operation["x-permissions"] = permissions
             requirement: dict[str, list[str]] = {}
             statuses: list[int] = []
             if auth in (current_principal, current_session):

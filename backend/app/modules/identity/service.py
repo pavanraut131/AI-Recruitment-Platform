@@ -61,6 +61,7 @@ from app.modules.identity.models import (
     UserStatus,
 )
 from app.modules.identity.passwords import PasswordPolicyError
+from app.modules.identity.permissions import permissions_of
 from app.modules.identity.schemas import (
     ActiveMembership,
     AgencySummary,
@@ -446,6 +447,7 @@ async def me(db: AsyncSession, signed_in: SignedIn, csrf_token: str) -> Me:
         memberships=memberships,
         active_agency=AgencyRef(id=active.agency_id, name=active.agency_name) if active else None,
         role=active.role if active else None,
+        permissions=permissions_of(active.role) if active else [],
         client_scope=(
             ClientScope(
                 all_clients=active.all_clients,
@@ -571,10 +573,7 @@ async def get_agency_v2(db: AsyncSession, principal: Principal) -> AgencyResourc
 async def update_agency_v2(
     db: AsyncSession, principal: Principal, name: str, client: ClientInfo
 ) -> AgencyResource:
-    """Rename the principal's agency: owners only (``agency:manage``, spec §5.2; E2-06 moves the
-    check into the permission matrix)."""
-    if principal.role != Role.owner:
-        raise PermissionDenied("You don't have permission to manage the agency")
+    """Rename the principal's agency. The route requires ``agency:manage`` (spec §5.2)."""
     agency = await repository.get_agency(db, principal.agency_id)
     if agency is None:
         raise NotFoundError("Agency not found")

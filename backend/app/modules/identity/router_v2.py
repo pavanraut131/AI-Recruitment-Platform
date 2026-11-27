@@ -2,9 +2,10 @@
 token, the signed-in user (``/me``) and the active agency (``/agency``).
 
 Thin, like the other ``router_v2`` modules: each endpoint calls ``identity.service`` and sets
-or clears the cookies (``app.platform.auth_cookies``). Errors are problem details. The anonymous
-endpoints carry the :func:`~app.modules.identity.dependencies.public` marker; everything else
-needs a session. The CSRF middleware (``app.platform.csrf``) has already checked every unsafe
+or clears the cookies (``app.platform.auth_cookies``). Errors are problem details. Each endpoint
+declares who may call it (``app.modules.identity.dependencies``): the anonymous ones are
+``public``, ``/me`` and sign-out are for ``any_member`` (a session, no permission), and
+``/agency`` needs ``workspace:read`` / ``agency:manage``. The CSRF middleware (``app.platform.csrf``) has already checked every unsafe
 request before it gets here.
 """
 
@@ -15,10 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service
 from app.modules.identity.dependencies import (
+    Permission,
+    any_member,
     client_info,
-    current_principal,
     current_session,
     public,
+    require_permission,
 )
 from app.modules.identity.schemas import Principal, SignedIn
 from app.modules.identity.schemas_v2 import (
@@ -42,6 +45,9 @@ me_router = APIRouter(prefix="/me", tags=["me"])
 agency_router = APIRouter(prefix="/agency", tags=["agency"])
 
 routers = (auth_router, me_router, agency_router)
+
+WORKSPACE_READ = Depends(require_permission(Permission.workspace_read))
+AGENCY_MANAGE = Depends(require_permission(Permission.agency_manage))
 
 
 def _service_error(exc: Exception) -> HTTPException | ProblemError:
@@ -149,6 +155,7 @@ async def login(
     "/logout",
     operation_id="logout",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(any_member)],
 )
 async def logout(
     response: Response,
@@ -163,7 +170,7 @@ async def logout(
 
 
 # ── /me ───────────────────────────────────────────────────────
-@me_router.get("", operation_id="getMe", response_model=Me)
+@me_router.get("", operation_id="getMe", response_model=Me, dependencies=[Depends(any_member)])
 async def get_me(
     request: Request,
     response: Response,
@@ -175,7 +182,13 @@ async def get_me(
     return await service.me(db, signed_in, _csrf_for(request, response, signed_in))
 
 
-@me_router.patch("", operation_id="updateMe", response_model=Me, responses=problem_responses(422))
+@me_router.patch(
+    "",
+    operation_id="updateMe",
+    response_model=Me,
+    responses=problem_responses(422),
+    dependencies=[Depends(any_member)],
+)
 async def update_me(
     payload: MeUpdate,
     request: Request,
@@ -196,6 +209,7 @@ async def update_me(
     operation_id="changePassword",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=problem_responses(422, 429),
+    dependencies=[Depends(any_member)],
 )
 async def change_password(
     payload: PasswordChange,
@@ -226,6 +240,7 @@ async def change_password(
     operation_id="setActiveAgency",
     response_model=Me,
     responses=problem_responses(404, 422),
+    dependencies=[Depends(any_member)],
 )
 async def set_active_agency(
     payload: ActiveAgencyChange,
@@ -251,7 +266,8 @@ async def set_active_agency(
 # ── /agency ───────────────────────────────────────────────────
 @agency_router.get("", operation_id="getAgency", response_model=Agency)
 async def get_agency(
-    db: AsyncSession = Depends(get_db), principal: Principal = Depends(current_principal)
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = WORKSPACE_READ,
 ) -> Agency:
     """The active agency."""
     try:
@@ -266,10 +282,10 @@ async def get_agency(
 async def update_agency(
     payload: AgencyUpdate,
     db: AsyncSession = Depends(get_db),
-    principal: Principal = Depends(current_principal),
+    principal: Principal = AGENCY_MANAGE,
     client: service.ClientInfo = Depends(client_info),
 ) -> Agency:
-    """Rename the active agency (owners only)."""
+    """Rename the active agency (``agency:manage``: owners)."""
     try:
         return await service.update_agency_v2(db, principal, payload.name, client)
     except SERVICE_ERRORS as exc:

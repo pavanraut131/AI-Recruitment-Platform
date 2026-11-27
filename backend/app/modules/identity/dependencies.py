@@ -9,16 +9,29 @@ Public, like ``service``, but only for HTTP code: import-linter lets ``app.v2``,
   /auth/logout``.
 - :func:`current_principal`: who the request acts as, in which agency (:class:`Principal`).
   ``401`` without a valid session, ``403`` *"Choose an agency"* when the session has no active
-  agency (or its access to it has ended). Every other v2 route requires it (``app.v2`` adds it
-  to the routers it includes and refuses to start if a route has neither it nor :func:`public`).
+  agency (or its access to it has ended). Every route with a permission requires it, through
+  :func:`require_permission`.
 - :func:`tenant_db`: the request's ``AsyncSession`` (``get_db``) **bound to the principal's
   agency**. It replaces ``get_db`` in every v2 router. The principal is loaded first, in a short
   transaction of its own on the same session (identity's tables are global, spec §6.4), which is
   committed before the session is bound, so every later transaction of the request carries the
   agency (``app.platform.tenancy``).
-- :func:`access_scope`: the principal's :class:`AccessScope`.
-- :func:`public`: the marker for the anonymous endpoints (``GET /auth/csrf``, ``POST
-  /auth/login``).
+- :func:`access_scope`: the principal's :class:`AccessScope` (every client, or the clients a
+  client-limited membership lists, spec §5.3).
+
+**Every v2 route declares who may call it** (spec §5.4; ``app.v2`` refuses to start otherwise),
+with exactly one of:
+
+- :func:`require_permission` ``(permission)``: a signed-in member of the active agency whose
+  role has the :class:`~app.modules.identity.permissions.Permission` (403 *"You don't have
+  permission to …"* otherwise). Most routes;
+- :func:`any_member`: any signed-in user, no permission needed (``/me``, ``/me/*``, ``POST
+  /auth/logout``; spec §5.2's "any member" row);
+- :func:`public`: anonymous (``GET /auth/csrf``, ``POST /auth/login``).
+
+Permissions that depend on the request's data (a bulk *delete*, E2-07's changes to an owner or
+admin) are checked in the handler or the service with :func:`ensure_permission` /
+``permissions.has_permission``, on top of the route's declared one.
 
 An expired, revoked or unknown session cookie is a ``401`` that also clears the cookie. With
 ``AUTH_REQUIRED=false`` (development and test only, until E2-09) a request **without** a session
@@ -28,11 +41,14 @@ always checked.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 import structlog
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service
+from app.modules.identity.permissions import Permission, denied_detail, has_permission
 from app.modules.identity.schemas import Principal, Role, SignedIn
 from app.platform.auth_cookies import cleared_session_cookie_header, session_cookie
 from app.platform.config import settings
@@ -119,10 +135,91 @@ def access_scope(principal: Principal = Depends(current_principal)) -> AccessSco
     return principal.scope
 
 
+# ── Who may call a route ──────────────────────────────────────
+PermissionDependency = Callable[..., Awaitable[Principal]]
+
+_PERMISSION_DEPENDENCIES: dict[Permission, PermissionDependency] = {}
+
+
+def _permission_dependency(permission: Permission) -> PermissionDependency:
+    async def dependency(principal: Principal = Depends(current_principal)) -> Principal:
+        ensure_permission(principal, permission)
+        return principal
+
+    dependency.__name__ = f"require_{permission.name}"
+    dependency.__doc__ = f"The principal, if its role has ``{permission.value}`` (else 403)."
+    return dependency
+
+
+def require_permission(permission: Permission) -> PermissionDependency:
+    """The dependency of a route that needs ``permission`` (spec §5.2, §5.4).
+
+    It resolves to the signed-in :class:`Principal` (``current_principal``: 401 without a
+    session, 403 *"Choose an agency"* without an active agency), after checking that its role
+    has ``permission``: 403 *"You don't have permission to …"* otherwise, before the request's
+    body or ids are looked at, so the answer reveals nothing about them. Use it on the route::
+
+        @router.post("", dependencies=[Depends(require_permission(Permission.client_manage))])
+
+    or as a parameter when the handler needs the principal::
+
+        principal: Principal = Depends(require_permission(Permission.campaign_write))
+
+    The same callable is returned for the same permission, so both forms on one route run the
+    check once, and ``app.v2`` can find the declaration (:func:`permission_of`).
+    """
+    dependency = _PERMISSION_DEPENDENCIES.get(permission)
+    if dependency is None:
+        dependency = _PERMISSION_DEPENDENCIES[permission] = _permission_dependency(permission)
+    return dependency
+
+
+def permission_of(dependency: Callable[..., object]) -> Permission | None:
+    """The permission a :func:`require_permission` dependency checks (else ``None``)."""
+    return next((p for p, dep in _PERMISSION_DEPENDENCIES.items() if dep is dependency), None)
+
+
+def ensure_permission(principal: Principal, permission: Permission) -> None:
+    """403 unless ``principal``'s role has ``permission``: for a check that depends on the
+    request (e.g. the ``delete`` action of a bulk request needs ``application:delete`` on top of
+    the route's ``application:review``)."""
+    if not has_permission(principal.role, permission):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, denied_detail(permission))
+
+
+def any_member() -> None:
+    """Marks a route that any signed-in user may call, with no permission (``/me``, ``/me/*``,
+    sign-out: spec §5.2's "any member"). The route still needs a session
+    (``current_session``)."""
+
+
 def public() -> None:
     """Marks an anonymous endpoint: the v2 app accepts a route without a session dependency only
     with this marker (deny by default)."""
 
 
 AUTH_DEPENDENCIES = (current_principal, current_session, public)
-"""A v2 route must depend on one of these (``app.v2`` checks at start-up)."""
+"""How a v2 route authenticates: one of these (``app.v2`` checks at start-up)."""
+
+ACCESS_MARKERS = (any_member, public)
+"""The declarations of a v2 route that needs no permission (``app.v2`` checks at start-up)."""
+
+__all__ = [
+    "ACCESS_MARKERS",
+    "AUTH_DEPENDENCIES",
+    "CHOOSE_AGENCY",
+    "DEV_FALLBACK",
+    "NOT_SIGNED_IN",
+    "SESSION_ENDED",
+    "Permission",
+    "access_scope",
+    "any_member",
+    "client_info",
+    "current_principal",
+    "current_session",
+    "ensure_permission",
+    "permission_of",
+    "public",
+    "require_permission",
+    "tenant_db",
+]
