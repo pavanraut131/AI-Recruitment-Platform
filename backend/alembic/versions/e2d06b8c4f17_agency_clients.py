@@ -15,7 +15,7 @@ Downgrade: nothing. The clients stay, because campaigns may be run for them by t
 client is archived, never deleted: campaigns refer to it).
 
 Revision ID: e2d06b8c4f17
-Revises: e2c04a7f3b18
+Revises: e2d07c3f9b12
 Create Date: 2026-11-27 10:00:00.000000
 """
 
@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "e2d06b8c4f17"
-down_revision: str | None = "e2c04a7f3b18"
+down_revision: str | None = "e2d07c3f9b12"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -97,6 +97,10 @@ class ClientPage(Page[Client]):
 
 
 class ClientRef(BaseModel):
+    """One of the agency's clients, by name (a campaign's client, a member's clients)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     name: str
 

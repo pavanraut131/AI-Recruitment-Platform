@@ -9,7 +9,8 @@ recruiter and a viewer are limited to **Acme**. They see:
   one (the same answer as for another agency's, so nothing confirms it exists);
 - the whole talent pool, but on a Person's profile only their applications to Acme's campaigns
   (scores and stages of the others left out), and only those counted in the list;
-- new campaigns only for Acme (their default client when none is named; 422 for another one).
+- new campaigns only for Acme (their default client when none is named; 422 for another one);
+- the same when the membership comes from an invitation limited to Acme (E2-07).
 
 An owner (every client) sees everything, as before.
 """
@@ -33,7 +34,7 @@ from app.modules.talent.models import Person
 from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from app.v2 import route_permissions, v2_app
 from tests.factories import at, make_campaign, make_candidate, make_client, make_resume
-from tests.identity.conftest import V2, Users, csrf, problem
+from tests.identity.conftest import V2, Mailbox, Users, anonymous_csrf, csrf, problem
 from tests.tenancy.test_api_sweep import BODIES, STREAMS
 
 
@@ -172,13 +173,18 @@ async def test_an_owner_sees_every_client_and_can_filter(
 
 
 # ── Single objects: 404 ───────────────────────────────────────
+SCOPED_IDS = {"campaign_id", "application_id", "client_id"}
+
+
 def _operations() -> list[tuple[str, str]]:
+    """Every operation with a campaign, application or client id in its path (People are
+    agency-wide; team members and invitations are not client-owned)."""
     document = v2_app.openapi()
     return [
         (method.upper(), path)
         for path, operations in document["paths"].items()
         for method in operations
-        if "{" in path and "{person_id}" not in path  # People are agency-wide
+        if (names := set(re.findall(r"\{(\w+)\}", path))) and names <= SCOPED_IDS
     ]
 
 
@@ -371,3 +377,53 @@ async def test_uploads_follow_the_campaigns_client(
         select(User).where(User.email == "recruiter.scoped@acme.example")
     )
     assert user is not None and uploader == user.id
+
+
+# ── A member invited for one client (E2-07's invitations) ─────
+async def test_a_member_invited_for_one_client_sees_only_that_client(
+    users: Users,
+    auth_client: AsyncClient,
+    browser: AsyncClient,
+    mailbox: Mailbox,
+    world: World,
+) -> None:
+    """An owner invites a recruiter limited to Acme; once they accept, their requests carry
+    that scope: Acme's campaign and application only, Globex's are 404s."""
+    await _sign_in(users, Role.owner, world, limit=False)
+    invited = await auth_client.post(
+        f"{V2}/team/invitations",
+        json={
+            "email": "rita@acme.example",
+            "role": "recruiter",
+            "all_clients": False,
+            "client_ids": [str(world.acme.id)],
+        },
+        headers=csrf(auth_client),
+    )
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["clients"] == [{"id": str(world.acme.id), "name": "Acme"}]
+
+    accepted = await browser.post(
+        f"{V2}/auth/invitations/accept",
+        json={
+            "token": mailbox.token("rita@acme.example"),
+            "display_name": "Rita",
+            "password": "rita's long passphrase",
+        },
+        headers=await anonymous_csrf(browser),
+    )
+    assert accepted.status_code == 200, accepted.text
+    me = accepted.json()
+    assert me["client_scope"] == {"all_clients": False, "client_ids": [str(world.acme.id)]}
+    assert me["role"] == "recruiter" and "campaign:delete" not in me["permissions"]
+
+    assert _ids(await browser.get(f"{V2}/campaigns")) == [str(world.acme_campaign.id)]
+    assert _ids(await browser.get(f"{V2}/clients")) == [str(world.acme.id)]
+    for url in (
+        f"/campaigns/{world.globex_campaign.id}",
+        f"/applications/{world.globex_application.id}",
+        f"/clients/{world.globex.id}",
+    ):
+        assert (await browser.get(V2 + url)).status_code == 404, url
+    profile = (await browser.get(f"{V2}/people/{world.person.id}")).json()
+    assert [a["id"] for a in profile["applications"]] == [str(world.acme_application.id)]

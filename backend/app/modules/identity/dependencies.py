@@ -18,20 +18,28 @@ Public, like ``service``, but only for HTTP code: import-linter lets ``app.v2``,
   agency (``app.platform.tenancy``).
 - :func:`access_scope`: the principal's :class:`AccessScope` (every client, or the clients a
   client-limited membership lists, spec §5.3).
+- :func:`optional_session` (E2-07): the signed-in session if the request has a valid one, else
+  ``None`` (no cookie, or one that names no valid session): accepting an invitation works both
+  ways.
+- :func:`service_errors` / :func:`http_error`: identity's service errors as HTTP problems, for
+  identity's router and the composed ``/team`` endpoints.
 
 **Every v2 route declares who may call it** (spec §5.4; ``app.v2`` refuses to start otherwise),
 with exactly one of:
 
 - :func:`require_permission` ``(permission)``: a signed-in member of the active agency whose
   role has the :class:`~app.modules.identity.permissions.Permission` (403 *"You don't have
-  permission to …"* otherwise). Most routes;
+  permission to …"* otherwise). Most routes, ``/team`` included (``team:read``,
+  ``team:manage``);
 - :func:`any_member`: any signed-in user, no permission needed (``/me``, ``/me/*``, ``POST
   /auth/logout``; spec §5.2's "any member" row);
-- :func:`public`: anonymous (``GET /auth/csrf``, ``POST /auth/login``).
+- :func:`public`: anonymous (``GET /auth/csrf``, ``POST /auth/login``, password reset and the
+  invitation endpoints; accepting an invitation also takes an optional session).
 
-Permissions that depend on the request's data (a bulk *delete*, E2-07's changes to an owner or
-admin) are checked in the handler or the service with :func:`ensure_permission` /
-``permissions.has_permission``, on top of the route's declared one.
+Permissions that depend on the request's data (a bulk *delete*; a team change that targets or
+grants an owner or admin, ``team:manage_privileged``) are checked in the handler or the service
+with :func:`ensure_permission` / ``permissions.has_permission``, on top of the route's declared
+one.
 
 An expired, revoked or unknown session cookie is a ``401`` that also clears the cookie. With
 ``AUTH_REQUIRED=false`` (development and test only, until E2-09) a request **without** a session
@@ -41,7 +49,8 @@ always checked.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 
 import structlog
 from fastapi import Depends, HTTPException, Request, status
@@ -53,6 +62,7 @@ from app.modules.identity.schemas import Principal, Role, SignedIn
 from app.platform.auth_cookies import cleared_session_cookie_header, session_cookie
 from app.platform.config import settings
 from app.platform.database import get_db
+from app.platform.problems import FieldError, ProblemError
 from app.platform.request_tenant import bind_request
 from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope
 
@@ -94,6 +104,19 @@ async def _session(request: Request, db: AsyncSession = Depends(get_db)) -> Sign
             headers={"set-cookie": cleared_session_cookie_header()},
         )
     structlog.contextvars.bind_contextvars(user_id=str(signed_in.user_id))
+    return signed_in
+
+
+async def optional_session(request: Request, db: AsyncSession = Depends(get_db)) -> SignedIn | None:
+    """The request's valid session, or ``None`` without one (an ended or unknown session cookie
+    is ignored here, not a 401)."""
+    token = session_cookie(request)
+    if token is None:
+        return None
+    signed_in = await service.authenticate(db, token)
+    await db.commit()
+    if signed_in is not None:
+        structlog.contextvars.bind_contextvars(user_id=str(signed_in.user_id))
     return signed_in
 
 
@@ -198,6 +221,58 @@ def public() -> None:
     with this marker (deny by default)."""
 
 
+# ── Service errors as HTTP problems ───────────────────────────
+SERVICE_ERRORS = (
+    service.RateLimited,
+    service.InvalidCredentials,
+    service.NoAgencyAccess,
+    service.PermissionDenied,
+    service.NotFoundError,
+    service.InvalidInput,
+    service.ConflictError,
+    service.TokenGone,
+)
+"""The identity service errors :func:`http_error` maps (anything else propagates)."""
+
+
+def http_error(exc: Exception) -> HTTPException | ProblemError:
+    """The problem for an identity service error: 429 (with ``Retry-After``), 401, 403, 404,
+    409, 410, or a 422 naming the rejected body field."""
+    if isinstance(exc, service.RateLimited):
+        return HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            exc.detail,
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    if isinstance(exc, service.InvalidCredentials):
+        return HTTPException(status.HTTP_401_UNAUTHORIZED, exc.detail)
+    if isinstance(exc, service.NoAgencyAccess | service.PermissionDenied):
+        return HTTPException(status.HTTP_403_FORBIDDEN, exc.detail)
+    if isinstance(exc, service.NotFoundError):
+        return HTTPException(status.HTTP_404_NOT_FOUND, exc.detail)
+    if isinstance(exc, service.ConflictError):
+        return HTTPException(status.HTTP_409_CONFLICT, exc.detail)
+    if isinstance(exc, service.TokenGone):
+        return HTTPException(status.HTTP_410_GONE, exc.detail)
+    if isinstance(exc, service.InvalidInput):
+        # A 422 naming the body field the service rejected, like a validation error.
+        return ProblemError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "1 invalid field",
+            errors=[FieldError(loc=["body", exc.field], msg=exc.detail)],
+        )
+    raise exc
+
+
+@contextmanager
+def service_errors() -> Iterator[None]:
+    """Turn the identity service errors raised inside into their HTTP problems."""
+    try:
+        yield
+    except SERVICE_ERRORS as exc:
+        raise http_error(exc) from None
+
+
 AUTH_DEPENDENCIES = (current_principal, current_session, public)
 """How a v2 route authenticates: one of these (``app.v2`` checks at start-up)."""
 
@@ -210,6 +285,7 @@ __all__ = [
     "CHOOSE_AGENCY",
     "DEV_FALLBACK",
     "NOT_SIGNED_IN",
+    "SERVICE_ERRORS",
     "SESSION_ENDED",
     "Permission",
     "access_scope",
@@ -218,8 +294,11 @@ __all__ = [
     "current_principal",
     "current_session",
     "ensure_permission",
+    "http_error",
+    "optional_session",
     "permission_of",
     "public",
     "require_permission",
+    "service_errors",
     "tenant_db",
 ]

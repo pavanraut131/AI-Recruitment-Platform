@@ -51,11 +51,15 @@ PUBLIC = "public"
 ANY_MEMBER = "any member"
 
 # Spec §8.2 (new endpoints) and §8.3 (existing ones: reads need workspace:read; the writes as
-# listed there). E2-07's team and invitation endpoints add their rows when they arrive.
+# listed there).
 EXPECTED: dict[str, Permission | str] = {
     # auth and the signed-in user
     "getCsrfToken": PUBLIC,
     "login": PUBLIC,
+    "requestPasswordReset": PUBLIC,  # E2-07
+    "confirmPasswordReset": PUBLIC,
+    "previewInvitation": PUBLIC,
+    "acceptInvitation": PUBLIC,  # anonymous, or with the invitee's own session
     "logout": ANY_MEMBER,
     "getMe": ANY_MEMBER,
     "updateMe": ANY_MEMBER,
@@ -64,6 +68,15 @@ EXPECTED: dict[str, Permission | str] = {
     # the agency
     "getAgency": P.workspace_read,
     "updateAgency": P.agency_manage,
+    # the team (E2-07); an owner or admin as the target also needs team:manage_privileged
+    "listMembers": P.team_read,
+    "listInvitations": P.team_read,
+    "updateMember": P.team_manage,
+    "deactivateMember": P.team_manage,
+    "reactivateMember": P.team_manage,
+    "createInvitation": P.team_manage,
+    "resendInvitation": P.team_manage,
+    "revokeInvitation": P.team_manage,
     # clients
     "listClients": P.client_read,
     "getClient": P.client_read,
@@ -222,7 +235,7 @@ async def test_each_role_gets_exactly_its_permissions(
     assert (await users.login(email)).status_code == 200
 
     calls = _calls()
-    assert len(calls) == 27  # every operation but the 7 public and any-member ones
+    assert len(calls) == 35  # every operation but the 11 public and any-member ones
     wrong: list[str] = []
     for operation_id, method, url, permission in calls:
         kwargs: dict[str, Any] = (

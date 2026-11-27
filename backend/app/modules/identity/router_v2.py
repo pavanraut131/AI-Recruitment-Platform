@@ -1,12 +1,15 @@
 """identity HTTP layer of ``/api/v2`` (EPIC-02 spec §4.3, §8.2): sign-in and sign-out, the CSRF
-token, the signed-in user (``/me``) and the active agency (``/agency``).
+token, password reset and invitation acceptance (E2-07), the signed-in user (``/me``) and the
+active agency (``/agency``). The team endpoints need hiring too (client names): they are
+composed in ``app.api.v2.team``.
 
 Thin, like the other ``router_v2`` modules: each endpoint calls ``identity.service`` and sets
 or clears the cookies (``app.platform.auth_cookies``). Errors are problem details. Each endpoint
 declares who may call it (``app.modules.identity.dependencies``): the anonymous ones are
-``public``, ``/me`` and sign-out are for ``any_member`` (a session, no permission), and
-``/agency`` needs ``workspace:read`` / ``agency:manage``. The CSRF middleware (``app.platform.csrf``) has already checked every unsafe
-request before it gets here.
+``public`` (sign-in, the CSRF token, password reset, the invitation endpoints), ``/me`` and
+sign-out are for ``any_member`` (a session, no permission), and ``/agency`` needs
+``workspace:read`` / ``agency:manage``. The CSRF middleware (``app.platform.csrf``) has already
+checked every unsafe request before it gets here.
 """
 
 from __future__ import annotations
@@ -16,28 +19,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service
 from app.modules.identity.dependencies import (
+    SERVICE_ERRORS,
     Permission,
     any_member,
     client_info,
     current_session,
+    optional_session,
     public,
     require_permission,
 )
+from app.modules.identity.dependencies import http_error as _service_error
 from app.modules.identity.schemas import Principal, SignedIn
 from app.modules.identity.schemas_v2 import (
     ActiveAgencyChange,
     Agency,
     AgencyUpdate,
     CsrfToken,
+    InvitationAccept,
+    InvitationPreview,
+    InvitationToken,
     LoginRequest,
     Me,
     MeUpdate,
     PasswordChange,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PasswordResetRequested,
 )
 from app.platform import auth_cookies, csrf
 from app.platform.config import settings
 from app.platform.database import get_db
-from app.platform.problems import FieldError, ProblemError, problem_responses
+from app.platform.problems import problem_responses
 from app.platform.ratelimit import RateLimitStore, rate_limit_store
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -48,39 +60,6 @@ routers = (auth_router, me_router, agency_router)
 
 WORKSPACE_READ = Depends(require_permission(Permission.workspace_read))
 AGENCY_MANAGE = Depends(require_permission(Permission.agency_manage))
-
-
-def _service_error(exc: Exception) -> HTTPException | ProblemError:
-    if isinstance(exc, service.RateLimited):
-        return HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            exc.detail,
-            headers={"Retry-After": str(exc.retry_after)},
-        )
-    if isinstance(exc, service.InvalidCredentials):
-        return HTTPException(status.HTTP_401_UNAUTHORIZED, exc.detail)
-    if isinstance(exc, service.NoAgencyAccess | service.PermissionDenied):
-        return HTTPException(status.HTTP_403_FORBIDDEN, exc.detail)
-    if isinstance(exc, service.NotFoundError):
-        return HTTPException(status.HTTP_404_NOT_FOUND, exc.detail)
-    if isinstance(exc, service.InvalidInput):
-        # A 422 naming the body field the service rejected, like a validation error.
-        return ProblemError(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "1 invalid field",
-            errors=[FieldError(loc=["body", exc.field], msg=exc.detail)],
-        )
-    raise exc
-
-
-SERVICE_ERRORS = (
-    service.RateLimited,
-    service.InvalidCredentials,
-    service.NoAgencyAccess,
-    service.PermissionDenied,
-    service.NotFoundError,
-    service.InvalidInput,
-)
 
 
 def _start(response: Response, token: str) -> str:
@@ -167,6 +146,123 @@ async def logout(
     await service.logout(db, signed_in, client)
     auth_cookies.clear_session_cookie(response)
     auth_cookies.clear_csrf_cookie(response)
+
+
+# ── /auth: password reset (E2-07) ─────────────────────────────
+@auth_router.post(
+    "/password-reset",
+    operation_id="requestPasswordReset",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PasswordResetRequested,
+    responses=problem_responses(422, 429),
+    dependencies=[Depends(public)],
+)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> PasswordResetRequested:
+    """Email a link to choose a new password, if an account exists for this address. The
+    answer is the same either way (202), and so is its timing: the email is sent in the
+    background. The link (`/reset-password#token=...`) works once, for 30 minutes. 429 with
+    Retry-After after 3 requests per address or 10 per IP in an hour."""
+    try:
+        await service.request_password_reset(db, store, email=payload.email, client=client)
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+    return PasswordResetRequested(detail=service.RESET_REQUESTED)
+
+
+@auth_router.post(
+    "/password-reset/confirm",
+    operation_id="confirmPasswordReset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=problem_responses(410, 422, 429),
+    dependencies=[Depends(public)],
+)
+async def confirm_password_reset(
+    payload: PasswordResetConfirm,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> None:
+    """Choose a new password with the token from a reset link. Every session of the account
+    ends (this browser's cookies are cleared too: sign in with the new password) and a
+    confirmation email is sent. 410 when the link expired or was used; 422 when the password
+    does not meet the policy (the link still works)."""
+    try:
+        await service.confirm_password_reset(
+            db, store, token=payload.token, new_password=payload.new_password, client=client
+        )
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+    auth_cookies.clear_session_cookie(response)
+    auth_cookies.clear_csrf_cookie(response)
+
+
+# ── /auth: invitations (E2-07) ────────────────────────────────
+@auth_router.post(
+    "/invitations/preview",
+    operation_id="previewInvitation",
+    response_model=InvitationPreview,
+    responses=problem_responses(410, 422, 429),
+    dependencies=[Depends(public)],
+)
+async def preview_invitation(
+    payload: InvitationToken,
+    db: AsyncSession = Depends(get_db),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> InvitationPreview:
+    """What an invitation link offers: the agency, who sent it, the role and address, and
+    whether an account exists for the address (then sign in before accepting). 410 when the
+    invitation expired, was revoked, replaced or already accepted."""
+    try:
+        return await service.preview_invitation(db, store, payload.token, client=client)
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+
+
+@auth_router.post(
+    "/invitations/accept",
+    operation_id="acceptInvitation",
+    response_model=Me,
+    responses=problem_responses(403, 409, 410, 422, 429),
+    dependencies=[Depends(public)],
+)
+async def accept_invitation(
+    payload: InvitationAccept,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    signed_in: SignedIn | None = Depends(optional_session),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> Me:
+    """Accept an invitation and start a new session in its agency (new session and CSRF
+    cookies). Signed in: you join with your account, whose email must be the invited one (403
+    otherwise). Not signed in: a new account is created from display_name and password (409
+    if an account exists for the address: sign in first). 409 if you are already a member;
+    410 when the invitation is no longer valid."""
+    try:
+        token = await service.accept_invitation(
+            db,
+            store,
+            token=payload.token,
+            signed_in=signed_in,
+            carried_token=auth_cookies.session_cookie(request),
+            display_name=payload.display_name,
+            password=payload.password,
+            client=client,
+        )
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+    csrf_token = _start(response, token)
+    accepted = await service.authenticate(db, token)
+    assert accepted is not None  # just created
+    return await service.me(db, accepted, csrf_token)
 
 
 # ── /me ───────────────────────────────────────────────────────

@@ -328,6 +328,32 @@ async def ensure_first_client(db: AsyncSession) -> bool:
     return True
 
 
+# ── Clients of team members and invitations (E2-07) ──────────
+async def client_refs(
+    db: AsyncSession, scope: AccessScope, client_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, v2.ClientRef]:
+    """The clients in ``scope`` with these ids, archived ones included (a member keeps access to
+    an archived client's campaigns), by id: the names of a member's or an invitation's clients.
+    Ids of no such client are left out."""
+    check_scope(db, scope)
+    rows = await repository.clients_by_ids(db, scope, sorted(set(client_ids)))
+    return {client.id: v2.ClientRef.model_validate(client) for client in rows}
+
+
+async def check_grantable_clients(
+    db: AsyncSession, scope: AccessScope, client_ids: Collection[uuid.UUID]
+) -> None:
+    """Every id must be an **active** client in ``scope`` (the granting user's own: nobody
+    grants access to a client they cannot see), else :class:`InvalidInputError` (the same
+    message whether a client is archived, outside the scope, another agency's or unknown)."""
+    check_scope(db, scope)
+    wanted = set(client_ids)
+    rows = await repository.clients_by_ids(db, scope, sorted(wanted))
+    active = {client.id for client in rows if client.status == ClientStatus.active.value}
+    if wanted - active:
+        raise InvalidInputError("Choose clients of this agency that are not archived")
+
+
 # ── Campaigns ─────────────────────────────────────────────────
 def _new_campaign(
     db: AsyncSession,

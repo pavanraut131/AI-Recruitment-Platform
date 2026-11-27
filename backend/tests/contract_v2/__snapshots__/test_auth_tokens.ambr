@@ -1,0 +1,331 @@
+# serializer version: 1
+# name: test_invitation_preview_and_accept
+  dict({
+    'accept': dict({
+      'body': dict({
+        'active_agency': dict({
+          'id': '<default-agency>',
+          'name': 'Default agency',
+        }),
+        'client_scope': dict({
+          'all_clients': True,
+          'client_ids': list([
+          ]),
+        }),
+        'csrf_token': '<csrf-token>',
+        'memberships': list([
+          dict({
+            'agency': dict({
+              'id': '<default-agency>',
+              'name': 'Default agency',
+            }),
+            'role': 'recruiter',
+          }),
+        ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
+        ]),
+        'role': 'recruiter',
+        'user': dict({
+          'display_name': 'Nina Shah',
+          'email': 'nina@example.com',
+          'id': '<uuid:1>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'set-cookie': list([
+        'hf_csrf=<value>; Path=/; SameSite=strict',
+        'hf_session=<value>; HttpOnly; Max-Age=604800; Path=/; SameSite=lax',
+      ]),
+      'status_code': 200,
+    }),
+    'accept_again': dict({
+      'body': dict({
+        'detail': 'This invitation has expired or is no longer valid. Ask for a new invitation.',
+        'status': 410,
+        'title': 'Gone',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 410,
+    }),
+    'accept_short_password': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'password',
+            ]),
+            'msg': 'Use at least 12 characters',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'accept_signed_in_as_someone_else': dict({
+      'body': dict({
+        'detail': 'This invitation is for another email address. Sign out, or ask for an invitation to your address.',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'accept_without_name': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'display_name',
+            ]),
+            'msg': 'Enter your name',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'email': dict({
+      'html': '''
+        <!doctype html>
+        <html lang="en">
+        <body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2421">
+        <p>owner invited you to join Default agency on HireFlow AI as a recruiter.</p>
+        <p><a href="http://localhost:3000/accept-invite#token=<token>" style="display:inline-block;padding:10px 16px;background:#2f5d46;color:#ffffff;text-decoration:none;border-radius:6px">Accept the invitation</a></p>
+        <p>The invitation expires on <date>. After that, ask for a new one.</p>
+        <p>If you weren&#x27;t expecting this, you can ignore this email.</p>
+        <p style="color:#5b625e;font-size:13px">HireFlow AI</p>
+        </body>
+        </html>
+  
+      ''',
+      'subject': 'owner invited you to join Default agency on HireFlow AI',
+      'text': '''
+        owner invited you to join Default agency on HireFlow AI as a recruiter.
+        
+        Accept the invitation:
+        http://localhost:3000/accept-invite#token=<token>
+        
+        The invitation expires on <date>. After that, ask for a new one.
+        If you weren't expecting this, you can ignore this email.
+        
+        HireFlow AI
+  
+      ''',
+      'to': 'nina@example.com',
+    }),
+    'preview': dict({
+      'body': dict({
+        'account_exists': False,
+        'agency': dict({
+          'id': '<default-agency>',
+          'name': 'Default agency',
+        }),
+        'email': 'nina@example.com',
+        'expires_at': '<datetime>',
+        'invited_by': 'owner',
+        'role': 'recruiter',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'status_code': 200,
+    }),
+    'preview_expired': dict({
+      'body': dict({
+        'detail': 'This invitation has expired or is no longer valid. Ask for a new invitation.',
+        'status': 410,
+        'title': 'Gone',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 410,
+    }),
+    'preview_unknown': dict({
+      'body': dict({
+        'detail': 'This invitation has expired or is no longer valid. Ask for a new invitation.',
+        'status': 410,
+        'title': 'Gone',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 410,
+    }),
+  })
+# ---
+# name: test_password_reset
+  dict({
+    'changed_email': dict({
+      'html': '''
+        <!doctype html>
+        <html lang="en">
+        <body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2421">
+        <p>Hi ada, the password of your HireFlow AI account was just changed, and every browser that was signed in has been signed out.</p>
+        <p><a href="http://localhost:3000/forgot-password" style="display:inline-block;padding:10px 16px;background:#2f5d46;color:#ffffff;text-decoration:none;border-radius:6px">Reset your password</a></p>
+        <p>If this wasn&#x27;t you, reset your password now.</p>
+        <p style="color:#5b625e;font-size:13px">HireFlow AI</p>
+        </body>
+        </html>
+  
+      ''',
+      'subject': 'Your HireFlow AI password was changed',
+      'text': '''
+        Hi ada, the password of your HireFlow AI account was just changed, and every browser that was signed in has been signed out.
+        
+        If this wasn't you, reset your password now: http://localhost:3000/forgot-password
+        
+        HireFlow AI
+  
+      ''',
+      'to': 'ada@example.com',
+    }),
+    'confirm': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'set-cookie': list([
+        'hf_csrf=""; expires=<date>; Max-Age=0; Path=/; SameSite=strict',
+        'hf_session=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 204,
+    }),
+    'confirm_again': dict({
+      'body': dict({
+        'detail': 'This link has expired or was already used. Ask for a new one.',
+        'status': 410,
+        'title': 'Gone',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 410,
+    }),
+    'confirm_weak': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'new_password',
+            ]),
+            'msg': 'Use at least 12 characters',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'request': dict({
+      'body': dict({
+        'detail': "If an account exists for this address, we've sent it a link to choose a new password.",
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'status_code': 202,
+    }),
+    'request_over_the_limit': dict({
+      'body': dict({
+        'detail': 'Too many attempts. Try again later.',
+        'status': 429,
+        'title': 'Too Many Requests',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': '<seconds>',
+      }),
+      'status_code': 429,
+    }),
+    'request_unknown': dict({
+      'body': dict({
+        'detail': "If an account exists for this address, we've sent it a link to choose a new password.",
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'status_code': 202,
+    }),
+    'reset_email': dict({
+      'html': '''
+        <!doctype html>
+        <html lang="en">
+        <body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2421">
+        <p>Hi ada, someone asked to reset the password of your HireFlow AI account.</p>
+        <p><a href="http://localhost:3000/reset-password#token=<token>" style="display:inline-block;padding:10px 16px;background:#2f5d46;color:#ffffff;text-decoration:none;border-radius:6px">Choose a new password</a></p>
+        <p>The link works once, for 30 minutes. Choosing a new password signs you out everywhere.</p>
+        <p>If you didn&#x27;t ask for this, ignore this email: your password stays as it is.</p>
+        <p style="color:#5b625e;font-size:13px">HireFlow AI</p>
+        </body>
+        </html>
+  
+      ''',
+      'subject': 'Reset your HireFlow AI password',
+      'text': '''
+        Hi ada, someone asked to reset the password of your HireFlow AI account.
+        
+        Choose a new password:
+        http://localhost:3000/reset-password#token=<token>
+        
+        The link works once, for 30 minutes. Choosing a new password signs you out everywhere.
+        If you didn't ask for this, ignore this email: your password stays as it is.
+        
+        HireFlow AI
+  
+      ''',
+      'to': 'ada@example.com',
+    }),
+  })
+# ---

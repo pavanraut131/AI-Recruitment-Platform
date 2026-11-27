@@ -91,7 +91,7 @@ DENIED: Mapping[Permission, str] = MappingProxyType(
         P.application_export: "export applications",
         P.client_read: "view clients",
         P.client_manage: "manage clients",
-        P.team_read: "view the team",
+        P.team_read: "see the team",
         P.team_manage: "manage the team",
         P.team_manage_privileged: "manage owners and admins",
         P.agency_manage: "manage the agency",

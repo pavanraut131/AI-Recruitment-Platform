@@ -1019,6 +1019,7 @@
         "type": "object"
       },
       "ClientRef": {
+        "description": "One of the agency's clients, by name (a campaign's client, a member's clients).",
         "properties": {
           "id": {
             "format": "uuid",
@@ -1297,6 +1298,257 @@
         "title": "IdentityConflictFlag",
         "type": "object"
       },
+      "Invitation": {
+        "description": "An open invitation: pending, or expired (resend it to renew it).",
+        "properties": {
+          "all_clients": {
+            "title": "All Clients",
+            "type": "boolean"
+          },
+          "clients": {
+            "description": "The clients it gives when all_clients is false, by name; empty otherwise.",
+            "items": {
+              "$ref": "#/components/schemas/ClientRef"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invited_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberUser"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who sent it (null if unknown)."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvitationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "all_clients",
+          "clients",
+          "invited_by",
+          "status",
+          "expires_at",
+          "created_at"
+        ],
+        "title": "Invitation",
+        "type": "object"
+      },
+      "InvitationAccept": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "New accounts only (required for them).",
+            "title": "Display Name"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "New accounts only (required for them): 12 to 128 characters, any characters, not your email address.",
+            "title": "Password"
+          },
+          "token": {
+            "description": "The token from the invitation link (#token=...).",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "InvitationAccept",
+        "type": "object"
+      },
+      "InvitationCreate": {
+        "properties": {
+          "all_clients": {
+            "default": true,
+            "description": "Every client of the agency. Always true for owners and admins.",
+            "title": "All Clients",
+            "type": "boolean"
+          },
+          "client_ids": {
+            "description": "The clients a recruiter or viewer may see when all_clients is false (at least one); empty when all_clients is true.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Client Ids",
+            "type": "array"
+          },
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Admins may invite recruiters and viewers; owners may invite any role."
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "InvitationCreate",
+        "type": "object"
+      },
+      "InvitationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Invitation"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "InvitationPage",
+        "type": "object"
+      },
+      "InvitationPreview": {
+        "description": "What an invitation link offers, for the accept page.",
+        "properties": {
+          "account_exists": {
+            "description": "An account with this email exists: sign in, then accept. Otherwise accept with a display name and a password.",
+            "title": "Account Exists",
+            "type": "boolean"
+          },
+          "agency": {
+            "$ref": "#/components/schemas/AgencyRef"
+          },
+          "email": {
+            "description": "The invited address.",
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "invited_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The inviter's name (null if unknown).",
+            "title": "Invited By"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "agency",
+          "invited_by",
+          "email",
+          "role",
+          "account_exists",
+          "expires_at"
+        ],
+        "title": "InvitationPreview",
+        "type": "object"
+      },
+      "InvitationStatus": {
+        "description": "An open invitation (not accepted, not revoked): ``pending`` until it expires, then\n``expired`` (resend it to renew it).",
+        "enum": [
+          "pending",
+          "expired"
+        ],
+        "title": "InvitationStatus",
+        "type": "string"
+      },
+      "InvitationToken": {
+        "properties": {
+          "token": {
+            "description": "The token from the invitation link (#token=...).",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "InvitationToken",
+        "type": "object"
+      },
       "JobDescription": {
         "properties": {
           "job_description": {
@@ -1443,6 +1695,194 @@
         "title": "MeUser",
         "type": "object"
       },
+      "Member": {
+        "description": "A member of the agency: their account, role, client access and status.",
+        "properties": {
+          "all_clients": {
+            "description": "Every client of the agency (owners and admins: always).",
+            "title": "All Clients",
+            "type": "boolean"
+          },
+          "clients": {
+            "description": "The clients a recruiter or viewer may see when all_clients is false, by name; empty otherwise.",
+            "items": {
+              "$ref": "#/components/schemas/ClientRef"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "deactivated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivated At"
+          },
+          "id": {
+            "description": "The membership's id (the path of the member endpoints).",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their last sign-in to or request in this agency (null: never).",
+            "title": "Last Active At"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemberStatus"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MemberUser"
+          }
+        },
+        "required": [
+          "id",
+          "user",
+          "role",
+          "all_clients",
+          "clients",
+          "status",
+          "last_active_at",
+          "joined_at",
+          "deactivated_at"
+        ],
+        "title": "Member",
+        "type": "object"
+      },
+      "MemberPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "MemberPage",
+        "type": "object"
+      },
+      "MemberStatus": {
+        "description": "A membership's status: a deactivated member keeps their account but has no access to\nthe agency until reactivated.",
+        "enum": [
+          "active",
+          "deactivated"
+        ],
+        "title": "MemberStatus",
+        "type": "string"
+      },
+      "MemberUpdate": {
+        "description": "Fields left out (or null) stay as they are.",
+        "properties": {
+          "all_clients": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "All Clients"
+          },
+          "client_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Ids"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "MemberUpdate",
+        "type": "object"
+      },
+      "MemberUser": {
+        "description": "A team member's (or inviter's) account.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name"
+        ],
+        "title": "MemberUser",
+        "type": "object"
+      },
       "Membership": {
         "description": "One agency the user belongs to (active memberships in active agencies only).",
         "properties": {
@@ -1506,6 +1946,57 @@
           "new_password"
         ],
         "title": "PasswordChange",
+        "type": "object"
+      },
+      "PasswordResetConfirm": {
+        "properties": {
+          "new_password": {
+            "description": "12 to 128 characters, any characters, not your email address.",
+            "maxLength": 1024,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "description": "The token from the reset link (#token=...).",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "PasswordResetConfirm",
+        "type": "object"
+      },
+      "PasswordResetRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
+      "PasswordResetRequested": {
+        "properties": {
+          "detail": {
+            "description": "The same message whether or not the account exists.",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "PasswordResetRequested",
         "type": "object"
       },
       "Permission": {
@@ -3062,6 +3553,170 @@
         ]
       }
     },
+    "/auth/invitations/accept": {
+      "post": {
+        "description": "Accept an invitation and start a new session in its agency (new session and CSRF\ncookies). Signed in: you join with your account, whose email must be the invited one (403\notherwise). Not signed in: a new account is created from display_name and password (409\nif an account exists for the address: sign in first). 409 if you are already a member;\n410 when the invitation is no longer valid.",
+        "operationId": "acceptInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Accept Invitation",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/invitations/preview": {
+      "post": {
+        "description": "What an invitation link offers: the agency, who sent it, the role and address, and\nwhether an account exists for the address (then sign in before accepting). 410 when the\ninvitation expired, was revoked, replaced or already accepted.",
+        "operationId": "previewInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Preview Invitation",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "description": "Sign in with email and password. Any session cookie the browser sent is revoked and a new\nsession starts (new session and CSRF cookies). 401 with one message for every wrong email or\npassword; 403 when the account has no active agency; 429 with Retry-After when throttled.",
@@ -3175,6 +3830,143 @@
           }
         ],
         "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/password-reset": {
+      "post": {
+        "description": "Email a link to choose a new password, if an account exists for this address. The\nanswer is the same either way (202), and so is its timing: the email is sent in the\nbackground. The link (`/reset-password#token=...`) works once, for 30 minutes. 429 with\nRetry-After after 3 requests per address or 10 per IP in an hour.",
+        "operationId": "requestPasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetRequested"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Request Password Reset",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "description": "Choose a new password with the token from a reset link. Every session of the account\nends (this browser's cookies are cleared too: sign in with the new password) and a\nconfirmation email is sent. 410 when the link expired or was used; 422 when the password\ndoes not meet the policy (the link still works).",
+        "operationId": "confirmPasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Confirm Password Reset",
         "tags": [
           "auth"
         ]
@@ -5809,6 +6601,731 @@
           "workspace:read"
         ]
       }
+    },
+    "/team/invitations": {
+      "get": {
+        "description": "Open invitations (pending and expired), newest first.",
+        "operationId": "listInvitations",
+        "parameters": [
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List Invitations",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:read"
+        ]
+      },
+      "post": {
+        "description": "Invite someone by email: they get a link (`/accept-invite#token=...`) that works for 7\ndays. Admins invite recruiters and viewers; owners invite any role. An open invitation for\nthe same address is replaced (its link stops working); an active member's address is a 409.\nAn agency sends at most 50 invitations a day (429).",
+        "operationId": "createInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invitation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Create Invitation",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
+    },
+    "/team/invitations/{invitation_id}": {
+      "delete": {
+        "description": "Revoke an open invitation: its link stops working.",
+        "operationId": "revokeInvitation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Revoke Invitation",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
+    },
+    "/team/invitations/{invitation_id}/resend": {
+      "post": {
+        "description": "Send the invitation again with a new link and a new 7-day expiry (the old link stops\nworking); this also renews an expired one.",
+        "operationId": "resendInvitation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invitation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Resend Invitation",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
+    },
+    "/team/members": {
+      "get": {
+        "description": "The agency's members, deactivated ones included, by name (owners and admins).",
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List Members",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:read"
+        ]
+      }
+    },
+    "/team/members/{membership_id}": {
+      "patch": {
+        "description": "Change a member's role or client access. Admins manage recruiters and viewers; only\nowners manage owners and admins (as the old or the new role). Nobody changes their own role\n(403), and the last active owner cannot be demoted (409). Owners and admins always have\nevery client; a recruiter or viewer limited to some clients needs at least one.",
+        "operationId": "updateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "membership_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Membership Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Update Member",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
+    },
+    "/team/members/{membership_id}/deactivate": {
+      "post": {
+        "description": "End a member's access to the agency, from their next request (their account and other\nagencies are unaffected). Not yourself (403), not the last active owner (409).",
+        "operationId": "deactivateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "membership_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Membership Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Deactivate Member",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
+    },
+    "/team/members/{membership_id}/reactivate": {
+      "post": {
+        "description": "Give a deactivated member their access back, with the role and clients they had.",
+        "operationId": "reactivateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "membership_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Membership Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Reactivate Member",
+        "tags": [
+          "team"
+        ],
+        "x-permissions": [
+          "team:manage"
+        ]
+      }
     }
   },
   "servers": [
@@ -5838,7 +7355,7 @@
       "name": "dashboard"
     },
     {
-      "description": "Sign-in, sign-out and the CSRF token.",
+      "description": "Sign-in, sign-out, the CSRF token, password reset and accepting an invitation.",
       "name": "auth"
     },
     {
@@ -5852,6 +7369,10 @@
     {
       "description": "The agency's clients, whom campaigns are run for.",
       "name": "clients"
+    },
+    {
+      "description": "The agency's members and invitations.",
+      "name": "team"
     }
   ]
 }

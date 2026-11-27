@@ -73,10 +73,15 @@ TAGS: list[dict[str, Any]] = [
     {"name": "uploads", "description": "Resume uploads, processing status and live events."},
     {"name": "people", "description": "People across campaigns."},
     {"name": "dashboard", "description": "Workspace counts and the Home screen."},
-    {"name": "auth", "description": "Sign-in, sign-out and the CSRF token."},
+    {
+        "name": "auth",
+        "description": "Sign-in, sign-out, the CSRF token, password reset and accepting an "
+        "invitation.",
+    },
     {"name": "me", "description": "The signed-in user: profile, password, active agency."},
     {"name": "agency", "description": "The active agency."},
     {"name": "clients", "description": "The agency's clients, whom campaigns are run for."},
+    {"name": "team", "description": "The agency's members and invitations."},
 ]
 
 # Schemas the document lists although no operation's JSON body refers to them: the problem

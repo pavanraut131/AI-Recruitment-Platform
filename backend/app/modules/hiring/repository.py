@@ -209,6 +209,20 @@ async def get_campaign(
     return result.scalar_one_or_none()
 
 
+async def clients_by_ids(
+    db: AsyncSession, scope: AccessScope, client_ids: Sequence[uuid.UUID]
+) -> Sequence[Client]:
+    """The clients in ``scope`` with these ids (any status), by name."""
+    if not client_ids:
+        return []
+    result = await db.execute(
+        select(Client)
+        .where(Client.id == any_(uuid_array(client_ids)), _clients_in(db, scope))
+        .order_by(func.lower(Client.name), Client.id)
+    )
+    return result.scalars().all()
+
+
 async def delete_campaign(db: AsyncSession, campaign: Campaign) -> None:
     """Delete the campaign and flush; its applications go with it in the database
     (``applications.campaign_id ON DELETE CASCADE``), and their ``legacy_candidate_map`` rows

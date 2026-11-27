@@ -16,7 +16,7 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
     scratch_db,
 )
 
-BEFORE = "e2c04a7f3b18"
+BEFORE = "e2d07c3f9b12"  # E2-07, the revision before this one
 REVISION = "e2d06b8c4f17"
 
 EMPTY = uuid.UUID("aaaaaaaa-0000-4000-8000-0000000000e1")  # an agency with no client

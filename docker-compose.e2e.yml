@@ -4,13 +4,15 @@
 #
 #   docker compose -p hireflow-e2e --env-file .env.example \
 #     -f docker-compose.yml -f docker-compose.e2e.yml up --build --wait \
-#     postgres redis minio backend worker_extract worker_ai frontend
+#     postgres redis minio mailpit backend worker_extract worker_ai worker_default frontend
 #
 # What it changes, and why:
 # - Isolation: no fixed container names (Compose names them hireflow-e2e-<service>-1), its own
-#   volumes (named per project), and host ports only for the frontend and the API, on E2E ports
-#   (E2E_FRONTEND_PORT, default 13000; E2E_BACKEND_PORT, default 18000). Postgres, Redis and MinIO
-#   are reached through `docker compose exec` only.
+#   volumes (named per project), and host ports only for the frontend, the API and Mailpit's web
+#   UI / HTTP API, on E2E ports (E2E_FRONTEND_PORT, default 13000; E2E_BACKEND_PORT, default
+#   18000; E2E_MAILPIT_PORT, default 18025, where the tests read the invitation and reset links:
+#   GET /api/v1/messages). Postgres, Redis and MinIO are reached through `docker compose exec`
+#   only.
 # - Configuration from the committed template, never a developer's .env: the services read
 #   .env.example, and `--env-file .env.example` feeds the ${...} interpolation of
 #   docker-compose.yml, so the Postgres and MinIO credentials match the URLs in the template.
@@ -34,6 +36,11 @@ x-e2e-backend-env: &e2e-backend-env
   # default agency's owner (development only). E2-09 removes it and the tests sign in.
   AUTH_REQUIRED: "false"
   CORS_ORIGINS: http://localhost:${E2E_FRONTEND_PORT:-13000},http://127.0.0.1:${E2E_FRONTEND_PORT:-13000}
+  # Emails go to this project's Mailpit, with links to this project's frontend (E2-07).
+  EMAIL_BACKEND: smtp
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  FRONTEND_URL: http://localhost:${E2E_FRONTEND_PORT:-13000}
 
 services:
   # Shorter health-check intervals than the dev stack: `up --wait` returns as soon as they pass.
@@ -59,6 +66,15 @@ services:
       timeout: 5s
       retries: 30
 
+  # Only the web UI / HTTP API is published (the tests read emails there); SMTP stays inside.
+  mailpit:
+    container_name: !reset null
+    ports: !override
+      - "${E2E_MAILPIT_PORT:-18025}:8025"
+    healthcheck:
+      interval: 2s
+      retries: 30
+
   backend:
     container_name: !reset null
     # The image's own command: no --reload, code from the image.
@@ -82,6 +98,13 @@ services:
     volumes: !reset []
 
   worker_ai:
+    container_name: !reset null
+    env_file: !override
+      - .env.example
+    environment: *e2e-backend-env
+    volumes: !reset []
+
+  worker_default:
     container_name: !reset null
     env_file: !override
       - .env.example

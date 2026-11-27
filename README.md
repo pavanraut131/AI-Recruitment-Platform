@@ -214,7 +214,7 @@ cp .env.example .env
 # Edit .env and set your GEMINI_API_KEY (or AI_PROVIDER=fake to run without one)
 ```
 
-If a default host port (5432, 6379, 9000, 9001, 8000, 3000, 5555) is already
+If a default host port (5432, 6379, 9000, 9001, 8000, 3000, 5555, 8025, 1025) is already
 used on your machine, change the matching `*_HOST_PORT` variable in `.env`.
 
 ### 3. Start the stack and run migrations
@@ -319,6 +319,43 @@ docker compose exec backend python -m app.modules.identity.cli create-owner \
   --email you@example.com --agency-name "Rao Recruiting"         # owner of the default agency, renamed
 ```
 
+#### Emails in development (Mailpit)
+Invitations, password-reset links and "your password was changed" notices are emailed
+(EPIC-02 §4.4). The Compose stack sends them to **[Mailpit](https://mailpit.axllent.org)**, which
+catches every message: read them at **http://localhost:8025** (`MAILPIT_UI_HOST_PORT`). Nothing
+leaves your machine. The API renders a message, and the `worker_default` service (Celery queue
+`default`) sends it, so an email shows up a second or two after the request. Its links point at
+`FRONTEND_URL` (default `http://localhost:3000`; set it in `.env` if you run the frontend on
+another port, e.g. `http://localhost:3001`). The token is in the link's `#fragment`. Without
+Compose, `EMAIL_BACKEND=console` logs the messages instead (development and test only).
+
+#### Inviting a teammate locally
+There are no Team screens before E2-10, so use `curl` (or http://localhost:8000/api/v2/docs).
+Sign in as an owner or admin as above, then:
+
+```bash
+API=http://localhost:8000/api/v2
+TOKEN=$(grep hf_csrf jar | cut -f7)
+curl -s -b jar -H "X-CSRF-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"email":"nina@example.com","role":"recruiter"}' $API/team/invitations      # 201
+# Open http://localhost:8025, copy the token from the link (…/accept-invite#token=<token>), and
+# accept it as the new user, in a fresh cookie jar:
+curl -s -c jar2 -b jar2 $API/auth/csrf >/dev/null; T2=$(grep hf_csrf jar2 | cut -f7)
+curl -s -c jar2 -b jar2 -H "X-CSRF-Token: $T2" -H 'Content-Type: application/json' \
+  -d '{"token":"<token>"}' $API/auth/invitations/preview                       # agency, role, inviter
+curl -s -c jar2 -b jar2 -H "X-CSRF-Token: $T2" -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","display_name":"Nina","password":"a long passphrase"}' \
+  $API/auth/invitations/accept                                                 # signed in as Nina
+```
+
+Admins invite recruiters and viewers; owners invite any role. An invitation link works for 7
+days (resend it for a new one), a reset link for 30 minutes, once. `GET /team/members` lists the
+team; `PATCH /team/members/{id}`, `POST /team/members/{id}/deactivate` and `/reactivate` manage
+it (spec §8.2). A forgotten password: `POST /auth/password-reset {"email": …}` emails a link
+(the answer is the same whether or not the account exists), and `POST
+/auth/password-reset/confirm {"token": …, "new_password": …}` sets the new one and signs the
+account out everywhere.
+
 ### 4. Open the app
 | Service | URL |
 |---|---|
@@ -326,6 +363,7 @@ docker compose exec backend python -m app.modules.identity.cli create-owner \
 | Backend API Docs | http://localhost:8000/docs |
 | Flower (Celery) | http://localhost:5555 |
 | MinIO Console | http://localhost:9001 |
+| Mailpit (emails) | http://localhost:8025 |
 
 ---
 
@@ -347,6 +385,10 @@ celery -A app.platform.celery_app worker -Q extract_queue --concurrency=4 --logl
 
 # Worker 2 (AI processing)
 celery -A app.platform.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info
+
+# Worker 3 (email and the daily purge; EMAIL_BACKEND=console logs the emails)
+celery -A app.platform.celery_app worker -Q default --concurrency=2 --loglevel=info
+celery -A app.platform.celery_app beat --loglevel=info   # schedules identity.purge_expired
 ```
 
 ### Backend tests
@@ -405,7 +447,9 @@ and screenshotted in both themes.
 
 `make e2e` starts its own Compose project, **`hireflow-e2e`**, next to your dev stack without
 touching it: its own containers and volumes, the frontend on port **13000** and the API on
-**18000** (`E2E_FRONTEND_PORT`, `E2E_BACKEND_PORT`), `AI_PROVIDER=fake`, configured from
+**18000** (`E2E_FRONTEND_PORT`, `E2E_BACKEND_PORT`), its own Mailpit on **18025**
+(`E2E_MAILPIT_PORT`, by default the API port + 25; Playwright gets it as `E2E_MAILPIT_URL` to read
+invitation and reset links), `AI_PROVIDER=fake`, configured from
 `.env.example` (your `.env` is not read) and a production build of the frontend
 (`docker-compose.e2e.yml`). It migrates, seeds a small deterministic dataset, runs the suite and
 removes the project again. The tests create the data they check (a new campaign, generated PDFs
@@ -521,6 +565,14 @@ for existing integrations until it is removed after E2:
 | `SESSION_COOKIE_SECURE` | Secure session and CSRF cookies with the `__Host-` prefix; `false` only in development/test | on outside development/test |
 | `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT` | Session lifetimes (seconds or ISO 8601) | `PT8H`, `P7D` |
 | `LOGIN_MAX_FAILURES_PER_EMAIL`, `LOGIN_MAX_ATTEMPTS_PER_IP`, `LOGIN_RATE_LIMIT_WINDOW` | Sign-in throttling (429 with `Retry-After`, never a lockout) | `5`, `30`, 15 min |
+| `EMAIL_BACKEND` | `smtp` (sends through `SMTP_HOST:SMTP_PORT`) or `console` (logs the emails, links included; development and test only) | `console` (`smtp` with Mailpit in Compose) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `EMAIL_FROM` | The mail server and the sender | `mailpit`, `1025` in Compose; `HireFlow AI <no-reply@hireflow.localhost>` |
+| `FRONTEND_URL` | Where the links in emails point (`/accept-invite`, `/reset-password`) | `http://localhost:3000` |
+| `INVITATION_TTL`, `PASSWORD_RESET_TTL` | How long an invitation and a reset link work | 7 days, 30 min |
+| `PASSWORD_RESET_MAX_PER_EMAIL`, `PASSWORD_RESET_MAX_PER_IP`, `PASSWORD_RESET_RATE_LIMIT_WINDOW` | Reset requests (429 with `Retry-After`) | `3`, `10`, 1 h |
+| `TOKEN_MAX_ATTEMPTS_PER_IP`, `TOKEN_RATE_LIMIT_WINDOW` | Invitation preview / accept and reset confirm, per IP | `20`, 15 min |
+| `INVITATIONS_MAX_PER_AGENCY_PER_DAY` | Invitation emails (new and resent) an agency may send a day | `50` |
+| `IDENTITY_PURGE_AFTER` | The daily `identity.purge_expired` deletes sessions and invitations this long after they ended | 30 days |
 | `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
 | `GEMINI_API_KEY` | Google Gemini API key. **Required** when `AI_PROVIDER=gemini` (start-up fails with a clear error without it); not needed with `AI_PROVIDER=fake` | — |
 | `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
@@ -531,7 +583,7 @@ for existing integrations until it is removed after E2:
 | `MINIO_ENDPOINT` | MinIO host | `minio:9000` |
 | `MAX_FILE_SIZE_MB` | Max PDF size | `10` |
 | `MAX_FILES_PER_BATCH` | Max files per upload | `50` |
-| `*_HOST_PORT` | Host ports for Postgres, Redis, MinIO API/console, backend, frontend, Flower | `5432`, `6379`, `9000`, `9001`, `8000`, `3000`, `5555` |
+| `*_HOST_PORT` | Host ports for Postgres, Redis, MinIO API/console, backend, frontend, Flower, Mailpit web UI / SMTP | `5432`, `6379`, `9000`, `9001`, `8000`, `3000`, `5555`, `8025`, `1025` |
 
 ---
 

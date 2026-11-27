@@ -64,6 +64,10 @@ GLOBAL_TABLES: Final[Mapping[str, str]] = {
     "membership_clients": "part of the principal, read with its membership",
     "user_sessions": "looked up by cookie hash before any agency is known",
     "audit_events": "events before an agency is known (failed logins); append-only by grant",
+    # identity (E2-07): looked up by the hash of an emailed token before any agency is known
+    # (invitation preview and accept, reset confirm); the team list filters by agency.
+    "invitations": "looked up by token hash before a tenant is known; listings filter by agency",
+    "password_reset_tokens": "a user's (global) reset links, looked up by token hash",
 }
 
 TABLE_PRIVILEGES: Final = ("SELECT", "INSERT", "UPDATE", "DELETE")

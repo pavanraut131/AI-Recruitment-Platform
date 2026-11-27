@@ -74,6 +74,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Invitation
+         * @description Accept an invitation and start a new session in its agency (new session and CSRF
+         *     cookies). Signed in: you join with your account, whose email must be the invited one (403
+         *     otherwise). Not signed in: a new account is created from display_name and password (409
+         *     if an account exists for the address: sign in first). 409 if you are already a member;
+         *     410 when the invitation is no longer valid.
+         */
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invitations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Invitation
+         * @description What an invitation link offers: the agency, who sent it, the role and address, and
+         *     whether an account exists for the address (then sign in before accepting). 410 when the
+         *     invitation expired, was revoked, replaced or already accepted.
+         */
+        post: operations["previewInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -110,6 +156,52 @@ export interface paths {
          * @description Sign out: the session is revoked on the server and both cookies are cleared.
          */
         post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Password Reset
+         * @description Email a link to choose a new password, if an account exists for this address. The
+         *     answer is the same either way (202), and so is its timing: the email is sent in the
+         *     background. The link (`/reset-password#token=...`) works once, for 30 minutes. 429 with
+         *     Retry-After after 3 requests per address or 10 per IP in an hour.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Password Reset
+         * @description Choose a new password with the token from a reset link. Every session of the account
+         *     ends (this browser's cookies are cleared too: sign in with the new password) and a
+         *     confirmation email is sent. 410 when the link expired or was used; 422 when the password
+         *     does not meet the policy (the link still works).
+         */
+        post: operations["confirmPasswordReset"];
         delete?: never;
         options?: never;
         head?: never;
@@ -550,6 +642,158 @@ export interface paths {
         get: operations["getStats"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Invitations
+         * @description Open invitations (pending and expired), newest first.
+         */
+        get: operations["listInvitations"];
+        put?: never;
+        /**
+         * Create Invitation
+         * @description Invite someone by email: they get a link (`/accept-invite#token=...`) that works for 7
+         *     days. Admins invite recruiters and viewers; owners invite any role. An open invitation for
+         *     the same address is replaced (its link stops working); an active member's address is a 409.
+         *     An agency sends at most 50 invitations a day (429).
+         */
+        post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Invitation
+         * @description Revoke an open invitation: its link stops working.
+         */
+        delete: operations["revokeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invitations/{invitation_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Invitation
+         * @description Send the invitation again with a new link and a new 7-day expiry (the old link stops
+         *     working); this also renews an expired one.
+         */
+        post: operations["resendInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Members
+         * @description The agency's members, deactivated ones included, by name (owners and admins).
+         */
+        get: operations["listMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{membership_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Member
+         * @description Change a member's role or client access. Admins manage recruiters and viewers; only
+         *     owners manage owners and admins (as the old or the new role). Nobody changes their own role
+         *     (403), and the last active owner cannot be demoted (409). Owners and admins always have
+         *     every client; a recruiter or viewer limited to some clients needs at least one.
+         */
+        patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/team/members/{membership_id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate Member
+         * @description End a member's access to the agency, from their next request (their account and other
+         *     agencies are unaffected). Not yourself (403), not the last active owner (409).
+         */
+        post: operations["deactivateMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{membership_id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivate Member
+         * @description Give a deactivated member their access back, with the role and clients they had.
+         */
+        post: operations["reactivateMember"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1072,7 +1316,10 @@ export interface components {
              */
             total: number;
         };
-        /** ClientRef */
+        /**
+         * ClientRef
+         * @description One of the agency's clients, by name (a campaign's client, a member's clients).
+         */
         ClientRef: {
             /**
              * Id
@@ -1232,6 +1479,139 @@ export interface components {
             resume_id: string;
             role: components["schemas"]["ConflictRole"];
         };
+        /**
+         * Invitation
+         * @description An open invitation: pending, or expired (resend it to renew it).
+         */
+        Invitation: {
+            /** All Clients */
+            all_clients: boolean;
+            /**
+             * Clients
+             * @description The clients it gives when all_clients is false, by name; empty otherwise.
+             */
+            clients: components["schemas"]["ClientRef"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description Who sent it (null if unknown). */
+            invited_by: components["schemas"]["MemberUser"] | null;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["InvitationStatus"];
+        };
+        /** InvitationAccept */
+        InvitationAccept: {
+            /**
+             * Display Name
+             * @description New accounts only (required for them).
+             */
+            display_name?: string | null;
+            /**
+             * Password
+             * @description New accounts only (required for them): 12 to 128 characters, any characters, not your email address.
+             */
+            password?: string | null;
+            /**
+             * Token
+             * @description The token from the invitation link (#token=...).
+             */
+            token: string;
+        };
+        /** InvitationCreate */
+        InvitationCreate: {
+            /**
+             * All Clients
+             * @description Every client of the agency. Always true for owners and admins.
+             * @default true
+             */
+            all_clients: boolean;
+            /**
+             * Client Ids
+             * @description The clients a recruiter or viewer may see when all_clients is false (at least one); empty when all_clients is true.
+             */
+            client_ids?: string[];
+            /** Email */
+            email: string;
+            /** @description Admins may invite recruiters and viewers; owners may invite any role. */
+            role: components["schemas"]["Role"];
+        };
+        /** InvitationPage */
+        InvitationPage: {
+            /** Items */
+            items: components["schemas"]["Invitation"][];
+            /**
+             * Page
+             * @description This page's number, from 1.
+             */
+            page: number;
+            /**
+             * Page Size
+             * @description The requested page size.
+             */
+            page_size: number;
+            /**
+             * Total
+             * @description Items matching the filters, across all pages.
+             */
+            total: number;
+        };
+        /**
+         * InvitationPreview
+         * @description What an invitation link offers, for the accept page.
+         */
+        InvitationPreview: {
+            /**
+             * Account Exists
+             * @description An account with this email exists: sign in, then accept. Otherwise accept with a display name and a password.
+             */
+            account_exists: boolean;
+            agency: components["schemas"]["AgencyRef"];
+            /**
+             * Email
+             * @description The invited address.
+             */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Invited By
+             * @description The inviter's name (null if unknown).
+             */
+            invited_by: string | null;
+            role: components["schemas"]["Role"];
+        };
+        /**
+         * InvitationStatus
+         * @description An open invitation (not accepted, not revoked): ``pending`` until it expires, then
+         *     ``expired`` (resend it to renew it).
+         * @enum {string}
+         */
+        InvitationStatus: "pending" | "expired";
+        /** InvitationToken */
+        InvitationToken: {
+            /**
+             * Token
+             * @description The token from the invitation link (#token=...).
+             */
+            token: string;
+        };
         /** JobDescription */
         JobDescription: {
             /** Job Description */
@@ -1287,6 +1667,96 @@ export interface components {
             id: string;
         };
         /**
+         * Member
+         * @description A member of the agency: their account, role, client access and status.
+         */
+        Member: {
+            /**
+             * All Clients
+             * @description Every client of the agency (owners and admins: always).
+             */
+            all_clients: boolean;
+            /**
+             * Clients
+             * @description The clients a recruiter or viewer may see when all_clients is false, by name; empty otherwise.
+             */
+            clients: components["schemas"]["ClientRef"][];
+            /** Deactivated At */
+            deactivated_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             * @description The membership's id (the path of the member endpoints).
+             */
+            id: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /**
+             * Last Active At
+             * @description Their last sign-in to or request in this agency (null: never).
+             */
+            last_active_at: string | null;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["MemberStatus"];
+            user: components["schemas"]["MemberUser"];
+        };
+        /** MemberPage */
+        MemberPage: {
+            /** Items */
+            items: components["schemas"]["Member"][];
+            /**
+             * Page
+             * @description This page's number, from 1.
+             */
+            page: number;
+            /**
+             * Page Size
+             * @description The requested page size.
+             */
+            page_size: number;
+            /**
+             * Total
+             * @description Items matching the filters, across all pages.
+             */
+            total: number;
+        };
+        /**
+         * MemberStatus
+         * @description A membership's status: a deactivated member keeps their account but has no access to
+         *     the agency until reactivated.
+         * @enum {string}
+         */
+        MemberStatus: "active" | "deactivated";
+        /**
+         * MemberUpdate
+         * @description Fields left out (or null) stay as they are.
+         */
+        MemberUpdate: {
+            /** All Clients */
+            all_clients?: boolean | null;
+            /** Client Ids */
+            client_ids?: string[] | null;
+            role?: components["schemas"]["Role"] | null;
+        };
+        /**
+         * MemberUser
+         * @description A team member's (or inviter's) account.
+         */
+        MemberUser: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * Membership
          * @description One agency the user belongs to (active memberships in active agencies only).
          */
@@ -1315,6 +1785,32 @@ export interface components {
              * @description 12 to 128 characters, any characters, not your email address.
              */
             new_password: string;
+        };
+        /** PasswordResetConfirm */
+        PasswordResetConfirm: {
+            /**
+             * New Password
+             * @description 12 to 128 characters, any characters, not your email address.
+             */
+            new_password: string;
+            /**
+             * Token
+             * @description The token from the reset link (#token=...).
+             */
+            token: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
+            /** Email */
+            email: string;
+        };
+        /** PasswordResetRequested */
+        PasswordResetRequested: {
+            /**
+             * Detail
+             * @description The same message whether or not the account exists.
+             */
+            detail: string;
         };
         /**
          * Permission
@@ -2161,6 +2657,135 @@ export interface operations {
             };
         };
     };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    previewInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationToken"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreview"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -2248,6 +2873,115 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetRequested"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3763,6 +4497,507 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listInvitations: {
+        parameters: {
+            query?: {
+                /** @description Page number, from 1. */
+                page?: number;
+                /** @description Items per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resendInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listMembers: {
+        parameters: {
+            query?: {
+                /** @description Page number, from 1. */
+                page?: number;
+                /** @description Items per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deactivateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reactivateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

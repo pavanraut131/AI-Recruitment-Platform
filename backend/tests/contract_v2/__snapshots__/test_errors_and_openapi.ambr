@@ -1093,6 +1093,7 @@
           'type': 'object',
         }),
         'ClientRef': dict({
+          'description': "One of the agency's clients, by name (a campaign's client, a member's clients).",
           'properties': dict({
             'id': dict({
               'format': 'uuid',
@@ -1374,6 +1375,260 @@
           'title': 'IdentityConflictFlag',
           'type': 'object',
         }),
+        'Invitation': dict({
+          'description': 'An open invitation: pending, or expired (resend it to renew it).',
+          'properties': dict({
+            'all_clients': dict({
+              'title': 'All Clients',
+              'type': 'boolean',
+            }),
+            'clients': dict({
+              'description': 'The clients it gives when all_clients is false, by name; empty otherwise.',
+              'items': dict({
+                '$ref': '#/components/schemas/ClientRef',
+              }),
+              'title': 'Clients',
+              'type': 'array',
+            }),
+            'created_at': dict({
+              'format': 'date-time',
+              'title': 'Created At',
+              'type': 'string',
+            }),
+            'email': dict({
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'expires_at': dict({
+              'format': 'date-time',
+              'title': 'Expires At',
+              'type': 'string',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'invited_by': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/MemberUser',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'Who sent it (null if unknown).',
+            }),
+            'role': dict({
+              '$ref': '#/components/schemas/Role',
+            }),
+            'status': dict({
+              '$ref': '#/components/schemas/InvitationStatus',
+            }),
+          }),
+          'required': list([
+            'id',
+            'email',
+            'role',
+            'all_clients',
+            'clients',
+            'invited_by',
+            'status',
+            'expires_at',
+            'created_at',
+          ]),
+          'title': 'Invitation',
+          'type': 'object',
+        }),
+        'InvitationAccept': dict({
+          'properties': dict({
+            'display_name': dict({
+              'anyOf': list([
+                dict({
+                  'maxLength': 200,
+                  'minLength': 1,
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'New accounts only (required for them).',
+              'title': 'Display Name',
+            }),
+            'password': dict({
+              'anyOf': list([
+                dict({
+                  'maxLength': 1024,
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'New accounts only (required for them): 12 to 128 characters, any characters, not your email address.',
+              'title': 'Password',
+            }),
+            'token': dict({
+              'description': 'The token from the invitation link (#token=...).',
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Token',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'token',
+          ]),
+          'title': 'InvitationAccept',
+          'type': 'object',
+        }),
+        'InvitationCreate': dict({
+          'properties': dict({
+            'all_clients': dict({
+              'default': True,
+              'description': 'Every client of the agency. Always true for owners and admins.',
+              'title': 'All Clients',
+              'type': 'boolean',
+            }),
+            'client_ids': dict({
+              'description': 'The clients a recruiter or viewer may see when all_clients is false (at least one); empty when all_clients is true.',
+              'items': dict({
+                'format': 'uuid',
+                'type': 'string',
+              }),
+              'maxItems': 500,
+              'title': 'Client Ids',
+              'type': 'array',
+            }),
+            'email': dict({
+              'maxLength': 320,
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'role': dict({
+              '$ref': '#/components/schemas/Role',
+              'description': 'Admins may invite recruiters and viewers; owners may invite any role.',
+            }),
+          }),
+          'required': list([
+            'email',
+            'role',
+          ]),
+          'title': 'InvitationCreate',
+          'type': 'object',
+        }),
+        'InvitationPage': dict({
+          'properties': dict({
+            'items': dict({
+              'items': dict({
+                '$ref': '#/components/schemas/Invitation',
+              }),
+              'title': 'Items',
+              'type': 'array',
+            }),
+            'page': dict({
+              'description': "This page's number, from 1.",
+              'title': 'Page',
+              'type': 'integer',
+            }),
+            'page_size': dict({
+              'description': 'The requested page size.',
+              'title': 'Page Size',
+              'type': 'integer',
+            }),
+            'total': dict({
+              'description': 'Items matching the filters, across all pages.',
+              'title': 'Total',
+              'type': 'integer',
+            }),
+          }),
+          'required': list([
+            'items',
+            'total',
+            'page',
+            'page_size',
+          ]),
+          'title': 'InvitationPage',
+          'type': 'object',
+        }),
+        'InvitationPreview': dict({
+          'description': 'What an invitation link offers, for the accept page.',
+          'properties': dict({
+            'account_exists': dict({
+              'description': 'An account with this email exists: sign in, then accept. Otherwise accept with a display name and a password.',
+              'title': 'Account Exists',
+              'type': 'boolean',
+            }),
+            'agency': dict({
+              '$ref': '#/components/schemas/AgencyRef',
+            }),
+            'email': dict({
+              'description': 'The invited address.',
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'expires_at': dict({
+              'format': 'date-time',
+              'title': 'Expires At',
+              'type': 'string',
+            }),
+            'invited_by': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': "The inviter's name (null if unknown).",
+              'title': 'Invited By',
+            }),
+            'role': dict({
+              '$ref': '#/components/schemas/Role',
+            }),
+          }),
+          'required': list([
+            'agency',
+            'invited_by',
+            'email',
+            'role',
+            'account_exists',
+            'expires_at',
+          ]),
+          'title': 'InvitationPreview',
+          'type': 'object',
+        }),
+        'InvitationStatus': dict({
+          'description': '''
+            An open invitation (not accepted, not revoked): ``pending`` until it expires, then
+            ``expired`` (resend it to renew it).
+          ''',
+          'enum': list([
+            'pending',
+            'expired',
+          ]),
+          'title': 'InvitationStatus',
+          'type': 'string',
+        }),
+        'InvitationToken': dict({
+          'properties': dict({
+            'token': dict({
+              'description': 'The token from the invitation link (#token=...).',
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Token',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'token',
+          ]),
+          'title': 'InvitationToken',
+          'type': 'object',
+        }),
         'JobDescription': dict({
           'properties': dict({
             'job_description': dict({
@@ -1520,6 +1775,197 @@
           'title': 'MeUser',
           'type': 'object',
         }),
+        'Member': dict({
+          'description': 'A member of the agency: their account, role, client access and status.',
+          'properties': dict({
+            'all_clients': dict({
+              'description': 'Every client of the agency (owners and admins: always).',
+              'title': 'All Clients',
+              'type': 'boolean',
+            }),
+            'clients': dict({
+              'description': 'The clients a recruiter or viewer may see when all_clients is false, by name; empty otherwise.',
+              'items': dict({
+                '$ref': '#/components/schemas/ClientRef',
+              }),
+              'title': 'Clients',
+              'type': 'array',
+            }),
+            'deactivated_at': dict({
+              'anyOf': list([
+                dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Deactivated At',
+            }),
+            'id': dict({
+              'description': "The membership's id (the path of the member endpoints).",
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'joined_at': dict({
+              'format': 'date-time',
+              'title': 'Joined At',
+              'type': 'string',
+            }),
+            'last_active_at': dict({
+              'anyOf': list([
+                dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': 'Their last sign-in to or request in this agency (null: never).',
+              'title': 'Last Active At',
+            }),
+            'role': dict({
+              '$ref': '#/components/schemas/Role',
+            }),
+            'status': dict({
+              '$ref': '#/components/schemas/MemberStatus',
+            }),
+            'user': dict({
+              '$ref': '#/components/schemas/MemberUser',
+            }),
+          }),
+          'required': list([
+            'id',
+            'user',
+            'role',
+            'all_clients',
+            'clients',
+            'status',
+            'last_active_at',
+            'joined_at',
+            'deactivated_at',
+          ]),
+          'title': 'Member',
+          'type': 'object',
+        }),
+        'MemberPage': dict({
+          'properties': dict({
+            'items': dict({
+              'items': dict({
+                '$ref': '#/components/schemas/Member',
+              }),
+              'title': 'Items',
+              'type': 'array',
+            }),
+            'page': dict({
+              'description': "This page's number, from 1.",
+              'title': 'Page',
+              'type': 'integer',
+            }),
+            'page_size': dict({
+              'description': 'The requested page size.',
+              'title': 'Page Size',
+              'type': 'integer',
+            }),
+            'total': dict({
+              'description': 'Items matching the filters, across all pages.',
+              'title': 'Total',
+              'type': 'integer',
+            }),
+          }),
+          'required': list([
+            'items',
+            'total',
+            'page',
+            'page_size',
+          ]),
+          'title': 'MemberPage',
+          'type': 'object',
+        }),
+        'MemberStatus': dict({
+          'description': '''
+            A membership's status: a deactivated member keeps their account but has no access to
+            the agency until reactivated.
+          ''',
+          'enum': list([
+            'active',
+            'deactivated',
+          ]),
+          'title': 'MemberStatus',
+          'type': 'string',
+        }),
+        'MemberUpdate': dict({
+          'description': 'Fields left out (or null) stay as they are.',
+          'properties': dict({
+            'all_clients': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'boolean',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'All Clients',
+            }),
+            'client_ids': dict({
+              'anyOf': list([
+                dict({
+                  'items': dict({
+                    'format': 'uuid',
+                    'type': 'string',
+                  }),
+                  'maxItems': 500,
+                  'type': 'array',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'title': 'Client Ids',
+            }),
+            'role': dict({
+              'anyOf': list([
+                dict({
+                  '$ref': '#/components/schemas/Role',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+            }),
+          }),
+          'title': 'MemberUpdate',
+          'type': 'object',
+        }),
+        'MemberUser': dict({
+          'description': "A team member's (or inviter's) account.",
+          'properties': dict({
+            'display_name': dict({
+              'title': 'Display Name',
+              'type': 'string',
+            }),
+            'email': dict({
+              'title': 'Email',
+              'type': 'string',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'email',
+            'display_name',
+          ]),
+          'title': 'MemberUser',
+          'type': 'object',
+        }),
         'Membership': dict({
           'description': 'One agency the user belongs to (active memberships in active agencies only).',
           'properties': dict({
@@ -1583,6 +2029,57 @@
             'new_password',
           ]),
           'title': 'PasswordChange',
+          'type': 'object',
+        }),
+        'PasswordResetConfirm': dict({
+          'properties': dict({
+            'new_password': dict({
+              'description': '12 to 128 characters, any characters, not your email address.',
+              'maxLength': 1024,
+              'title': 'New Password',
+              'type': 'string',
+            }),
+            'token': dict({
+              'description': 'The token from the reset link (#token=...).',
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Token',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'token',
+            'new_password',
+          ]),
+          'title': 'PasswordResetConfirm',
+          'type': 'object',
+        }),
+        'PasswordResetRequest': dict({
+          'properties': dict({
+            'email': dict({
+              'maxLength': 320,
+              'title': 'Email',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'email',
+          ]),
+          'title': 'PasswordResetRequest',
+          'type': 'object',
+        }),
+        'PasswordResetRequested': dict({
+          'properties': dict({
+            'detail': dict({
+              'description': 'The same message whether or not the account exists.',
+              'title': 'Detail',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'detail',
+          ]),
+          'title': 'PasswordResetRequested',
           'type': 'object',
         }),
         'Permission': dict({
@@ -3165,6 +3662,182 @@
           ]),
         }),
       }),
+      '/auth/invitations/accept': dict({
+        'post': dict({
+          'description': '''
+            Accept an invitation and start a new session in its agency (new session and CSRF
+            cookies). Signed in: you join with your account, whose email must be the invited one (403
+            otherwise). Not signed in: a new account is created from display_name and password (409
+            if an account exists for the address: sign in first). 409 if you are already a member;
+            410 when the invitation is no longer valid.
+          ''',
+          'operationId': 'acceptInvitation',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/InvitationAccept',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Me',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '410': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Gone',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Accept Invitation',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
+      '/auth/invitations/preview': dict({
+        'post': dict({
+          'description': '''
+            What an invitation link offers: the agency, who sent it, the role and address, and
+            whether an account exists for the address (then sign in before accepting). 410 when the
+            invitation expired, was revoked, replaced or already accepted.
+          ''',
+          'operationId': 'previewInvitation',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/InvitationToken',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/InvitationPreview',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '410': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Gone',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Preview Invitation',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
       '/auth/login': dict({
         'post': dict({
           'description': '''
@@ -3285,6 +3958,155 @@
             }),
           ]),
           'summary': 'Logout',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
+      '/auth/password-reset': dict({
+        'post': dict({
+          'description': '''
+            Email a link to choose a new password, if an account exists for this address. The
+            answer is the same either way (202), and so is its timing: the email is sent in the
+            background. The link (`/reset-password#token=...`) works once, for 30 minutes. 429 with
+            Retry-After after 3 requests per address or 10 per IP in an hour.
+          ''',
+          'operationId': 'requestPasswordReset',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/PasswordResetRequest',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '202': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/PasswordResetRequested',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Request Password Reset',
+          'tags': list([
+            'auth',
+          ]),
+        }),
+      }),
+      '/auth/password-reset/confirm': dict({
+        'post': dict({
+          'description': '''
+            Choose a new password with the token from a reset link. Every session of the account
+            ends (this browser's cookies are cleared too: sign in with the new password) and a
+            confirmation email is sent. 410 when the link expired or was used; 422 when the password
+            does not meet the policy (the link still works).
+          ''',
+          'operationId': 'confirmPasswordReset',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/PasswordResetConfirm',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '410': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Gone',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Confirm Password Reset',
           'tags': list([
             'auth',
           ]),
@@ -6007,6 +6829,761 @@
           ]),
         }),
       }),
+      '/team/invitations': dict({
+        'get': dict({
+          'description': 'Open invitations (pending and expired), newest first.',
+          'operationId': 'listInvitations',
+          'parameters': list([
+            dict({
+              'description': 'Page number, from 1.',
+              'in': 'query',
+              'name': 'page',
+              'required': False,
+              'schema': dict({
+                'default': 1,
+                'description': 'Page number, from 1.',
+                'minimum': 1,
+                'title': 'Page',
+                'type': 'integer',
+              }),
+            }),
+            dict({
+              'description': 'Items per page.',
+              'in': 'query',
+              'name': 'page_size',
+              'required': False,
+              'schema': dict({
+                'default': 20,
+                'description': 'Items per page.',
+                'maximum': 100,
+                'minimum': 1,
+                'title': 'Page Size',
+                'type': 'integer',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/InvitationPage',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'List Invitations',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:read',
+          ]),
+        }),
+        'post': dict({
+          'description': '''
+            Invite someone by email: they get a link (`/accept-invite#token=...`) that works for 7
+            days. Admins invite recruiters and viewers; owners invite any role. An open invitation for
+            the same address is replaced (its link stops working); an active member's address is a 409.
+            An agency sends at most 50 invitations a day (429).
+          ''',
+          'operationId': 'createInvitation',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/InvitationCreate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '201': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Invitation',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Create Invitation',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
+      '/team/invitations/{invitation_id}': dict({
+        'delete': dict({
+          'description': 'Revoke an open invitation: its link stops working.',
+          'operationId': 'revokeInvitation',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'invitation_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Invitation Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '204': dict({
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Revoke Invitation',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
+      '/team/invitations/{invitation_id}/resend': dict({
+        'post': dict({
+          'description': '''
+            Send the invitation again with a new link and a new 7-day expiry (the old link stops
+            working); this also renews an expired one.
+          ''',
+          'operationId': 'resendInvitation',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'invitation_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Invitation Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Invitation',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+            '429': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Too Many Requests',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Resend Invitation',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
+      '/team/members': dict({
+        'get': dict({
+          'description': "The agency's members, deactivated ones included, by name (owners and admins).",
+          'operationId': 'listMembers',
+          'parameters': list([
+            dict({
+              'description': 'Page number, from 1.',
+              'in': 'query',
+              'name': 'page',
+              'required': False,
+              'schema': dict({
+                'default': 1,
+                'description': 'Page number, from 1.',
+                'minimum': 1,
+                'title': 'Page',
+                'type': 'integer',
+              }),
+            }),
+            dict({
+              'description': 'Items per page.',
+              'in': 'query',
+              'name': 'page_size',
+              'required': False,
+              'schema': dict({
+                'default': 20,
+                'description': 'Items per page.',
+                'maximum': 100,
+                'minimum': 1,
+                'title': 'Page Size',
+                'type': 'integer',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/MemberPage',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'List Members',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:read',
+          ]),
+        }),
+      }),
+      '/team/members/{membership_id}': dict({
+        'patch': dict({
+          'description': '''
+            Change a member's role or client access. Admins manage recruiters and viewers; only
+            owners manage owners and admins (as the old or the new role). Nobody changes their own role
+            (403), and the last active owner cannot be demoted (409). Owners and admins always have
+            every client; a recruiter or viewer limited to some clients needs at least one.
+          ''',
+          'operationId': 'updateMember',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'membership_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Membership Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/MemberUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Member',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Update Member',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
+      '/team/members/{membership_id}/deactivate': dict({
+        'post': dict({
+          'description': '''
+            End a member's access to the agency, from their next request (their account and other
+            agencies are unaffected). Not yourself (403), not the last active owner (409).
+          ''',
+          'operationId': 'deactivateMember',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'membership_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Membership Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Member',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Deactivate Member',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
+      '/team/members/{membership_id}/reactivate': dict({
+        'post': dict({
+          'description': 'Give a deactivated member their access back, with the role and clients they had.',
+          'operationId': 'reactivateMember',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'membership_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Membership Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Member',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Reactivate Member',
+          'tags': list([
+            'team',
+          ]),
+          'x-permissions': list([
+            'team:manage',
+          ]),
+        }),
+      }),
     }),
     'servers': list([
       dict({
@@ -6035,7 +7612,7 @@
         'name': 'dashboard',
       }),
       dict({
-        'description': 'Sign-in, sign-out and the CSRF token.',
+        'description': 'Sign-in, sign-out, the CSRF token, password reset and accepting an invitation.',
         'name': 'auth',
       }),
       dict({
@@ -6049,6 +7626,10 @@
       dict({
         'description': "The agency's clients, whom campaigns are run for.",
         'name': 'clients',
+      }),
+      dict({
+        'description': "The agency's members and invitations.",
+        'name': 'team',
       }),
     ]),
   })

@@ -1,0 +1,605 @@
+# serializer version: 1
+# name: test_invitations
+  dict({
+    'create': dict({
+      'body': dict({
+        'all_clients': False,
+        'clients': list([
+          dict({
+            'id': '<uuid:1>',
+            'name': 'Acme',
+          }),
+        ]),
+        'created_at': '<datetime>',
+        'email': 'nina@example.com',
+        'expires_at': '<datetime>',
+        'id': '<uuid:2>',
+        'invited_by': dict({
+          'display_name': 'owner',
+          'email': 'owner@example.com',
+          'id': '<uuid:3>',
+        }),
+        'role': 'recruiter',
+        'status': 'pending',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'status_code': 201,
+    }),
+    'create_admin': dict({
+      'body': dict({
+        'all_clients': True,
+        'clients': list([
+        ]),
+        'created_at': '<datetime>',
+        'email': 'boss@example.com',
+        'expires_at': '<datetime>',
+        'id': '<uuid:4>',
+        'invited_by': dict({
+          'display_name': 'owner',
+          'email': 'owner@example.com',
+          'id': '<uuid:3>',
+        }),
+        'role': 'admin',
+        'status': 'pending',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+        'retry-after': None,
+      }),
+      'status_code': 201,
+    }),
+    'create_admin_as_admin': dict({
+      'body': dict({
+        'detail': "You don't have permission to manage owners and admins",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 403,
+    }),
+    'create_invalid_email': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'email',
+            ]),
+            'msg': 'Enter a valid email address',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'create_member': dict({
+      'body': dict({
+        'detail': 'viewer@example.com is already a member of this agency',
+        'status': 409,
+        'title': 'Conflict',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 409,
+    }),
+    'create_over_the_daily_limit': dict({
+      'body': dict({
+        'detail': 'Too many attempts. Try again later.',
+        'status': 429,
+        'title': 'Too Many Requests',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': '<seconds>',
+      }),
+      'status_code': 429,
+    }),
+    'create_owner_limited': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'all_clients',
+            ]),
+            'msg': 'Owners and admins always have every client',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'create_without_clients': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'client_ids',
+            ]),
+            'msg': 'Choose at least one client',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': None,
+      }),
+      'status_code': 422,
+    }),
+    'list': dict({
+      'body': dict({
+        'items': list([
+          dict({
+            'all_clients': True,
+            'clients': list([
+            ]),
+            'created_at': '<datetime>',
+            'email': 'boss@example.com',
+            'expires_at': '<datetime>',
+            'id': '<uuid:4>',
+            'invited_by': dict({
+              'display_name': 'owner',
+              'email': 'owner@example.com',
+              'id': '<uuid:3>',
+            }),
+            'role': 'admin',
+            'status': 'pending',
+          }),
+          dict({
+            'all_clients': False,
+            'clients': list([
+              dict({
+                'id': '<uuid:1>',
+                'name': 'Acme',
+              }),
+            ]),
+            'created_at': '<datetime>',
+            'email': 'nina@example.com',
+            'expires_at': '<datetime>',
+            'id': '<uuid:2>',
+            'invited_by': dict({
+              'display_name': 'owner',
+              'email': 'owner@example.com',
+              'id': '<uuid:3>',
+            }),
+            'role': 'recruiter',
+            'status': 'pending',
+          }),
+        ]),
+        'page': 1,
+        'page_size': 20,
+        'total': 2,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'list_as_viewer': dict({
+      'body': dict({
+        'detail': "You don't have permission to see the team",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'resend': dict({
+      'body': dict({
+        'all_clients': False,
+        'clients': list([
+          dict({
+            'id': '<uuid:1>',
+            'name': 'Acme',
+          }),
+        ]),
+        'created_at': '<datetime>',
+        'email': 'nina@example.com',
+        'expires_at': '<datetime>',
+        'id': '<uuid:2>',
+        'invited_by': dict({
+          'display_name': 'owner',
+          'email': 'owner@example.com',
+          'id': '<uuid:3>',
+        }),
+        'role': 'recruiter',
+        'status': 'pending',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'resend_revoked': dict({
+      'body': dict({
+        'detail': 'Invitation not found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 404,
+    }),
+    'revoke': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 204,
+    }),
+    'revoke_again': dict({
+      'body': dict({
+        'detail': 'Invitation not found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 404,
+    }),
+  })
+# ---
+# name: test_members
+  dict({
+    'deactivate': dict({
+      'body': dict({
+        'all_clients': False,
+        'clients': list([
+          dict({
+            'id': '<uuid:1>',
+            'name': 'Acme',
+          }),
+          dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
+        ]),
+        'deactivated_at': '<datetime>',
+        'id': '<uuid:2>',
+        'joined_at': '<datetime>',
+        'last_active_at': '<datetime>',
+        'role': 'recruiter',
+        'status': 'deactivated',
+        'user': dict({
+          'display_name': 'recruiter',
+          'email': 'recruiter@example.com',
+          'id': '<uuid:3>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'deactivate_self': dict({
+      'body': dict({
+        'detail': "You can't deactivate yourself",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'demote_last_owner': dict({
+      'body': dict({
+        'detail': 'The agency needs at least one active owner',
+        'status': 409,
+        'title': 'Conflict',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 409,
+    }),
+    'limit_clients': dict({
+      'body': dict({
+        'all_clients': False,
+        'clients': list([
+          dict({
+            'id': '<uuid:1>',
+            'name': 'Acme',
+          }),
+          dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
+        ]),
+        'deactivated_at': None,
+        'id': '<uuid:2>',
+        'joined_at': '<datetime>',
+        'last_active_at': '<datetime>',
+        'role': 'recruiter',
+        'status': 'active',
+        'user': dict({
+          'display_name': 'recruiter',
+          'email': 'recruiter@example.com',
+          'id': '<uuid:3>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'list': dict({
+      'body': dict({
+        'items': list([
+          dict({
+            'all_clients': True,
+            'clients': list([
+            ]),
+            'deactivated_at': None,
+            'id': '<uuid:4>',
+            'joined_at': '<datetime>',
+            'last_active_at': '<datetime>',
+            'role': 'admin',
+            'status': 'active',
+            'user': dict({
+              'display_name': 'admin',
+              'email': 'admin@example.com',
+              'id': '<uuid:5>',
+            }),
+          }),
+          dict({
+            'all_clients': True,
+            'clients': list([
+            ]),
+            'deactivated_at': None,
+            'id': '<uuid:6>',
+            'joined_at': '<datetime>',
+            'last_active_at': '<datetime>',
+            'role': 'owner',
+            'status': 'active',
+            'user': dict({
+              'display_name': 'owner',
+              'email': 'owner@example.com',
+              'id': '<uuid:7>',
+            }),
+          }),
+          dict({
+            'all_clients': False,
+            'clients': list([
+              dict({
+                'id': '<uuid:1>',
+                'name': 'Acme',
+              }),
+              dict({
+                'id': '<default-client>',
+                'name': 'General',
+              }),
+            ]),
+            'deactivated_at': '<datetime>',
+            'id': '<uuid:2>',
+            'joined_at': '<datetime>',
+            'last_active_at': '<datetime>',
+            'role': 'recruiter',
+            'status': 'deactivated',
+            'user': dict({
+              'display_name': 'recruiter',
+              'email': 'recruiter@example.com',
+              'id': '<uuid:3>',
+            }),
+          }),
+          dict({
+            'all_clients': True,
+            'clients': list([
+            ]),
+            'deactivated_at': None,
+            'id': '<uuid:8>',
+            'joined_at': '<datetime>',
+            'last_active_at': None,
+            'role': 'admin',
+            'status': 'active',
+            'user': dict({
+              'display_name': 'viewer',
+              'email': 'viewer@example.com',
+              'id': '<uuid:9>',
+            }),
+          }),
+        ]),
+        'page': 1,
+        'page_size': 20,
+        'total': 4,
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'list_as_recruiter': dict({
+      'body': dict({
+        'detail': "You don't have permission to see the team",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'promote': dict({
+      'body': dict({
+        'all_clients': True,
+        'clients': list([
+        ]),
+        'deactivated_at': None,
+        'id': '<uuid:8>',
+        'joined_at': '<datetime>',
+        'last_active_at': None,
+        'role': 'admin',
+        'status': 'active',
+        'user': dict({
+          'display_name': 'viewer',
+          'email': 'viewer@example.com',
+          'id': '<uuid:9>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'reactivate': dict({
+      'body': dict({
+        'all_clients': False,
+        'clients': list([
+          dict({
+            'id': '<uuid:1>',
+            'name': 'Acme',
+          }),
+          dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
+        ]),
+        'deactivated_at': None,
+        'id': '<uuid:2>',
+        'joined_at': '<datetime>',
+        'last_active_at': '<datetime>',
+        'role': 'recruiter',
+        'status': 'active',
+        'user': dict({
+          'display_name': 'recruiter',
+          'email': 'recruiter@example.com',
+          'id': '<uuid:3>',
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'update_as_recruiter': dict({
+      'body': dict({
+        'detail': "You don't have permission to manage the team",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'update_invalid': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'all_clients',
+            ]),
+            'msg': 'Owners and admins always have every client',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'update_owner_as_admin': dict({
+      'body': dict({
+        'detail': "You don't have permission to manage owners and admins",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'update_self': dict({
+      'body': dict({
+        'detail': "You can't change the role or client access of yourself",
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+    'update_unknown': dict({
+      'body': dict({
+        'detail': 'Member not found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 404,
+    }),
+    'update_unknown_client': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'client_ids',
+            ]),
+            'msg': 'Choose clients of this agency that are not archived',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+  })
+# ---
