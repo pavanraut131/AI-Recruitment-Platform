@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
 import { checkScreen } from "./support/checks"
-import { newRunId } from "./support/hero-data"
+import { newRunId, PITCH } from "./support/hero-data"
 import { latestEmailId, waitForLink } from "./support/mailpit"
 import { apiSession, signIn, USERS } from "./support/users"
 
@@ -115,7 +115,8 @@ test("forgot password → the email → a new password → sign in with it", asy
 })
 
 test("an invitation: the preview, a new account, and Home in the agency", async ({ page }, testInfo) => {
-  const address = `e2e-${newRunId()}@northbank.example`
+  // A README run (fresh stack) uses a demo address: this member shows in Settings → Team's screenshot.
+  const address = PITCH ? "nia.okafor@northbank.example" : `e2e-${newRunId()}@northbank.example`
   const { api, csrfToken } = await apiSession(USERS.northbankOwner)
   const invited = await api.post("team/invitations", {
     data: { email: address, role: "recruiter", all_clients: true, client_ids: [] },

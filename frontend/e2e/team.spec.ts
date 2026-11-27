@@ -61,11 +61,18 @@ test("an owner invites a recruiter limited to one client, who then sees only tha
     await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Clients" }).click()
     await page.getByRole("button", { name: "New client" }).click()
     const dialog = page.getByRole("dialog", { name: "New client" })
+    await checkScreen(page, testInfo, "11-new-client-dialog")
     await dialog.getByRole("textbox", { name: "Name" }).fill(clientName)
     await dialog.getByRole("button", { name: "Add client" }).click()
     await expect(dialog).toBeHidden()
     await expect(page.getByRole("table").getByRole("row").filter({ hasText: clientName })).toBeVisible()
-    await checkScreen(page, testInfo, "11-settings-clients")
+    await checkScreen(page, testInfo, "12-settings-clients")
+
+    await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Agency" }).click()
+    await expect(page.getByRole("form", { name: "Agency" }).getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Northbank Talent",
+    )
+    await checkScreen(page, testInfo, "13-settings-agency")
   })
 
   await test.step("a campaign for the new client (the form), and one for General (the API)", async () => {
@@ -104,13 +111,13 @@ test("an owner invites a recruiter limited to one client, who then sees only tha
     await dialog.getByRole("radio", { name: "Recruiter" }).check()
     await dialog.getByRole("radio", { name: "Only some clients" }).check()
     await dialog.getByRole("checkbox", { name: clientName }).check()
-    await checkScreen(page, testInfo, "12-invite-dialog")
+    await checkScreen(page, testInfo, "14-invite-dialog")
     await dialog.getByRole("button", { name: "Send invitation" }).click()
     await expect(dialog).toBeHidden()
 
     const pending = page.getByRole("list", { name: "Pending invitations" }).getByRole("listitem").filter({ hasText: address })
     await expect(pending).toContainText(`Recruiter · ${clientName}`)
-    await checkScreen(page, testInfo, "13-settings-team", { docs: ["light"] })
+    await checkScreen(page, testInfo, "15-settings-team", { docs: ["light"] })
   })
 
   const invitee = await newPage(browser)
@@ -140,6 +147,14 @@ test("an owner invites a recruiter limited to one client, who then sees only tha
     await expect(row).toContainText("Kofi Mensah")
     await expect(row).toContainText(clientName)
     await expect(row.getByRole("combobox", { name: "Role of Kofi Mensah" })).toHaveText("Recruiter")
+
+    await row.getByRole("button", { name: "Actions for Kofi Mensah" }).click()
+    await page.getByRole("menuitem", { name: "Change client access…" }).click()
+    const dialog = page.getByRole("dialog", { name: "Client access for Kofi Mensah" })
+    await expect(dialog.getByRole("checkbox", { name: clientName })).toBeChecked()
+    await checkScreen(page, testInfo, "16-client-access-dialog")
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(dialog).toBeHidden()
   })
 
   await test.step("in a second agency, the switcher changes agency and starts afresh", async () => {
@@ -161,8 +176,11 @@ test("an owner invites a recruiter limited to one client, who then sees only tha
     await switcher(invitee).click()
     const menu = invitee.getByRole("menu")
     await expect(menu.getByRole("menuitemradio", { name: /Default agency/ })).toHaveAttribute("aria-checked", "true")
-    await checkScreen(invitee, testInfo, "14-agency-switcher", { docs: ["light"] })
+    await checkScreen(invitee, testInfo, "17-agency-switcher", { docs: ["light"] })
+    // The switch loads Home as a new page: wait for it, so the next navigation doesn't race it.
+    const reloaded = invitee.waitForEvent("load")
     await menu.getByRole("menuitemradio", { name: /Northbank Talent/ }).click()
+    await reloaded
 
     await expect(switcher(invitee)).toContainText("Northbank Talent")
     await expect(invitee.getByRole("heading", { level: 1, name: "Home" })).toBeVisible()
@@ -193,7 +211,7 @@ test("a viewer sees no write actions, and a direct URL to one says so", async ({
   await expect(panel.getByRole("button", { name: "Not a fit" })).toHaveCount(0)
   await expect(panel.getByRole("combobox", { name: "Stage" })).toHaveCount(0)
   await expect(panel.getByRole("textbox", { name: "Notes" })).toHaveCount(0)
-  await checkScreen(page, testInfo, "15-viewer-campaign")
+  await checkScreen(page, testInfo, "18-viewer-campaign")
   await page.keyboard.press("Escape")
 
   await page.getByRole("tab", { name: "Uploads" }).click()
@@ -213,5 +231,5 @@ test("a viewer sees no write actions, and a direct URL to one says so", async ({
   // Settings offers a viewer their profile only.
   const sections = page.getByRole("navigation", { name: "Settings sections" }).getByRole("link")
   await expect(sections).toHaveText(["Profile"])
-  await checkScreen(page, testInfo, "16-viewer-no-access")
+  await checkScreen(page, testInfo, "19-viewer-no-access")
 })
