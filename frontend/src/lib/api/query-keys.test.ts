@@ -15,7 +15,7 @@ function matching(client: QueryClient, queryKey: QueryKey): string[] {
 describe("queryKeys", () => {
   it("has one factory per resource", () => {
     expect(Object.keys(queryKeys).sort()).toEqual(
-      ["applications", "campaigns", "home", "me", "people", "resumes", "stats"].sort(),
+      ["applications", "authProviders", "campaigns", "home", "me", "people", "resumes", "stats"].sort(),
     )
   })
 

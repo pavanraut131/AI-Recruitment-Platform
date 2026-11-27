@@ -13,7 +13,6 @@ import { z } from "zod"
 import { AuthHeader } from "@/components/auth/auth-layout"
 import { FormAlert } from "@/components/auth/form-alert"
 import { PasswordInput } from "@/components/auth/password-input"
-import { SignInProviders } from "@/components/auth/sign-in-providers"
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
@@ -28,6 +27,7 @@ import { isUnauthorized, startSession, useMe, type Me } from "@/lib/auth/session
 
 import { authError, showFieldErrors, type AuthError } from "./errors"
 import { LinkLoading, LinkProblem } from "./link-states"
+import { SignInProviders } from "./sign-in-providers"
 import { useAcceptInvitation, useInvitationPreview, useLogin, useSignOutHere, type InvitationPreview } from "./queries"
 import { useFragmentToken } from "./use-fragment-token"
 
@@ -42,8 +42,9 @@ function sameAddress(a: string, b: string): boolean {
  * invitation email. The page previews the invitation (agency, who sent it,
  * role, address), then:
  *
- * - **a new person** chooses a display name and a password (or, after E2-08,
- *   a Google or Microsoft account), and the account is created;
+ * - **a new person** chooses a display name and a password, or continues
+ *   with Google or Microsoft when the API offers them, and the account is
+ *   created;
  * - **someone with an account** signs in first, then joins with it;
  * - someone **signed in as another address** can sign out and continue.
  *
@@ -197,6 +198,7 @@ function InvitationActions({ invitation, token, onGone }: ActionsProps) {
         token={token}
         joining={accept.isPending || joined}
         joinFailure={failure}
+        onGone={onGone}
         onSignedIn={(user) => {
           // Signed in as the invited address: show it, and join right away.
           rememberCsrfToken(user.csrf_token)
@@ -251,12 +253,14 @@ function SignInToAccept({
   token,
   joining,
   joinFailure,
+  onGone,
   onSignedIn,
 }: {
   invitation: InvitationPreview
   token: string
   joining: boolean
   joinFailure: AuthError | null
+  onGone: (detail: string) => void
   onSignedIn: (user: Me) => void
 }) {
   const login = useLogin()
@@ -286,7 +290,7 @@ function SignInToAccept({
       <p className="text-ink-2">
         You already have a HireFlow AI account. Sign in to join {invitation.agency.name} with it.
       </p>
-      <SignInProviders next="/" invitationToken={token} />
+      <SignInProviders next="/" invitationToken={token} onInvitationGone={onGone} />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="Sign in to join" className="flex flex-col gap-5">
           <InvitedEmail email={invitation.email} />
@@ -380,7 +384,7 @@ function NewAccount({
 
   return (
     <div className="flex flex-col gap-6">
-      <SignInProviders next="/" invitationToken={token} />
+      <SignInProviders next="/" invitationToken={token} onInvitationGone={onGone} />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="Create your account" className="flex flex-col gap-5">
           <InvitedEmail email={invitation.email} />

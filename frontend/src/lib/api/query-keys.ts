@@ -82,4 +82,9 @@ const me = {
   all: ["me"] as const,
 }
 
-export const queryKeys = { campaigns, applications, resumes, people, home, stats, me } as const
+/** `GET /auth/providers`: the Google / Microsoft sign-in this deployment offers (E2-08). */
+const authProviders = {
+  all: ["auth-providers"] as const,
+}
+
+export const queryKeys = { campaigns, applications, resumes, people, home, stats, me, authProviders } as const

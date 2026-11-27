@@ -145,6 +145,32 @@ describe("Login", () => {
     expect(document.body.textContent).toContain(text)
   })
 
+  it("offers Google and Microsoft when the API does, with the page's next", async () => {
+    const calls = installApi({
+      ...SIGNED_OUT,
+      "GET /auth/providers": () => json({ providers: [{ id: "google", name: "Google" }] }),
+      "POST /auth/oidc/google/start": () => json({ authorization_url: "https://accounts.google.com/auth" }),
+    })
+    renderLogin({ next: "/talent" })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Continue with Google" }))
+
+    await waitFor(() => expect(calls.some((call) => call.path === "/auth/oidc/google/start")).toBe(true))
+    expect(calls.find((call) => call.path === "/auth/oidc/google/start")!.body).toEqual({
+      next: "/talent",
+      invitation_token: null,
+    })
+  })
+
+  it("explains a Google or Microsoft sign-in that came back without signing in (error, provider)", () => {
+    installApi(SIGNED_OUT)
+    renderLogin({ error: "cancelled", provider: "microsoft" })
+
+    const notice = screen.getByRole("status")
+    expect(notice.textContent).toContain("Sign-in with Microsoft was cancelled")
+    expect(notice.textContent).toContain("Try again, or sign in with your email and password.")
+  })
+
   it("sends someone already signed in straight on to next", async () => {
     installApi({ "GET /me": () => json(meFixture()), "GET /auth/csrf": () => json({ csrf_token: "t" }) })
     renderLogin({ next: "/talent?q=ada" })

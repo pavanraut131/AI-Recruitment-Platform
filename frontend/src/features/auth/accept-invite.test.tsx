@@ -89,6 +89,25 @@ describe("AcceptInvitation", () => {
     expect(document.body.textContent).toContain("Ask for a new invitation.")
   })
 
+  it("offers Google and Microsoft with the invitation's token, and explains a 410 from them", async () => {
+    const calls = installApi({
+      ...SIGNED_OUT,
+      "POST /auth/invitations/preview": () => json(invitationFixture()),
+      "GET /auth/providers": () => json({ providers: [{ id: "google", name: "Google" }] }),
+      "POST /auth/oidc/google/start": () =>
+        problem(410, "This invitation has expired or is no longer valid. Ask for a new invitation."),
+    })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Continue with Google" }))
+
+    expect(await screen.findByRole("heading", { name: "This invitation can't be used any more" })).toBeTruthy()
+    expect(calls.find((call) => call.path === "/auth/oidc/google/start")!.body).toEqual({
+      next: "/",
+      invitation_token: TOKEN,
+    })
+  })
+
   it("explains a link without a token, without asking the API", async () => {
     window.history.replaceState(null, "", "/accept-invite")
     const calls = installApi(SIGNED_OUT)

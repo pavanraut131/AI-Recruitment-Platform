@@ -19,11 +19,15 @@ function userMenu(page: Page, name: RegExp) {
 }
 
 test("sign in, Home, sign out", async ({ page }, testInfo) => {
+  const providers = page.waitForResponse((answer) => answer.url().endsWith("/api/v2/auth/providers"))
   // Signed out: the server redirects before the app renders (proxy.ts).
   const response = await page.goto("/campaigns")
   expect(response?.request().redirectedFrom()?.url()).toMatch(/\/campaigns$/)
   await expect(page).toHaveURL(/\/login\?next=%2Fcampaigns$/)
   await expect(page.getByRole("heading", { level: 1, name: "Sign in to HireFlow AI" })).toBeVisible()
+  // No Google or Microsoft app is configured on this stack, so no button shows.
+  expect(await (await providers).json()).toEqual({ providers: [] })
+  await expect(page.getByRole("button", { name: /^Continue with/ })).toHaveCount(0)
   await checkScreen(page, testInfo, "auth-01-login")
 
   await page.goto("/login")
@@ -53,6 +57,16 @@ test("a wrong password says so, without saying which part was wrong", async ({ p
   await expect(page).toHaveURL(/\/login$/)
   await expect(page.getByLabel("Password", { exact: true })).toHaveValue("")
   await checkScreen(page, testInfo, "auth-02-login-wrong-password")
+})
+
+test("a Google or Microsoft sign-in that found no account is explained", async ({ page }, testInfo) => {
+  // Where the API's callback sends the browser (E2-08); no provider is needed to show the page.
+  await page.goto("/login?error=no_account&provider=google")
+
+  const notice = page.getByRole("main").getByRole("alert")
+  await expect(notice).toContainText("There is no HireFlow AI account for this address")
+  await expect(notice).toContainText("Ask your agency to invite you.")
+  await checkScreen(page, testInfo, "auth-08-login-no-account")
 })
 
 test("next: a signed-out visit comes back to the same page after signing in", async ({ page }) => {

@@ -12,7 +12,6 @@ import { z } from "zod"
 import { AuthHeader } from "@/components/auth/auth-layout"
 import { FormAlert } from "@/components/auth/form-alert"
 import { PasswordInput } from "@/components/auth/password-input"
-import { SignInProviders } from "@/components/auth/sign-in-providers"
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
@@ -22,7 +21,9 @@ import { selectAgencyHref } from "@/lib/auth/paths"
 import { startSession, useMe, type Me } from "@/lib/auth/session"
 
 import { authError, isRefused, showFieldErrors, type AuthError } from "./errors"
+import { oidcErrorNotice } from "./oidc"
 import { useLogin } from "./queries"
+import { SignInProviders } from "./sign-in-providers"
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, "Enter your email address").max(320, "Use at most 320 characters"),
@@ -36,12 +37,17 @@ export function afterSignIn(me: Me, next: string): string {
   return me.active_agency ? next : selectAgencyHref(next)
 }
 
-/** Why the page opened (`reason`, `error` in the URL), above the form. */
-function LoginNotice({ reason, error }: { reason?: string; error?: string }) {
-  if (error === "no_account") {
+/**
+ * Why the page opened, above the form: `error` (and `provider`) when a Google
+ * or Microsoft sign-in came back without signing anyone in (E2-08's
+ * `OidcLoginError`), or `reason`.
+ */
+function LoginNotice({ reason, error, provider }: { reason?: string; error?: string; provider?: string }) {
+  if (error) {
+    const notice = oidcErrorNotice(error, provider)
     return (
-      <FormAlert tone="error" title="There is no HireFlow AI account for this address">
-        Ask your agency to invite you.
+      <FormAlert tone={notice.tone} title={notice.title}>
+        {notice.description}
       </FormAlert>
     )
   }
@@ -55,12 +61,23 @@ function LoginNotice({ reason, error }: { reason?: string; error?: string }) {
 }
 
 /**
- * `/login` (EPIC-02 §4.3, §9.1): email and password. Errors are shown in the
+ * `/login` (EPIC-02 §4.3, §9.1): "Continue with Google / Microsoft" when the
+ * API offers them, then email and password. Errors are shown in the
  * form: one message for a wrong email or password (the API's, no account
  * enumeration), the wait after too many attempts (429, `Retry-After`), and a
  * 422 under its field. Someone already signed in goes straight on to `next`.
  */
-export function Login({ next, reason, error }: { next: string; reason?: string; error?: string }) {
+export function Login({
+  next,
+  reason,
+  error,
+  provider,
+}: {
+  next: string
+  reason?: string
+  error?: string
+  provider?: string
+}) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const me = useMe()
@@ -112,7 +129,7 @@ export function Login({ next, reason, error }: { next: string; reason?: string; 
   return (
     <div className="flex flex-col gap-6">
       <AuthHeader title="Sign in to HireFlow AI" />
-      <LoginNotice reason={reason} error={error} />
+      <LoginNotice reason={reason} error={error} provider={provider} />
       <SignInProviders next={next} />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="Sign in" className="flex flex-col gap-5">
