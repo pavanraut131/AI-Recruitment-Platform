@@ -15,7 +15,7 @@ function matching(client: QueryClient, queryKey: QueryKey): string[] {
 describe("queryKeys", () => {
   it("has one factory per resource", () => {
     expect(Object.keys(queryKeys).sort()).toEqual(
-      ["applications", "campaigns", "home", "people", "resumes", "stats"].sort(),
+      ["applications", "campaigns", "home", "me", "people", "resumes", "stats"].sort(),
     )
   })
 
@@ -37,6 +37,7 @@ describe("queryKeys", () => {
     expect(queryKeys.people.detail("p-1")).toEqual(["people", "detail", "p-1"])
     expect(queryKeys.home.all).toEqual(["home"])
     expect(queryKeys.stats.all).toEqual(["stats"])
+    expect(queryKeys.me.all).toEqual(["me"])
   })
 
   it("hashes params independently of their order and of undefined values", () => {

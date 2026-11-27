@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { Instrument_Sans } from "next/font/google"
 
-import { AppShell } from "@/components/app-shell/app-shell"
 import { ThemeProvider } from "@/components/app-shell/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -47,7 +46,8 @@ export default function RootLayout({
         <ThemeProvider>
           <DataProviders>
             <TooltipProvider>
-              <AppShell>{children}</AppShell>
+              {/* (app): the gate and the shell; (auth): the sign-in pages' centred layout. */}
+              {children}
               <Toaster position="bottom-right" />
             </TooltipProvider>
           </DataProviders>

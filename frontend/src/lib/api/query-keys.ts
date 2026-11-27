@@ -73,4 +73,13 @@ const stats = {
   all: ["stats"] as const,
 }
 
-export const queryKeys = { campaigns, applications, resumes, people, home, stats } as const
+/**
+ * `GET /me`: the signed-in user, their agencies and the active one (EPIC-02
+ * §9.4). The auth gate loads it; signing in, out or switching agency clears
+ * the whole cache instead of invalidating it.
+ */
+const me = {
+  all: ["me"] as const,
+}
+
+export const queryKeys = { campaigns, applications, resumes, people, home, stats, me } as const

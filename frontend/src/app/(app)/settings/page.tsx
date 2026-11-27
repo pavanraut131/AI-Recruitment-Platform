@@ -10,7 +10,7 @@ export default function SettingsPage() {
     <ComingSoon
       title="Settings"
       icon={SettingsIcon}
-      description="Agency and account settings arrive with sign-in. Until then, edit a campaign from its Brief tab."
+      description="Your profile, your team and the agency's settings come next. Until then, edit a campaign from its Brief tab."
     />
   )
 }
