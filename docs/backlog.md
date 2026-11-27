@@ -80,6 +80,9 @@ Each one is recorded as-is in a snapshot (`BUG (recorded)` comments in `backend/
 - **TOTP MFA and passkeys.** Required before the first paying customer (E2 spec §15, Q3). When it ships, the absolute session lifetime for users without MFA drops from 7 days to 12 h.
 - **SAML SSO and SCIM provisioning** for larger agencies.
 - **Sessions UI:** list and revoke your own sessions in Settings → Profile.
+- **SSE streams re-check the session (spec §6.3, from E2-05).** `GET /campaigns/{id}/events` authenticates when it opens, but a stream that is already open does not notice a logout, an expired session or a deactivated membership. Re-check the session on the keep-alive ping every 60 s (without holding a pooled connection) and close the stream when it has ended; test it in `tests/tenancy/test_sse_tenant` (E2-04's suite).
+- **Purge expired sessions (E2-05).** `user_sessions` rows stay after they expire or are revoked. `identity.purge_expired` (E2-07's beat task) should delete sessions expired for 30 days, as spec §4.3 says.
+- **Rate-limiter fail-open (E2-05).** When Redis is unreachable, `app.platform.ratelimit` lets sign-in through and logs `ratelimit_unavailable`. Before E5, decide whether production should fail closed for login instead (an outage of Redis then blocks sign-in), and alert on the log line either way.
 - **Breached-password check** at sign-up and password change (k-anonymity range API).
 - **Joining by email domain** ("anyone signing in with @agency.com joins as a recruiter"), E2 spec §15, Q6.
 - **Move old storage keys.** E2-03 writes new objects under `agencies/{agency_id}/…`, and older objects keep their stored paths. A script can copy them to the new layout and update `resumes.file_path`.

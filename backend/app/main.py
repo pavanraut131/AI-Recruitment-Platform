@@ -9,6 +9,7 @@ from app.api import routes as composed
 from app.modules.hiring import router as hiring
 from app.modules.ingestion import router as ingestion
 from app.platform.config import settings
+from app.platform.csrf import HEADER as CSRF_HEADER
 from app.platform.logging import configure_logging
 from app.platform.storage import ensure_bucket_exists
 from app.v2 import v2_app
@@ -44,12 +45,16 @@ app = FastAPI(
 )
 
 # ── CORS ──────────────────────────────────────────────────────
+# Explicit origins (never "*") with credentials, so the browser sends the session cookie from
+# the frontend's origin; only the headers the client sends (EPIC-02 spec §4.5). X-CSRF-Token is
+# not a "simple" header, so every unsafe request is preflighted and refused for other origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", CSRF_HEADER],
+    expose_headers=["Retry-After"],
 )
 
 # ── Routers ───────────────────────────────────────────────────

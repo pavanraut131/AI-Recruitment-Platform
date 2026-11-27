@@ -18,6 +18,9 @@ from syrupy.assertion import SnapshotAssertion
 
 from tests.characterization.snapshot_utils import MaskedAmberExtension
 
+# Real sign-in for the identity contract tests (test_identity.py): see tests/identity/conftest.py.
+from tests.identity.conftest import auth_client, users  # noqa: E402, F401
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 

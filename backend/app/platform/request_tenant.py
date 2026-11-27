@@ -1,59 +1,40 @@
-"""The tenant of an HTTP request (EPIC-02 spec §5.4, §6.3): FastAPI dependencies that give the
-endpoints a database session bound to the request's agency, and the caller's access scope.
+"""The tenant of an HTTP request (EPIC-02 spec §6.3, §7.4).
 
-``/api/v2`` endpoints take :func:`tenant_db` (instead of ``get_db``) and :func:`access_scope`.
-Both come from :func:`request_tenant`, the one place that decides the request's agency: the
-default agency until E2-05, when the signed-in user's active agency replaces it (and these
-dependencies move to ``app.modules.identity.dependencies``).
+``/api/v1`` is unauthenticated and stays bound to the **default agency** until it is removed
+(E2-12): its endpoints take :func:`default_agency_db` (instead of ``get_db``) and
+:func:`default_agency_scope`.
 
-``/api/v1`` endpoints take :func:`default_agency_db` and :func:`default_agency_scope`: v1 is
-unauthenticated and stays bound to the default agency until it is removed (E2-12, spec §7.4).
+``/api/v2`` takes its session and scope from the signed-in principal instead
+(``app.modules.identity.dependencies``: ``tenant_db``, ``access_scope``; E2-05), which binds the
+session to the session's active agency through :func:`bind_request`.
 
-Each binds ``agency_id`` into the structlog context of the request, so every log line of the
+Both bind ``agency_id`` into the structlog context of the request, so every log line of the
 request names its agency (spec §6.6). Tests that override ``get_db`` keep working: the session
 the override yields is bound here.
 """
 
 from __future__ import annotations
 
+import uuid
+
 import structlog
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.database import get_db
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, TenantContext, bind
+from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, bind
 
 
-def request_tenant() -> TenantContext:
-    """The agency this ``/api/v2`` request runs for: the default agency until E2-05."""
-    return TenantContext(DEFAULT_AGENCY_ID)
-
-
-def _bound(db: AsyncSession, tenant: TenantContext) -> AsyncSession:
-    bind(db, tenant.agency_id)
-    structlog.contextvars.bind_contextvars(agency_id=str(tenant.agency_id))
+def bind_request(db: AsyncSession, agency_id: uuid.UUID) -> AsyncSession:
+    """Bind the request's session to ``agency_id`` and name the agency in its log lines."""
+    bind(db, agency_id)
+    structlog.contextvars.bind_contextvars(agency_id=str(agency_id))
     return db
-
-
-async def tenant_db(
-    db: AsyncSession = Depends(get_db), tenant: TenantContext = Depends(request_tenant)
-) -> AsyncSession:
-    """The request's session (``get_db``), bound to the request's agency."""
-    return _bound(db, tenant)
-
-
-def access_scope(tenant: TenantContext = Depends(request_tenant)) -> AccessScope:
-    """What the caller may see: every client of the request's agency (until E2-06)."""
-    return AccessScope(tenant.agency_id)
-
-
-# ── /api/v1 (until E2-12) ─────────────────────────────────────
-DEFAULT_TENANT = TenantContext(DEFAULT_AGENCY_ID)
 
 
 async def default_agency_db(db: AsyncSession = Depends(get_db)) -> AsyncSession:
     """The request's session bound to the default agency (``/api/v1`` only)."""
-    return _bound(db, DEFAULT_TENANT)
+    return bind_request(db, DEFAULT_AGENCY_ID)
 
 
 def default_agency_scope() -> AccessScope:

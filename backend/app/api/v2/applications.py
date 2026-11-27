@@ -25,10 +25,10 @@ from app.modules.hiring.schemas_v2 import (
     BulkApplicationResult,
     PipelineStage,
 )
+from app.modules.identity.dependencies import access_scope, tenant_db
 from app.modules.ingestion import service as ingestion
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
-from app.platform.request_tenant import access_scope, tenant_db
 from app.platform.tenancy import AccessScope
 
 router = APIRouter(tags=["applications"])

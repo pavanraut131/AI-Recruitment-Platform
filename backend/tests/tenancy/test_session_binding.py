@@ -184,29 +184,21 @@ def test_the_agency_does_not_leak_between_sync_checkouts(
 
 
 # ── HTTP dependencies ─────────────────────────────────────────
-async def test_requests_are_bound_to_the_default_agency_and_log_it(
+async def test_v1_requests_are_bound_to_the_default_agency_and_log_it(
     one_connection_engine: AsyncEngine,
 ) -> None:
-    """Until E2-05 (v2) and E2-12 (v1) every request runs for the default agency."""
+    """Until E2-12 every v1 request runs for the default agency. (v2 binds the principal's
+    agency since E2-05: tests/identity/test_principal.py.)"""
     import structlog
 
     from app.platform import request_tenant
 
     try:
-        for dependency in (
-            lambda db: request_tenant.tenant_db(db, request_tenant.request_tenant()),
-            request_tenant.default_agency_db,
-        ):
-            async with AsyncSession(one_connection_engine) as session:
-                structlog.contextvars.clear_contextvars()
-                assert await dependency(session) is session
-                assert agency_id_of(session) == DEFAULT_AGENCY_ID
-                assert structlog.contextvars.get_contextvars() == {
-                    "agency_id": str(DEFAULT_AGENCY_ID)
-                }
-        assert request_tenant.access_scope(request_tenant.request_tenant()) == AccessScope(
-            DEFAULT_AGENCY_ID
-        )
+        async with AsyncSession(one_connection_engine) as session:
+            structlog.contextvars.clear_contextvars()
+            assert await request_tenant.default_agency_db(session) is session
+            assert agency_id_of(session) == DEFAULT_AGENCY_ID
+            assert structlog.contextvars.get_contextvars() == {"agency_id": str(DEFAULT_AGENCY_ID)}
         assert request_tenant.default_agency_scope() == AccessScope(DEFAULT_AGENCY_ID)
     finally:
         structlog.contextvars.clear_contextvars()

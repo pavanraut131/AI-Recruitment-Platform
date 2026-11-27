@@ -15,11 +15,11 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from app.modules.identity.dependencies import access_scope, tenant_db
 from app.modules.ingestion import service
 from app.modules.ingestion.schemas_v2 import ResumePage, ResumeStatus, RetryResult, UploadResult
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
-from app.platform.request_tenant import access_scope, tenant_db
 from app.platform.tenancy import AccessScope
 from app.platform.uploads import UploadRoute
 
