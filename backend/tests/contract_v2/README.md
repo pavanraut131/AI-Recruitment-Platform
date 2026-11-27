@@ -24,6 +24,7 @@ The difference: v1's snapshots record **current** behaviour (bugs included); the
 | `test_dashboard.py` | `/stats`, `/home` (and its bounds) |
 | `test_identity.py` | `/auth/csrf`, `/auth/login` (success, CSRF, 401, 403, 422, 429), `/auth/logout`, `/me` (profile, password, active agency), `/agency`, the 401 that clears an ended session's cookie (real cookies, `tests/identity/conftest.py`; tokens, cookie values and `Retry-After` masked) |
 | `test_team.py` | `/team/members` (list, role and client changes, deactivate, reactivate) and `/team/invitations` (list, create, resend, revoke), with the 403 / 404 / 409 / 422 / 429 problems and the last-owner guard (E2-07) |
+| `test_oidc.py` | `/auth/providers`, `/auth/oidc/{provider}/start` (body, cookie, 403 / 404 / 410 / 422 / 429 / 502) and the callback's redirects (signed in, each login-page `error`), against the fake providers of `tests/identity/fake_oidc.py`; the random URL parameters masked (E2-08) |
 | `test_auth_tokens.py` | invitation preview and accept, password reset request and confirm, and the emails they send (tokens in links and the expiry date masked) (E2-07) |
 | `test_errors_and_openapi.py` | problem details for framework errors (404 route, 405, malformed JSON, 500), v1 errors unchanged, the OpenAPI document and its conventions (operation ids, tags, problem responses, enums, security schemes) |
 | `test_query_counts.py` | statements per request are fixed for every list and aggregate (no N+1), the team lists included |
