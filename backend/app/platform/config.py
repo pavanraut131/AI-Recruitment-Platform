@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from functools import lru_cache
 from typing import Final, Literal, Self
@@ -17,6 +18,10 @@ TEMPLATE_SECRET_KEYS: Final = frozenset(
 )
 MIN_SECRET_KEY_BYTES: Final = 32
 
+# An Entra ID tenant as it may appear in a URL path: "organizations", a tenant id (GUID) or a
+# domain such as contoso.onmicrosoft.com.
+_TENANT: Final = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -24,7 +29,8 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     DEBUG: bool = True
-    # Signs the CSRF tokens (and keys the hashes of rate-limit identifiers). Outside development
+    # Signs the CSRF tokens, encrypts the OIDC state cookie (E2-08) and keys the hashes of
+    # rate-limit identifiers; each use derives its own key from it. Outside development
     # and test it must be at least 32 bytes and not a template value (_check_deployment_safety);
     # generate one with `openssl rand -hex 32`.
     SECRET_KEY: str = "change_me"
@@ -130,6 +136,49 @@ class Settings(BaseSettings):
     SMTP_STARTTLS: bool = False
     SMTP_TIMEOUT: float = 10.0
 
+    # ── Sign in with Google and Microsoft (EPIC-02 §4.3; E2-08) ──
+    # The API's public base URL, as the browser reaches it (NEXT_PUBLIC_API_URL): the providers
+    # send the browser back to {API_PUBLIC_URL}/api/v2/auth/oidc/{provider}/callback, which must
+    # be registered with them exactly. Outside development and test it must be https when a
+    # provider is configured.
+    API_PUBLIC_URL: str = "http://localhost:8000"
+    # A provider is offered (GET /auth/providers) only when both its client id and secret are
+    # set; one without the other is refused at start-up. Empty: the provider is hidden and its
+    # endpoints answer 404. Secrets come from the environment only (spec §10).
+    OIDC_GOOGLE_CLIENT_ID: str = ""
+    OIDC_GOOGLE_CLIENT_SECRET: str = ""
+    OIDC_MICROSOFT_CLIENT_ID: str = ""
+    OIDC_MICROSOFT_CLIENT_SECRET: str = ""
+    # Entra ID tenant: "organizations" (any work or school account, spec §15 Q5), or one
+    # tenant's id or domain. "common" and "consumers" (personal accounts) are refused.
+    OIDC_MICROSOFT_TENANT: str = "organizations"
+    # Starts and callbacks of the OIDC flow per client IP per window, each (429 / an error page).
+    OIDC_MAX_ATTEMPTS_PER_IP: int = 30
+    OIDC_RATE_LIMIT_WINDOW: timedelta = timedelta(minutes=15)
+
+    @model_validator(mode="after")
+    def _check_oidc(self) -> Self:
+        """Refuse a half-configured provider (an id without its secret, or the reverse: it would
+        fail at the first sign-in), and a Microsoft tenant that lets personal accounts in or does
+        not fit in a URL (spec §15 Q5)."""
+        problems = []
+        for name in ("GOOGLE", "MICROSOFT"):
+            client_id = getattr(self, f"OIDC_{name}_CLIENT_ID").strip()
+            secret = getattr(self, f"OIDC_{name}_CLIENT_SECRET").strip()
+            if bool(client_id) != bool(secret):
+                problems.append(
+                    f"set both OIDC_{name}_CLIENT_ID and OIDC_{name}_CLIENT_SECRET, or neither"
+                )
+        tenant = self.OIDC_MICROSOFT_TENANT.strip().lower()
+        if tenant in {"common", "consumers"} or not _TENANT.fullmatch(tenant):
+            problems.append(
+                "OIDC_MICROSOFT_TENANT must be 'organizations' (work and school accounts), a "
+                "tenant id or a tenant domain; personal Microsoft accounts are not supported"
+            )
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
     @model_validator(mode="after")
     def _require_gemini_key(self) -> Self:
         """Fail at start-up, not on the first resume, when Gemini is selected without a key."""
@@ -164,6 +213,14 @@ class Settings(BaseSettings):
             problems.append(
                 "EMAIL_BACKEND=console is allowed only in development and test (it logs the "
                 "links it would send); set EMAIL_BACKEND=smtp and the SMTP_* settings"
+            )
+        oidc_configured = (
+            self.OIDC_GOOGLE_CLIENT_ID.strip() or self.OIDC_MICROSOFT_CLIENT_ID.strip()
+        )
+        if oidc_configured and not self.API_PUBLIC_URL.strip().lower().startswith("https://"):
+            problems.append(
+                "API_PUBLIC_URL must be an https:// URL when Google or Microsoft sign-in is "
+                "configured (the providers redirect to it with an authorization code)"
             )
         if problems:
             raise ValueError(f"APP_ENV={self.APP_ENV}: " + "; ".join(problems))

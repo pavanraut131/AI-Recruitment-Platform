@@ -1,12 +1,13 @@
 """identity HTTP layer of ``/api/v2`` (EPIC-02 spec §4.3, §8.2): sign-in and sign-out, the CSRF
-token, password reset and invitation acceptance (E2-07), the signed-in user (``/me``) and the
-active agency (``/agency``). The team endpoints need hiring too (client names): they are
+token, password reset and invitation acceptance (E2-07), signing in with Google or Microsoft
+(E2-08), the signed-in user (``/me``) and the active agency (``/agency``). The team endpoints need hiring too (client names): they are
 composed in ``app.api.v2.team``.
 
 Thin, like the other ``router_v2`` modules: each endpoint calls ``identity.service`` and sets
 or clears the cookies (``app.platform.auth_cookies``). Errors are problem details. Each endpoint
 declares who may call it (``app.modules.identity.dependencies``): the anonymous ones are
-``public`` (sign-in, the CSRF token, password reset, the invitation endpoints), ``/me`` and
+``public`` (sign-in, the CSRF token, password reset, the invitation endpoints, the providers and
+the OIDC flow), ``/me`` and
 sign-out are for ``any_member`` (a session, no permission), and ``/agency`` needs
 ``workspace:read`` / ``agency:manage``. The CSRF middleware (``app.platform.csrf``) has already
 checked every unsafe request before it gets here.
@@ -14,7 +15,10 @@ checked every unsafe request before it gets here.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service
@@ -29,11 +33,13 @@ from app.modules.identity.dependencies import (
     require_permission,
 )
 from app.modules.identity.dependencies import http_error as _service_error
-from app.modules.identity.schemas import Principal, SignedIn
+from app.modules.identity.schemas import OidcLoginError, OidcProvider, Principal, SignedIn
 from app.modules.identity.schemas_v2 import (
     ActiveAgencyChange,
     Agency,
     AgencyUpdate,
+    AuthProvider,
+    AuthProviders,
     CsrfToken,
     InvitationAccept,
     InvitationPreview,
@@ -41,6 +47,8 @@ from app.modules.identity.schemas_v2 import (
     LoginRequest,
     Me,
     MeUpdate,
+    OidcStart,
+    OidcStartRequest,
     PasswordChange,
     PasswordResetConfirm,
     PasswordResetRequest,
@@ -263,6 +271,123 @@ async def accept_invitation(
     accepted = await service.authenticate(db, token)
     assert accepted is not None  # just created
     return await service.me(db, accepted, csrf_token)
+
+
+# ── /auth: Google and Microsoft (E2-08) ───────────────────────
+def _frontend(path: str) -> str:
+    return settings.FRONTEND_URL.strip().rstrip("/") + path
+
+
+CALLBACK_RESPONSES: dict[int | str, dict[str, Any]] = {
+    302: {
+        "description": "To the frontend: `FRONTEND_URL` + `next`, signed in (new session and "
+        "CSRF cookies), or `FRONTEND_URL/login?error={OidcLoginError}&provider={provider}`."
+    },
+    **problem_responses(404, 422),
+}
+
+
+@auth_router.get(
+    "/providers",
+    operation_id="listAuthProviders",
+    response_model=AuthProviders,
+    dependencies=[Depends(public)],
+)
+async def list_auth_providers() -> AuthProviders:
+    """The sign-in providers this deployment offers, for "Continue with Google / Microsoft"
+    buttons. Only configured ones are listed; the others' endpoints answer 404."""
+    return AuthProviders(
+        providers=[
+            AuthProvider(id=provider, name=name) for provider, name in service.oidc_providers()
+        ]
+    )
+
+
+@auth_router.post(
+    "/oidc/{provider}/start",
+    operation_id="startOidcLogin",
+    response_model=OidcStart,
+    responses=problem_responses(404, 410, 422, 429, 502),
+    dependencies=[Depends(public)],
+)
+async def start_oidc_login(
+    provider: OidcProvider,
+    payload: OidcStartRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> OidcStart:
+    """Start signing in with Google or Microsoft (OpenID Connect, authorization code + PKCE).
+    Sets a short-lived, encrypted cookie for the flow (10 minutes); navigate the browser to
+    `authorization_url`. The provider sends it back to `completeOidcLogin`. With
+    `invitation_token`, signing in also accepts that invitation. 404 for a provider that is not
+    configured (see `listAuthProviders`); 410 when the invitation is no longer valid; 429 with
+    Retry-After when throttled; 502 when the provider cannot be reached."""
+    try:
+        started = await service.start_oidc_login(
+            db,
+            store,
+            provider,
+            next_path=payload.next,
+            invitation_token=payload.invitation_token,
+            client=client,
+        )
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+    auth_cookies.set_oidc_cookie(response, started.sealed_flow, service.OIDC_STATE_TTL)
+    return OidcStart(authorization_url=started.authorization_url)
+
+
+@auth_router.get(
+    "/oidc/{provider}/callback",
+    operation_id="completeOidcLogin",
+    status_code=status.HTTP_302_FOUND,
+    response_class=RedirectResponse,
+    responses=CALLBACK_RESPONSES,
+    dependencies=[Depends(public)],
+)
+async def complete_oidc_login(
+    provider: OidcProvider,
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    store: RateLimitStore = Depends(rate_limit_store),
+    client: service.ClientInfo = Depends(client_info),
+) -> RedirectResponse:
+    """Where Google or Microsoft send the browser back (not called by the frontend). Checks
+    `state` against the flow's cookie, exchanges `code`, validates the ID token, finds the
+    account (a linked identity, the invitation, or an existing account with the address the
+    provider verified), then redirects: signed in to `next`, or to the login page with an
+    `error` (`OidcLoginError`). Any session cookie the browser sent is revoked; the flow's
+    cookie is deleted either way. 404 for a provider that is not configured."""
+    try:
+        outcome = await service.complete_oidc_login(
+            db,
+            store,
+            provider,
+            sealed_flow=auth_cookies.oidc_cookie(request),
+            state=state,
+            code=code,
+            error=error,
+            carried_token=auth_cookies.session_cookie(request),
+            client=client,
+        )
+    except SERVICE_ERRORS as exc:
+        raise _service_error(exc) from None
+    if isinstance(outcome, service.OidcSignedIn):
+        redirect = RedirectResponse(_frontend(outcome.next), status.HTTP_302_FOUND)
+        _start(redirect, outcome.token)
+    else:
+        failure: OidcLoginError = outcome.error
+        redirect = RedirectResponse(
+            _frontend(f"/login?error={failure.value}&provider={provider.value}"),
+            status.HTTP_302_FOUND,
+        )
+    auth_cookies.clear_oidc_cookie(redirect)
+    return redirect
 
 
 # ── /me ───────────────────────────────────────────────────────

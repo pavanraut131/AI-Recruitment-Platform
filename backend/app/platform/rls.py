@@ -68,6 +68,10 @@ GLOBAL_TABLES: Final[Mapping[str, str]] = {
     # (invitation preview and accept, reset confirm); the team list filters by agency.
     "invitations": "looked up by token hash before a tenant is known; listings filter by agency",
     "password_reset_tokens": "a user's (global) reset links, looked up by token hash",
+    # identity (E2-08): the OIDC callback resolves a Google or Microsoft identity to a (global)
+    # user before any agency is known.
+    "oidc_accounts": "provider identities of (global) users, looked up by (provider, issuer, "
+    "subject) at sign-in, before any agency is known",
 }
 
 TABLE_PRIVILEGES: Final = ("SELECT", "INSERT", "UPDATE", "DELETE")

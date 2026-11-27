@@ -32,6 +32,7 @@ from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute, iter_route_contexts
+from pydantic import TypeAdapter
 
 from app.api import v2 as composed
 from app.modules.hiring import router_v2 as hiring
@@ -46,6 +47,7 @@ from app.modules.identity.dependencies import (
     permission_of,
     public,
 )
+from app.modules.identity.schemas import OidcLoginError
 from app.modules.ingestion import router_v2 as ingestion
 from app.modules.ingestion.schemas_v2 import ConnectedEvent, ResumeEvent
 from app.platform import csrf
@@ -75,8 +77,8 @@ TAGS: list[dict[str, Any]] = [
     {"name": "dashboard", "description": "Workspace counts and the Home screen."},
     {
         "name": "auth",
-        "description": "Sign-in, sign-out, the CSRF token, password reset and accepting an "
-        "invitation.",
+        "description": "Sign-in (password, Google or Microsoft), sign-out, the CSRF token, "
+        "password reset and accepting an invitation.",
     },
     {"name": "me", "description": "The signed-in user: profile, password, active agency."},
     {"name": "agency", "description": "The active agency."},
@@ -85,9 +87,11 @@ TAGS: list[dict[str, Any]] = [
 ]
 
 # Schemas the document lists although no operation's JSON body refers to them: the problem
-# details (referenced from every error response) and the SSE event payloads (sent inside
-# text/event-stream), so the generated client has their types.
+# details (referenced from every error response), the SSE event payloads (sent inside
+# text/event-stream) and the errors of the OIDC callback's redirect to the login page (E2-08),
+# so the generated client has their types.
 EXTRA_SCHEMAS = (ConnectedEvent, ResumeEvent)
+EXTRA_ENUMS = (OidcLoginError,)
 
 
 def _operation_id(route: APIRoute) -> str:
@@ -223,6 +227,8 @@ def _openapi_document(app: FastAPI) -> dict[str, Any]:
         for name, definition in schema.pop("$defs", {}).items():
             schemas.setdefault(name, definition)
         schemas[model.__name__] = schema
+    for enum in EXTRA_ENUMS:
+        schemas[enum.__name__] = TypeAdapter(enum).json_schema()
     _add_security(app, document)
     return document
 

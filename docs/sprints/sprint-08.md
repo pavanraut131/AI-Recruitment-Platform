@@ -64,6 +64,11 @@ Goal and acceptance criteria: [spec §12, E2-07](../specs/EPIC-02-identity-tenan
 
 [Spec §12, E2-08](../specs/EPIC-02-identity-tenancy.md#e2-08--sign-in-with-google-and-microsoft); design §4.3 (OIDC). Microsoft: work and school accounts only (§15 Q5).
 
+**Notes** (the full notes are in the spec, under E2-08):
+- Built and tested against fake Google and Microsoft providers only (no credentials here; spec §11.4 keeps OIDC out of E2E). Both providers are hidden until their credentials are set, so the dev and E2E stacks behave as before. A first sign-in with real accounts is in the backlog ("Try Google and Microsoft sign-in against real accounts").
+- For E2-09's login and accept-invite pages: `listAuthProviders` gives the buttons; `startOidcLogin {next, invitation_token?}` returns `authorization_url` (navigate the window there); the callback comes back to `FRONTEND_URL + next` signed in, or to `/login?error=<OidcLoginError>&provider=<google|microsoft>`. The error codes are a schema in the generated client (`components["schemas"]["OidcLoginError"]`), so the copy can be typed.
+- Two refinements of §4.3 and one of §4.6, explained in the spec notes: an invitation links an *existing* account only when the provider vouches for the invited address (`account_exists` otherwise); an address the provider does not vouch for is `email_not_verified`, not `no_account`; and an over-limit callback redirects with `error=rate_limited` instead of a 429 page.
+
 ---
 
 ### E2-09 · Frontend authentication

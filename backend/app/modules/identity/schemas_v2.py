@@ -1,5 +1,6 @@
 """identity resources of the ``/api/v2`` API (EPIC-02 spec §8.2): sign-in, the signed-in user
-(``Me``), the active agency, and (E2-07) invitations, password reset and the team's requests.
+(``Me``), the active agency, (E2-07) invitations, password reset and the team's requests, and
+(E2-08) signing in with Google or Microsoft.
 
 The team's responses (``Member``, ``Invitation``) name each member's clients, which are hiring's:
 they are composed in ``app.api.v2.schemas``.
@@ -15,7 +16,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.modules.identity.permissions import Permission
-from app.modules.identity.schemas import Role
+from app.modules.identity.schemas import OidcProvider, Role
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -195,4 +196,39 @@ class PasswordResetConfirm(BaseModel):
     new_password: str = Field(
         max_length=1024,
         description="12 to 128 characters, any characters, not your email address.",
+    )
+
+
+# ── Sign in with Google and Microsoft (E2-08) ────────────────
+class AuthProvider(BaseModel):
+    """A sign-in provider this deployment offers."""
+
+    id: OidcProvider
+    name: str = Field(description='For the button: "Continue with {name}".')
+
+
+class AuthProviders(BaseModel):
+    providers: list[AuthProvider] = Field(
+        description="The configured providers (Google first); empty when none is configured."
+    )
+
+
+class OidcStartRequest(BaseModel):
+    next: str = Field(
+        default="/",
+        max_length=2048,
+        description='Where to land after signing in: a frontend path starting with a single "/" '
+        '(anything else becomes "/").',
+    )
+    invitation_token: Token | None = Field(
+        default=None,
+        description="To accept an invitation: the token from its link (#token=...). The identity "
+        "is then linked to the invited account (created if new) and the invitation accepted.",
+    )
+
+
+class OidcStart(BaseModel):
+    authorization_url: str = Field(
+        description="Navigate the browser (top level) here. The provider sends it back to "
+        "completeOidcLogin, which redirects to the frontend."
     )

@@ -369,6 +369,42 @@
         "title": "ApplicationUpdate",
         "type": "object"
       },
+      "AuthProvider": {
+        "description": "A sign-in provider this deployment offers.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OidcProvider"
+          },
+          "name": {
+            "description": "For the button: \"Continue with {name}\".",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AuthProvider",
+        "type": "object"
+      },
+      "AuthProviders": {
+        "properties": {
+          "providers": {
+            "description": "The configured providers (Google first); empty when none is configured.",
+            "items": {
+              "$ref": "#/components/schemas/AuthProvider"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "AuthProviders",
+        "type": "object"
+      },
       "Body_uploadResumes": {
         "properties": {
           "files": {
@@ -1898,6 +1934,74 @@
           "role"
         ],
         "title": "Membership",
+        "type": "object"
+      },
+      "OidcLoginError": {
+        "description": "Why a Google or Microsoft sign-in signed nobody in: the `error` of the callback's redirect\nto `{FRONTEND_URL}/login?error=\u2026&provider=\u2026` (E2-08). The login page words each one; none\nsays more than the person who signed in at the provider may know.",
+        "enum": [
+          "no_account",
+          "no_access",
+          "email_not_verified",
+          "invitation_invalid",
+          "invitation_mismatch",
+          "account_exists",
+          "already_member",
+          "cancelled",
+          "expired",
+          "oidc_failed",
+          "rate_limited"
+        ],
+        "title": "OidcLoginError",
+        "type": "string"
+      },
+      "OidcProvider": {
+        "description": "A sign-in provider (OpenID Connect, spec \u00a74.3; E2-08). Offered only when configured.",
+        "enum": [
+          "google",
+          "microsoft"
+        ],
+        "title": "OidcProvider",
+        "type": "string"
+      },
+      "OidcStart": {
+        "properties": {
+          "authorization_url": {
+            "description": "Navigate the browser (top level) here. The provider sends it back to completeOidcLogin, which redirects to the frontend.",
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "OidcStart",
+        "type": "object"
+      },
+      "OidcStartRequest": {
+        "properties": {
+          "invitation_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "To accept an invitation: the token from its link (#token=...). The identity is then linked to the invited account (created if new) and the invitation accepted.",
+            "title": "Invitation Token"
+          },
+          "next": {
+            "default": "/",
+            "description": "Where to land after signing in: a frontend path starting with a single \"/\" (anything else becomes \"/\").",
+            "maxLength": 2048,
+            "title": "Next",
+            "type": "string"
+          }
+        },
+        "title": "OidcStartRequest",
         "type": "object"
       },
       "ParsedJobDescription": {
@@ -3835,6 +3939,206 @@
         ]
       }
     },
+    "/auth/oidc/{provider}/callback": {
+      "get": {
+        "description": "Where Google or Microsoft send the browser back (not called by the frontend). Checks\n`state` against the flow's cookie, exchanges `code`, validates the ID token, finds the\naccount (a linked identity, the invitation, or an existing account with the address the\nprovider verified), then redirects: signed in to `next`, or to the login page with an\n`error` (`OidcLoginError`). Any session cookie the browser sent is revoked; the flow's\ncookie is deleted either way. 404 for a provider that is not configured.",
+        "operationId": "completeOidcLogin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OidcProvider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "To the frontend: `FRONTEND_URL` + `next`, signed in (new session and CSRF cookies), or `FRONTEND_URL/login?error={OidcLoginError}&provider={provider}`."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Complete Oidc Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/oidc/{provider}/start": {
+      "post": {
+        "description": "Start signing in with Google or Microsoft (OpenID Connect, authorization code + PKCE).\nSets a short-lived, encrypted cookie for the flow (10 minutes); navigate the browser to\n`authorization_url`. The provider sends it back to `completeOidcLogin`. With\n`invitation_token`, signing in also accepts that invitation. 404 for a provider that is not\nconfigured (see `listAuthProviders`); 410 when the invitation is no longer valid; 429 with\nRetry-After when throttled; 502 when the provider cannot be reached.",
+        "operationId": "startOidcLogin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OidcProvider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "summary": "Start Oidc Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/password-reset": {
       "post": {
         "description": "Email a link to choose a new password, if an account exists for this address. The\nanswer is the same either way (202), and so is its timing: the email is sent in the\nbackground. The link (`/reset-password#token=...`) works once, for 30 minutes. 429 with\nRetry-After after 3 requests per address or 10 per IP in an hour.",
@@ -3967,6 +4271,28 @@
           }
         ],
         "summary": "Confirm Password Reset",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/providers": {
+      "get": {
+        "description": "The sign-in providers this deployment offers, for \"Continue with Google / Microsoft\"\nbuttons. Only configured ones are listed; the others' endpoints answer 404.",
+        "operationId": "listAuthProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProviders"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Auth Providers",
         "tags": [
           "auth"
         ]
@@ -7355,7 +7681,7 @@
       "name": "dashboard"
     },
     {
-      "description": "Sign-in, sign-out, the CSRF token, password reset and accepting an invitation.",
+      "description": "Sign-in (password, Google or Microsoft), sign-out, the CSRF token, password reset and accepting an invitation.",
       "name": "auth"
     },
     {

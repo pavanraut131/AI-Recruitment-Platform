@@ -6,8 +6,9 @@ The caller is **signed in for real** (E2-05: ``tests/identity/conftest.py``'s ``
 every request gets a fresh session that ``tenant_db`` binds to the principal's agency. Agency B
 has a campaign, an application, a Person and a resume, through a session bound to it.
 
-1. Every ``GET`` (lists, the detail URLs with A's ids, ``/me``, ``/agency``, the team): no id of
-   B anywhere in any body (B has a member and an invitation too, E2-07).
+1. Every ``GET`` (lists, the detail URLs with A's ids, ``/me``, ``/agency``, the team, the
+   sign-in providers): no id of B anywhere in any body (B has a member and an invitation too,
+   E2-07). The OIDC callback, a redirect, is left to step 2 (E2-08).
 2. Every operation with an id in its path, called with **B's** ids: ``404``, and B's rows are
    unchanged afterwards. Operations with a request body take it from :data:`BODIES`; one with a
    body that has no entry fails the test, so it is added here when it is added to the API.
@@ -76,9 +77,16 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("POST", "/auth/invitations/preview"): {"json": {"token": "t" * 43}},
     ("POST", "/auth/invitations/accept"): {"json": {"token": "t" * 43}},
+    # E2-08: signing in with Google or Microsoft (no agency in the request either).
+    ("POST", "/auth/oidc/{provider}/start"): {"json": {"next": "/"}},
 }
 # Opened as a stream: the 404 for B's id is checked; A's own stream would not end.
 STREAMS = {"/campaigns/{campaign_id}/events"}
+# A redirect without a body (the OIDC callback, E2-08): only in the 404 sweep.
+REDIRECTS = {"/auth/oidc/{provider}/callback"}
+# Path parameters that name no agency's object: the sign-in provider (E2-08). The sweep runs
+# with none configured, so its operations are a 404 like any unknown object.
+NOT_AN_AGENCYS = {"provider": "google"}
 
 
 def _operations() -> list[tuple[str, str, dict[str, Any]]]:
@@ -228,7 +236,7 @@ async def test_no_response_shows_another_agencys_ids(
 
     called = 0
     for method, path, _ in _operations():
-        if method != "GET" or path in STREAMS:
+        if method != "GET" or path in STREAMS or path in REDIRECTS:
             continue
         resp = await client.get(V2 + _fill(path, ids))
         assert resp.status_code == 200, (path, resp.text)
@@ -251,6 +259,7 @@ async def test_every_operation_with_another_agencys_ids_is_not_found(
         "client_id": str(other_agency.client_id),
         "membership_id": str(team.membership_id),
         "invitation_id": str(team.invitation_id),
+        **NOT_AN_AGENCYS,
     }
     before = await _b_counts(other_agency)
     team_before = await _b_team_state(db_session, team)
@@ -314,4 +323,5 @@ def test_the_sweep_knows_every_path_parameter() -> None:
         "client_id",  # E2-06
         "membership_id",  # E2-07
         "invitation_id",  # E2-07
+        "provider",  # E2-08
     }

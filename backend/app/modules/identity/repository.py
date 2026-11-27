@@ -36,6 +36,7 @@ from app.modules.identity.models import (
     Membership,
     MembershipClient,
     MembershipStatus,
+    OidcAccount,
     PasswordResetToken,
     User,
     UserSession,
@@ -357,6 +358,21 @@ async def use_reset_tokens(db: AsyncSession, user_id: uuid.UUID, now: datetime) 
         .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None))
         .values(used_at=now)
     )
+
+
+# ── OIDC accounts (E2-08) ─────────────────────────────────────
+async def get_oidc_account(
+    db: AsyncSession, provider: str, issuer: str, subject: str
+) -> OidcAccount | None:
+    """The identity linked under ``(provider, issuer, subject)``, if any (its unique key)."""
+    result = await db.execute(
+        select(OidcAccount).where(
+            OidcAccount.provider == provider,
+            OidcAccount.issuer == issuer,
+            OidcAccount.subject == subject,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 # ── Purge (sync: the identity.purge_expired task, E2-07) ──────

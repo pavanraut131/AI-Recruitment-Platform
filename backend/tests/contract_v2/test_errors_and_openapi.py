@@ -110,7 +110,8 @@ def test_every_operation_follows_the_client_conventions() -> None:
     operations = _operations(document)
     ids = [op["operationId"] for _, _, op in operations]
     # 21 + 9 identity (E2-05) + 4 clients (E2-06) + 4 auth and 8 team operations (E2-07)
-    assert len(ids) == len(set(ids)) == 46
+    # + 3 for Google and Microsoft sign-in (E2-08)
+    assert len(ids) == len(set(ids)) == 49
     for method, path, op in operations:
         assert CAMEL_CASE.match(op["operationId"]), (method, path)
         assert len(op["tags"]) == 1, (method, path)
@@ -130,6 +131,8 @@ def test_every_operation_follows_the_client_conventions() -> None:
         "CampaignStatus",
         "ClientStatus",
         "Permission",
+        "OidcProvider",
+        "OidcLoginError",
     ):
         assert schemas[enum_name]["enum"], enum_name
     assert schemas["Problem"]["required"] == ["title", "status"]

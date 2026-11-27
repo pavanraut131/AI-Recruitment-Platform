@@ -1,0 +1,278 @@
+# serializer version: 1
+# name: test_callback
+  dict({
+    'cancelled': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=cancelled&provider=google',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'email_not_verified': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=email_not_verified&provider=microsoft',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'invalid_id_token': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=oidc_failed&provider=google',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'linked_email': dict({
+      'subject': 'Google sign-in was added to your HireFlow AI account',
+      'text': '''
+        Hi ada, you can now sign in to HireFlow AI with the Google account ada@example.com.
+        
+        If this wasn't you, tell your agency's owner or admin right away, and reset your password: http://localhost:3000/forgot-password
+        
+        HireFlow AI
+  
+      ''',
+    }),
+    'no_account': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=no_account&provider=google',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'no_flow_cookie': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=expired&provider=google',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'not_configured': dict({
+      'body': dict({
+        'detail': 'Not Found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'location': None,
+      }),
+      'status_code': 404,
+    }),
+    'rate_limited': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/login?error=rate_limited&provider=microsoft',
+      }),
+      'set-cookie': list([
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+    'signed_in': dict({
+      'body': '',
+      'headers': dict({
+        'content-type': None,
+        'location': 'http://localhost:3000/campaigns',
+      }),
+      'set-cookie': list([
+        'hf_csrf=<value>; Path=/; SameSite=strict',
+        'hf_oidc=""; expires=<date>; HttpOnly; Max-Age=0; Path=/; SameSite=lax',
+        'hf_session=<value>; HttpOnly; Max-Age=604800; Path=/; SameSite=lax',
+      ]),
+      'status_code': 302,
+    }),
+  })
+# ---
+# name: test_providers
+  dict({
+    'both_configured': dict({
+      'body': dict({
+        'providers': list([
+          dict({
+            'id': 'google',
+            'name': 'Google',
+          }),
+          dict({
+            'id': 'microsoft',
+            'name': 'Microsoft',
+          }),
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    'none_configured': dict({
+      'body': dict({
+        'providers': list([
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  })
+# ---
+# name: test_start
+  dict({
+    'google': dict({
+      'body': dict({
+        'authorization_url': 'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=hireflow-test.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fapi%2Fv2%2Fauth%2Foidc%2Fgoogle%2Fcallback&scope=openid+email+profile&state=<random>&nonce=<random>&prompt=select_account&code_challenge=<random>&code_challenge_method=S256',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_oidc=<value>; HttpOnly; Max-Age=600; Path=/; SameSite=lax',
+      ]),
+      'status_code': 200,
+    }),
+    'invalid_body': dict({
+      'body': dict({
+        'detail': '2 invalid fields',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'next',
+            ]),
+            'msg': 'String should have at most 2048 characters',
+          }),
+          dict({
+            'loc': list([
+              'body',
+              'invitation_token',
+            ]),
+            'msg': 'String should have at least 1 character',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'invitation_gone': dict({
+      'body': dict({
+        'detail': 'This invitation has expired or is no longer valid. Ask for a new invitation.',
+        'status': 410,
+        'title': 'Gone',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 410,
+    }),
+    'microsoft': dict({
+      'body': dict({
+        'authorization_url': 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?response_type=code&client_id=<uuid:1>&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fapi%2Fv2%2Fauth%2Foidc%2Fmicrosoft%2Fcallback&scope=openid+email+profile&state=<random>&nonce=<random>&prompt=select_account&code_challenge=<random>&code_challenge_method=S256',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'set-cookie': list([
+        'hf_oidc=<value>; HttpOnly; Max-Age=600; Path=/; SameSite=lax',
+      ]),
+      'status_code': 200,
+    }),
+    'not_configured': dict({
+      'body': dict({
+        'detail': 'Not Found',
+        'status': 404,
+        'title': 'Not Found',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 404,
+    }),
+    'provider_down': dict({
+      'body': dict({
+        'detail': 'Microsoft sign-in is unavailable right now. Try again in a few minutes.',
+        'status': 502,
+        'title': 'Bad Gateway',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 502,
+    }),
+    'rate_limited': dict({
+      'body': dict({
+        'detail': 'Too many attempts. Try again later.',
+        'status': 429,
+        'title': 'Too Many Requests',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+        'retry-after': '<seconds>',
+      }),
+      'status_code': 429,
+    }),
+    'unknown_provider': dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'path',
+              'provider',
+            ]),
+            'msg': "Input should be 'google' or 'microsoft'",
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    'without_csrf': dict({
+      'body': dict({
+        'detail': 'CSRF token missing or invalid',
+        'status': 403,
+        'title': 'Forbidden',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 403,
+    }),
+  })
+# ---

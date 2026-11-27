@@ -1,6 +1,6 @@
 """The session and CSRF cookies of ``/api/v2`` (EPIC-02 spec §4.1, §4.5; ADR 0010).
 
-Two cookies, both host-only (no ``Domain``) on ``Path=/``:
+Three cookies, all host-only (no ``Domain``) on ``Path=/``:
 
 ========================  ===========  ========  ========  =========================================
 name (Secure / not)       HttpOnly     Secure    SameSite  holds
@@ -9,6 +9,10 @@ name (Secure / not)       HttpOnly     Secure    SameSite  holds
 / ``hf_session``                                           server stores only its SHA-256
 ``__Host-hf_csrf``        no           yes       Strict    the signed CSRF token (``app.platform
 / ``hf_csrf``                                              .csrf``); the frontend reads it
+``__Host-hf_oidc``        yes          yes       Lax       a Google / Microsoft sign-in in progress
+/ ``hf_oidc``                                              (E2-08): ``state``, ``nonce`` and the
+                                                           PKCE verifier, encrypted by identity;
+                                                           10 minutes, deleted by the callback
 ========================  ===========  ========  ========  =========================================
 
 ``Secure`` follows :attr:`Settings.session_cookie_secure` (on everywhere but development and test
@@ -17,8 +21,11 @@ names get the ``__Host-`` prefix, which makes the browser refuse a cookie that i
 host-only and on ``/``; without it (plain ``http://localhost``) the names drop the prefix, since
 a browser refuses a ``__Host-`` cookie that is not Secure.
 
+The OIDC cookie is ``Lax`` (not ``Strict``) because the provider sends the browser back with a
+top-level cross-site GET, which carries ``Lax`` cookies only.
+
 This module only names, sets, reads and clears the cookies; ``identity`` creates and checks
-sessions, ``app.platform.csrf`` signs and checks the tokens.
+sessions (and seals the OIDC state), ``app.platform.csrf`` signs and checks the tokens.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from app.platform.config import settings
 
 SESSION_COOKIE_BASE: Final = "hf_session"
 CSRF_COOKIE_BASE: Final = "hf_csrf"
+OIDC_COOKIE_BASE: Final = "hf_oidc"
 HOST_PREFIX: Final = "__Host-"
 
 
@@ -50,6 +58,11 @@ def csrf_cookie_name() -> str:
     return _name(CSRF_COOKIE_BASE)
 
 
+def oidc_cookie_name() -> str:
+    """``__Host-hf_oidc`` when cookies are Secure, else ``hf_oidc``."""
+    return _name(OIDC_COOKIE_BASE)
+
+
 def session_cookie(connection: HTTPConnection) -> str | None:
     """The session cookie's value, or ``None`` (absent or empty)."""
     return connection.cookies.get(session_cookie_name()) or None
@@ -58,6 +71,11 @@ def session_cookie(connection: HTTPConnection) -> str | None:
 def csrf_cookie(connection: HTTPConnection) -> str | None:
     """The CSRF cookie's value, or ``None`` (absent or empty)."""
     return connection.cookies.get(csrf_cookie_name()) or None
+
+
+def oidc_cookie(connection: HTTPConnection) -> str | None:
+    """The OIDC state cookie's value, or ``None`` (absent or empty)."""
+    return connection.cookies.get(oidc_cookie_name()) or None
 
 
 def set_session_cookie(response: Response, token: str, max_age: timedelta) -> None:
@@ -88,6 +106,19 @@ def set_csrf_cookie(response: Response, token: str) -> None:
     )
 
 
+def set_oidc_cookie(response: Response, value: str, max_age: timedelta) -> None:
+    """Send a sign-in in progress (an encrypted value): HttpOnly, SameSite=Lax, ``max_age``."""
+    response.set_cookie(
+        oidc_cookie_name(),
+        value,
+        max_age=max(0, int(max_age.total_seconds())),
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+
+
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         session_cookie_name(),
@@ -105,6 +136,16 @@ def clear_csrf_cookie(response: Response) -> None:
         secure=settings.session_cookie_secure,
         httponly=False,
         samesite="strict",
+    )
+
+
+def clear_oidc_cookie(response: Response) -> None:
+    response.delete_cookie(
+        oidc_cookie_name(),
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite="lax",
     )
 
 

@@ -31,6 +31,8 @@ TABLE_OWNERS = {
     # E2-07: invitations -> agencies / users, password_reset_tokens -> users.
     "invitations": "identity",
     "password_reset_tokens": "identity",
+    # E2-08: oidc_accounts -> users.
+    "oidc_accounts": "identity",
     "clients": "hiring",
     "campaigns": "hiring",
     "applications": "hiring",
@@ -98,4 +100,6 @@ async def test_the_same_module_foreign_keys_are_the_expected_ones(db_session: As
         ("invitations", "agencies"),
         ("invitations", "users"),  # invited_by_user_id and accepted_by_user_id
         ("password_reset_tokens", "users"),
+        # identity (E2-08)
+        ("oidc_accounts", "users"),
     }

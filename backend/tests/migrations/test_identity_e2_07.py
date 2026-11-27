@@ -31,6 +31,7 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
 BEFORE = "e2c04a7f3b18"
 REVISION = "e2d07c3f9b12"
 TABLES = {"invitations", "password_reset_tokens"}
+LATER_TABLES = {"oidc_accounts"}  # E2-08, a later revision
 
 INSERT_INVITATION = text(
     "INSERT INTO invitations (id, agency_id, email, role, all_clients, client_ids, token_hash, "
@@ -170,7 +171,7 @@ def test_upgrade_downgrade_upgrade_and_grants(scratch_db: str) -> None:  # noqa:
             assert rls.catalogue_problems(conn) == []
         command.upgrade(cfg, "head")
         with engine.begin() as conn:
-            assert _tables(conn) == before
+            assert _tables(conn) - LATER_TABLES == before
             assert conn.execute(text("SELECT count(*) FROM invitations")).scalar_one() == 0
             _fill(conn)
             assert rls.catalogue_problems(conn) == []
