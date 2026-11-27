@@ -2,12 +2,23 @@ import type { Schema } from "@/lib/api/client"
 
 export type Role = Schema<"Role">
 
+/** Every role, most powerful first (the API's `Role` enum). */
+export const ROLES = ["owner", "admin", "recruiter", "viewer"] as const satisfies readonly Role[]
+
 /** A role as a label (the user menu, the agency picker). */
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   admin: "Admin",
   recruiter: "Recruiter",
   viewer: "Viewer",
+}
+
+/** What each role may do, in a line (the invite dialog, Settings → Team; spec §5.1). */
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  owner: "Everything, including the agency's name and its other owners and admins.",
+  admin: "Runs the workspace: the team, clients and every campaign.",
+  recruiter: "Runs campaigns: uploads resumes, reviews and exports candidates.",
+  viewer: "Can look at campaigns and candidates, but not change anything.",
 }
 
 /** A role in a sentence ("as a recruiter"), as the invitation email words it. */

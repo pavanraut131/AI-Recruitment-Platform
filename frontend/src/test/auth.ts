@@ -1,6 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query"
 import { vi } from "vitest"
 
 import type { Schema } from "@/lib/api/client"
+import { queryKeys } from "@/lib/api/query-keys"
 
 /*
  * Test helpers for the sign-in pages, the auth gate and the user menu: a
@@ -23,6 +25,68 @@ export function meFixture(overrides: Partial<Schema<"Me">> = {}): Schema<"Me"> {
     csrf_token: "csrf-from-me",
     ...overrides,
   }
+}
+
+type Role = Schema<"Role">
+type Permission = Schema<"Permission">
+
+/**
+ * Each role's row of the permission matrix (EPIC-02 §5.2), as `Me.permissions`
+ * lists it: what permission-aware screens are tested with.
+ */
+export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
+  owner: [
+    "workspace:read",
+    "campaign:write",
+    "campaign:delete",
+    "resume:upload",
+    "application:review",
+    "application:delete",
+    "application:export",
+    "client:read",
+    "client:manage",
+    "team:read",
+    "team:manage",
+    "team:manage_privileged",
+    "agency:manage",
+  ],
+  admin: [
+    "workspace:read",
+    "campaign:write",
+    "campaign:delete",
+    "resume:upload",
+    "application:review",
+    "application:delete",
+    "application:export",
+    "client:read",
+    "client:manage",
+    "team:read",
+    "team:manage",
+  ],
+  recruiter: [
+    "workspace:read",
+    "campaign:write",
+    "resume:upload",
+    "application:review",
+    "application:delete",
+    "application:export",
+    "client:read",
+  ],
+  viewer: ["workspace:read", "client:read"],
+}
+
+/** A signed-in `Me` with `role` and its permissions in {@link AGENCY}. */
+export function meAs(role: Role, overrides: Partial<Schema<"Me">> = {}): Schema<"Me"> {
+  return meFixture({ role, permissions: ROLE_PERMISSIONS[role], memberships: [{ agency: AGENCY, role }], ...overrides })
+}
+
+/**
+ * Caches `me` as the auth gate would have loaded it, so screens inside the
+ * shell (`useSignedInUser`, `usePermissions`) see a signed-in user. Feature
+ * tests render as an owner unless they pass another `Me`.
+ */
+export function signInForTest(queryClient: QueryClient, me: Schema<"Me"> | null = meAs("owner")): void {
+  if (me) queryClient.setQueryData(queryKeys.me.all, me)
 }
 
 export function invitationFixture(overrides: Partial<Schema<"InvitationPreview">> = {}): Schema<"InvitationPreview"> {

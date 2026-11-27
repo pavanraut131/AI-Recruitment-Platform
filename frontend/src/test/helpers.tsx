@@ -4,7 +4,10 @@ import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactElement } from "react"
 import { vi } from "vitest"
 
+import type { Schema } from "@/lib/api/client"
 import { makeQueryClient } from "@/lib/query/query-client"
+
+import { signInForTest } from "./auth"
 
 /**
  * Test helpers shared by the features' tests (Vitest + Testing Library):
@@ -59,8 +62,16 @@ export function renderWithProviders(
     searchParams = "",
     onUrlUpdate,
     queryClient = makeQueryClient(),
-  }: { searchParams?: string; onUrlUpdate?: (event: UrlUpdateEvent) => void; queryClient?: QueryClient } = {},
+    me,
+  }: {
+    searchParams?: string
+    onUrlUpdate?: (event: UrlUpdateEvent) => void
+    queryClient?: QueryClient
+    /** The signed-in user (default: an owner, every permission; `null`: none cached). */
+    me?: Schema<"Me"> | null
+  } = {},
 ) {
+  signInForTest(queryClient, me)
   const result = render(
     <QueryClientProvider client={queryClient}>
       <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={onUrlUpdate} hasMemory>

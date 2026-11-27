@@ -18,6 +18,10 @@ export type CampaignListParams = QueryParams<"listCampaigns">
 export type ApplicationListParams = QueryParams<"listCampaignApplications">
 export type ResumeListParams = QueryParams<"listCampaignResumes">
 export type PeopleListParams = QueryParams<"listPeople">
+export type HomeParams = QueryParams<"getHome">
+export type StatsParams = QueryParams<"getStats">
+export type ClientListParams = QueryParams<"listClients">
+export type TeamPageParams = QueryParams<"listMembers">
 
 // Each factory spreads its own root constant (not `campaigns.all`), so the
 // object's type does not depend on itself.
@@ -63,14 +67,43 @@ const people = {
   detail: (personId: string) => [...PEOPLE, "detail", personId] as const,
 }
 
-/** `GET /home`: the Home screen's aggregate. */
+/** `GET /home`: the Home screen's aggregate, for all clients or the chosen one (`client_id`, E2-10). */
+const HOME = ["home"] as const
 const home = {
-  all: ["home"] as const,
+  all: HOME,
+  detail: (params: HomeParams = {}) => [...HOME, params] as const,
 }
 
-/** `GET /stats`: workspace-wide counts. */
+/** `GET /stats`: workspace-wide counts, for all clients or the chosen one (`client_id`, E2-10). */
+const STATS = ["stats"] as const
 const stats = {
-  all: ["stats"] as const,
+  all: STATS,
+  detail: (params: StatsParams = {}) => [...STATS, params] as const,
+}
+
+/**
+ * `GET /clients` (E2-06): the agency's clients the user may see. The pickers
+ * (the shell's switcher, the campaign forms) read one list of every client;
+ * Settings → Clients pages through its own filtered lists.
+ */
+const CLIENTS = ["clients"] as const
+const clients = {
+  all: CLIENTS,
+  lists: () => [...CLIENTS, "list"] as const,
+  list: (params: ClientListParams = {}) => [...CLIENTS, "list", params] as const,
+}
+
+/** `GET /team/members` and `GET /team/invitations` (E2-07): Settings → Team. */
+const TEAM = ["team"] as const
+const team = {
+  all: TEAM,
+  members: (params: TeamPageParams = {}) => [...TEAM, "members", params] as const,
+  invitations: (params: TeamPageParams = {}) => [...TEAM, "invitations", params] as const,
+}
+
+/** `GET /agency`: the active agency's name and slug (Settings → Agency). */
+const agency = {
+  all: ["agency"] as const,
 }
 
 /**
@@ -87,4 +120,16 @@ const authProviders = {
   all: ["auth-providers"] as const,
 }
 
-export const queryKeys = { campaigns, applications, resumes, people, home, stats, me, authProviders } as const
+export const queryKeys = {
+  campaigns,
+  applications,
+  resumes,
+  people,
+  home,
+  stats,
+  clients,
+  team,
+  agency,
+  me,
+  authProviders,
+} as const
