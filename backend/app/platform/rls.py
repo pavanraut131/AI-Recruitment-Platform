@@ -54,8 +54,6 @@ GLOBAL_TABLES: Final[Mapping[str, str]] = {
     # table -> why it is not under agency row-level security (spec §6.4). A new table either
     # gets enable_tenant_rls in its migration or joins this list with a reason, in review.
     "agencies": "the tenants themselves: read before or across tenants (login, the switcher)",
-    "legacy_candidate_map": "id pairs read only by /api/v1 (removed in E2-12); the "
-    "applications they lead to are under RLS",
     "alembic_version": "migration bookkeeping; the application role has no grant on it",
     # identity (E2-05): read before a tenant is known (login, session lookup, memberships), or
     # written without one (failed logins). Private to identity; listings filter by agency.

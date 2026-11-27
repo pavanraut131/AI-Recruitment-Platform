@@ -4,7 +4,7 @@ Two kinds of test:
 
 - **Schema and constraints** on the session database (already at ``head``, see
   ``tests/postgres.py``, so after the E0-20 contract: no ``candidates``, no
-  ``backfill_checkpoints``): the new tables, columns, indexes and constraints exist as in spec §4, and
+  ``backfill_checkpoints``; and after E2-12: no ``legacy_candidate_map``): the new tables, columns, indexes and constraints exist as in spec §4, and
   the unique / cascade rules hold. Each test runs in the usual rolled-back transaction.
 - **Upgrade → downgrade → upgrade** on a *separate, throwaway* database in the same container, so
   the session database is never downgraded: legacy rows written at the previous head survive the
@@ -44,8 +44,9 @@ NEW_TABLES = {
     "backfill_checkpoints",
 }
 NEW_RESUME_COLUMNS = {"person_id", "extracted", "processing_step"}
-# At head: the contract migration (E0-20) dropped backfill_checkpoints (and candidates).
-HEAD_TABLES = NEW_TABLES - {"backfill_checkpoints"}
+# At head: the contract migration (E0-20) dropped backfill_checkpoints (and candidates), and
+# E2-12's (e2f12a6c9d40) legacy_candidate_map with /api/v1.
+HEAD_TABLES = NEW_TABLES - {"backfill_checkpoints", "legacy_candidate_map"}
 # The legacy candidates columns that applications mirrored (type, nullable), as created by the
 # initial migrations; candidates itself no longer exists at head.
 LEGACY_CANDIDATE_TYPES = {
@@ -72,6 +73,7 @@ async def test_new_tables_exist(db_session: AsyncSession) -> None:
     tables = set(await _inspect(db_session, lambda i: i.get_table_names()))
     assert tables >= HEAD_TABLES
     assert not {"candidates", "backfill_checkpoints"} & tables  # contracted in E0-20
+    assert "legacy_candidate_map" not in tables  # dropped with /api/v1 in E2-12
 
 
 async def test_columns_match_spec(db_session: AsyncSession) -> None:
@@ -90,7 +92,6 @@ async def test_columns_match_spec(db_session: AsyncSession) -> None:
     assert cols["person_identifiers"]["source_resume_id"] == ("UUID", True)
     assert cols["people"]["latest_resume_id"] == ("UUID", True)
     assert cols["identity_conflicts"]["resolved_at"] == ("TIMESTAMP", True)
-    assert cols["legacy_candidate_map"].keys() == {"candidate_id", "application_id"}
 
     # Scoring, insight and recruiter columns mirror the legacy candidates columns exactly (type
     # and nullability).
@@ -120,7 +121,6 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
                     "applications",
                     "resumes",
                     "identity_conflicts",
-                    "legacy_candidate_map",
                 )
             },
             "fks": {
@@ -149,7 +149,6 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
     assert ("person_id",) in d["indexes"]["resumes"]
     assert ("chosen_person_id",) in d["indexes"]["identity_conflicts"]
     assert ("conflicting_person_id",) in d["indexes"]["identity_conflicts"]
-    assert ("application_id",) in d["indexes"]["legacy_candidate_map"]
 
     # Foreign keys only within a module (ADR 0003); since the E2-02 contract they carry the
     # agency (composite keys, tests/migrations/test_tenancy_e2_02.py).
@@ -160,7 +159,6 @@ async def test_constraints_and_indexes(db_session: AsyncSession) -> None:
         (("agency_id", "conflicting_person_id"), "people", "CASCADE"),
     }
     assert fks["applications"] == {(("agency_id", "campaign_id"), "campaigns", "CASCADE")}
-    assert fks["legacy_candidate_map"] == {(("application_id",), "applications", "CASCADE")}
     assert fks["people"] == set()
     # resumes has none: the new person_id never had one, and the contract migration (E0-20)
     # dropped the legacy campaign FK (tests/test_no_cross_module_foreign_keys.py).

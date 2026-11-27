@@ -41,8 +41,8 @@ Safety
     * Refuses to run when ``APP_ENV=production`` (``SeedRefused``).
     * Refuses when any application exists, unless ``--reset`` is given. ``--reset`` deletes the
       rows of ``applications``, ``resumes`` and ``campaigns`` and of the tables derived from
-      them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
-      ``legacy_candidate_map``; nothing else: ``agencies`` and ``clients`` stay) and prints how
+      them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``;
+      nothing else: ``agencies`` and ``clients`` stay) and prints how
       many it deleted. ``--if-empty``
       instead exits successfully without changes (used by ``make setup``).
     * Commits every :data:`BATCH_SIZE` resumes (the CLI; ``--reset`` with the first batch):
@@ -167,7 +167,7 @@ from sqlalchemy.orm import Session
 from app.devtools import seed_users
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import service as hiring_service
-from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
 from app.modules.ingestion.tasks import person_profile
 from app.modules.talent import service as talent_service
@@ -261,7 +261,6 @@ RECOMMENDATIONS = {
 # (children first): what the pipeline derives from resumes. Their rows are meaningless without
 # the resumes they came from.
 DERIVED_MODELS: tuple[type[Any], ...] = (
-    LegacyCandidateMap,
     PersonResume,
     IdentityConflict,
     PersonIdentifier,
@@ -694,7 +693,7 @@ def existing_counts(session: Session) -> dict[str, int]:
 
 def reset(session: Session) -> dict[str, Any]:
     """Delete every application, resume and campaign row, and everything the pipeline derives
-    from resumes (People, identifiers, conflicts, resolutions, the legacy id map), so a
+    from resumes (People, identifiers, conflicts, resolutions), so a
     rehearsal starts from nothing. Returns the counts of the three seeded tables and, under
     ``derived``, the rows deleted from the others. Stored PDFs are not touched (the seed
     stores none)."""

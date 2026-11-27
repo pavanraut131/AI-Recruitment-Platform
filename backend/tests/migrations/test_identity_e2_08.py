@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform import rls
+from tests.migrations.tenancy import DROPPED_BY_E2_12, catalogue_problems_before_e2_12
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -93,14 +94,14 @@ def test_upgrade_downgrade_upgrade_and_grants(scratch_db: str) -> None:  # noqa:
             _fill(conn)
             # From E2-04's default privileges, no GRANT of its own.
             assert _app_privileges(conn, TABLE) == {"SELECT", "INSERT", "UPDATE", "DELETE"}
-            assert rls.catalogue_problems(conn) == []
+            assert catalogue_problems_before_e2_12(conn) == []
         command.downgrade(cfg, BEFORE)
         with engine.connect() as conn:
             assert _tables(conn) == before - {TABLE}
-            assert rls.catalogue_problems(conn) == []
+            assert catalogue_problems_before_e2_12(conn) == []
         command.upgrade(cfg, "head")
         with engine.begin() as conn:
-            assert _tables(conn) == before
+            assert _tables(conn) == before - DROPPED_BY_E2_12
             assert conn.execute(text("SELECT count(*) FROM oidc_accounts")).scalar_one() == 0
             _fill(conn)
             assert rls.catalogue_problems(conn) == []
