@@ -89,12 +89,6 @@ def _applications_in(db: AnySession, scope: AccessScope) -> ColumnElement[bool]:
     return and_(clause, Application.campaign_id.in_(visible))
 
 
-def campaign_scope(db: AnySession, scope: AccessScope) -> ColumnElement[bool]:
-    """The condition on ``campaigns`` for the campaigns ``scope`` sees (for the service's
-    filters)."""
-    return _campaigns_in(db, scope)
-
-
 # ── Clients ───────────────────────────────────────────────────
 async def find_clients(
     db: AsyncSession,
