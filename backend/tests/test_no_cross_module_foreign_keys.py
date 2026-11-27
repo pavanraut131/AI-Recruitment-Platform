@@ -28,6 +28,9 @@ TABLE_OWNERS = {
     "membership_clients": "identity",
     "user_sessions": "identity",
     "audit_events": "identity",
+    # E2-07: invitations -> agencies / users, password_reset_tokens -> users.
+    "invitations": "identity",
+    "password_reset_tokens": "identity",
     "clients": "hiring",
     "campaigns": "hiring",
     "applications": "hiring",
@@ -91,4 +94,8 @@ async def test_the_same_module_foreign_keys_are_the_expected_ones(db_session: As
         ("membership_clients", "memberships"),
         ("user_sessions", "users"),
         ("user_sessions", "agencies"),
+        # identity (E2-07)
+        ("invitations", "agencies"),
+        ("invitations", "users"),  # invited_by_user_id and accepted_by_user_id
+        ("password_reset_tokens", "users"),
     }
