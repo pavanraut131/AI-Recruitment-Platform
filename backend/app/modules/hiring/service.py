@@ -1348,6 +1348,14 @@ def agency_census(db: Session) -> dict[str, dict[uuid.UUID | None, int]]:
 TENANCY_TABLES: tuple[str, ...] = repository.TENANCY_TABLES
 
 
+def first_client_id(db: Session, agency_id: uuid.UUID) -> uuid.UUID | None:
+    """The agency's oldest active client ("General" for the data the E2-01 migration gave the
+    default agency), or ``None``: the client the tenancy backfill gives the agency's campaigns
+    that have none, and the development seed runs its campaigns for. Synchronous; reads the
+    agency given (an unbound owner session, or one bound to that agency)."""
+    return repository.first_client_id_sync(db, agency_id)
+
+
 def fill_tenancy_batch(
     db: Session,
     table: str,

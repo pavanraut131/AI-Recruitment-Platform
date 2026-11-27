@@ -50,6 +50,7 @@ always checked.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 
@@ -64,16 +65,21 @@ from app.platform.auth_cookies import cleared_session_cookie_header, session_coo
 from app.platform.config import settings
 from app.platform.database import get_db
 from app.platform.problems import FieldError, ProblemError
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, bind
+from app.platform.tenancy import AccessScope, bind
 
 NOT_SIGNED_IN = "Not signed in"
 SESSION_ENDED = "Your session has ended. Sign in again."
 CHOOSE_AGENCY = "Choose an agency"
 
+# The fallback acts as an owner of the agency the E2-01 migration made of the data that existed
+# before E2 (slug "default"): the only fixed agency id left in the app.
+# removed with AUTH_REQUIRED in E2-11
+_FALLBACK_AGENCY = uuid.UUID("00000000-0000-4000-8000-00000000a001")
+
 DEV_FALLBACK = Principal(
-    agency_id=DEFAULT_AGENCY_ID,
+    agency_id=_FALLBACK_AGENCY,
     role=Role.owner,
-    scope=AccessScope(DEFAULT_AGENCY_ID),
+    scope=AccessScope(_FALLBACK_AGENCY),
     user_id=None,
     membership_id=None,
     session=None,

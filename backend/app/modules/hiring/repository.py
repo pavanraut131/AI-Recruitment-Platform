@@ -599,6 +599,16 @@ _TENANT_TABLES = {
 TENANCY_TABLES = tuple(_TENANT_TABLES)
 
 
+def first_client_id_sync(db: Session, agency_id: uuid.UUID) -> uuid.UUID | None:
+    """The agency's oldest active client (ties by id), or ``None``."""
+    return db.execute(
+        select(Client.id)
+        .where(Client.agency_id == agency_id, Client.status == "active")
+        .order_by(Client.created_at, Client.id)
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def _missing(table: str) -> ColumnElement[bool]:
     t = _TENANT_TABLES[table]
     if table == "campaigns":

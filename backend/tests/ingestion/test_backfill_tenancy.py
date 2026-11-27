@@ -62,7 +62,7 @@ def manifest(engine: Engine, sessions: sessionmaker[Session]) -> dict[str, Any]:
         conn.execute(
             text(
                 "TRUNCATE campaigns, resumes, people, person_identifiers, identity_conflicts, "
-                "person_resumes, applications, legacy_candidate_map CASCADE"
+                "person_resumes, applications CASCADE"
             )
         )
         conn.execute(text("DELETE FROM agencies WHERE id <> :id"), {"id": DEFAULT_AGENCY_ID})
@@ -124,6 +124,32 @@ def test_the_seed_without_agencies_fails_the_tenancy_checks(
     assert failed_checks(report) == {"tenancy_complete", "clients_same_agency"}
     assert "campaigns: 4 row(s) without an agency (run backfill_tenancy)" in report.render()
     assert all(expected == actual for _, expected, actual in report.manifest)
+
+
+def test_the_backfill_finds_the_default_agency_by_its_slug(
+    engine: Engine,
+    sessions: sessionmaker[Session],
+    manifest: dict[str, Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Since E2-12 the code has no fixed agency id: the backfill fills rows with the agency whose
+    slug is ``default`` and its oldest active client ("General"), and changes nothing without
+    them."""
+    with sessions() as db:
+        assert backfill_tenancy.default_agency(db) == backfill_tenancy.DefaultAgency(
+            DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+        )
+    rename = text("UPDATE agencies SET slug = :slug WHERE id = :id")
+    with engine.begin() as conn:
+        conn.execute(rename, {"slug": "renamed", "id": DEFAULT_AGENCY_ID})
+    try:
+        capsys.readouterr()
+        assert backfill_tenancy.main([], session_factory=sessions) == 1
+        assert "no agency has the slug 'default'" in capsys.readouterr().out
+        assert backfill_tenancy.status(sessions)["campaigns"] == 4  # nothing filled
+    finally:
+        with engine.begin() as conn:
+            conn.execute(rename, {"slug": "default", "id": DEFAULT_AGENCY_ID})
 
 
 def test_the_backfill_fills_every_table_and_a_second_run_changes_nothing(
