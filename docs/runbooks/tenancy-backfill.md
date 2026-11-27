@@ -4,7 +4,9 @@ Gives every row written before E2-01 the **default agency** (and every campaign 
 
 The backfill is **online** (the app keeps running and uploading), touches only rows whose `agency_id` (or `client_id`) is `NULL`, never changes an `updated_at`, and is **idempotent** and **resumable** without a checkpoint table. The contract is a migration that takes no long exclusive lock and **refuses to run** until the backfill has finished.
 
-The ids are fixed (`app.platform.tenancy`): default agency `00000000-0000-4000-8000-00000000a001` ("Default agency", slug `default`), default client `00000000-0000-4000-8000-00000000c001` ("General").
+The E2-01 migration created the default agency with a fixed id, `00000000-0000-4000-8000-00000000a001` ("Default agency", slug `default`), and its client `00000000-0000-4000-8000-00000000c001` ("General"). Until E2-12 `app.platform.tenancy` held both ids as constants; since then the backfill looks them up: the agency by its slug `default` (`identity.service.DEFAULT_AGENCY_SLUG`), its client as its oldest active client. Renaming the agency in Settings does not matter (the slug stays).
+
+> **Since E2-12** this runbook is needed only for a database still below the E2-02 contract (`e2b02c7a4d19`), such as a restored backup from before E2: upgrade it to the expand revision (`alembic upgrade e2a01d5c8f36`), run the backfill and the verification (sections 3 to 5), then `alembic upgrade head`. On a database past the contract the backfill has nothing to fill (`agency_id` is `NOT NULL`) and reports `0` rows. Before E2-12 the rehearsal's live uploads (section 8) went through `/api/v1`, which is gone; upload through `/api/v2` (README "Signing in locally" shows signing in with `curl`).
 
 ## 1. Preconditions
 

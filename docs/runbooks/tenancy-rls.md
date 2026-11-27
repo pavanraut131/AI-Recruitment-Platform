@@ -76,7 +76,7 @@ It changes **no data, no grant on a table and no policy** (those are the migrati
 - `app_current_agency()`: `nullif(current_setting('app.agency_id', true), '')::uuid`;
 - for `hireflow_app`: `SELECT, INSERT, UPDATE, DELETE` on every table except `alembic_version` (nothing), `USAGE` on every sequence, and `ALTER DEFAULT PRIVILEGES FOR ROLE hireflow_owner` so that tables and sequences the owner creates later get the same grants (E2-05's identity tables);
 - on `clients`, `campaigns`, `applications`, `people`, `person_identifiers`, `identity_conflicts`, `person_resumes`, `resumes`: `ENABLE` and `FORCE ROW LEVEL SECURITY`, policy `tenant_isolation` (`FOR ALL TO hireflow_app USING (agency_id = (SELECT app_current_agency())) WITH CHECK (…same…)`) and policy `maintenance` (`FOR ALL TO hireflow_owner USING (true) WITH CHECK (true)`);
-- the global tables `agencies` and `legacy_candidate_map` get the grants and no policy (spec §6.4).
+- the global tables `agencies` and `legacy_candidate_map` get the grants and no policy (spec §6.4). (`legacy_candidate_map` was dropped with `/api/v1` in E2-12, migration `e2f12a6c9d40`, and left the allowlist.)
 
 It **refuses**, changing nothing, when:
 
@@ -98,7 +98,7 @@ It reads the catalogue (as the owner) and checks everything spec §6.2 asks for:
 
 ```
 check_rls: 8 tenant tables: applications, campaigns, clients, identity_conflicts, people, person_identifiers, person_resumes, resumes
-check_rls: global (allowlisted) tables: agencies, alembic_version, legacy_candidate_map
+check_rls: global (allowlisted) tables: agencies, alembic_version, audit_events, invitations, membership_clients, memberships, oidc_accounts, password_reset_tokens, user_sessions, users
 check_rls: OK
 ```
 

@@ -123,29 +123,28 @@ An arrow means "may import". The 8 import-linter contracts in
 ### Request flow
 
 ```
-HTTP ─▶ router (module's router.py, or app/api/routes.py when an endpoint needs several modules)
+HTTP ─▶ router (module's router_v2.py, or app/api/v2/ when an endpoint needs several modules)
      ─▶ service.py (business rules; the module's public interface)
      ─▶ repository.py (SQLAlchemy 2.0 queries on the module's own tables)
 ```
 
-Routers stay thin. An endpoint that spans modules (campaign detail and stats, every candidate
-endpoint, campaign and candidate deletes) lives in `app/api` and calls each module's service in
-one request transaction ([ADR 0005](docs/adr/0005-composition-layer.md)). The `/api/v1/candidates*`
-endpoints are a compatibility layer: they serve Applications in the pre-E0 response shapes,
-pinned by 179 snapshot tests in
-[`backend/tests/characterization`](backend/tests/characterization/README.md).
+Routers stay thin. An endpoint that spans modules (campaigns with their counts, applications,
+people, Home, campaign and application deletes, clients, the team) lives in `app/api/v2` and
+calls each module's service in one request transaction
+([ADR 0005](docs/adr/0005-composition-layer.md)). Every endpoint's contract is pinned by the
+snapshot tests in [`backend/tests/contract_v2`](backend/tests/contract_v2/README.md).
 
 ### Upload flow
 
 ```
-POST /campaigns/{id}/upload            ingestion: validate, hash, store the PDF in MinIO, insert resumes rows
+POST /campaigns/{id}/uploads           ingestion: validate, hash, store the PDF in MinIO, insert resumes rows
   └─▶ extract_queue: extract_resume    PDF → text (pdfplumber, PyMuPDF, else OCR through ai) → resumes.raw_text
         └─▶ ai_queue: process_candidate_ai
               1. ai.extract_profile    → resumes.extracted (snapshot; skipped on a retry)
               2. ai.score              against the campaign's role and skills
               3. talent.resolve_person ┐ one transaction: find or create the Person
               4. hiring.upsert_application ┘ (advisory locks) and write the Application
-  each step ─▶ Redis channel campaign:{id}:events ─▶ GET /campaigns/{id}/stream (SSE)
+  each step ─▶ Redis channel agency:{agency}:campaign:{id}:events ─▶ GET /campaigns/{id}/events (SSE)
 ```
 
 Every step is safe to re-run, `resumes.processing_step` records where a failure stopped, and a
@@ -162,12 +161,12 @@ channel, so a stream only ever receives its own campaign's events.
 | talent | `person_resumes` | Which Person each resume resolved to (makes resolution idempotent) |
 | hiring | `campaigns` | A job: role, required skills, status |
 | hiring | `applications` | A Person applying to one campaign (`UNIQUE(campaign_id, person_id)`): scoring, category, pipeline stage, notes |
-| hiring | `legacy_candidate_map` | Old candidate ids merged into an application, so old links still resolve |
 | ingestion | `resumes` | An uploaded PDF: status, processing step, text, extraction snapshot, its Person |
 
 The legacy `candidates` table was split into People and Applications
 ([ADR 0002](docs/adr/0002-person-application-split.md)) by an expand → backfill → switch →
-contract migration, and dropped in E0-20.
+contract migration, and dropped in E0-20; `legacy_candidate_map`, which let old candidate ids
+resolve on `/api/v1`, went with v1 in E2-12.
 
 ### Further reading
 
@@ -456,9 +455,9 @@ Gemini are replaced with in-memory fakes; no Redis, MinIO or Gemini access is ne
 don't pin Gemini specifics use `AI_PROVIDER=fake` through the `fake_ai` fixture). Coverage is
 printed after each run. Fixtures are documented at the top of `backend/tests/conftest.py`.
 
-`backend/tests/characterization/` holds snapshot tests that record what every API endpoint
-returns today; they define the API contract. Read its
-[README](backend/tests/characterization/README.md) before running `--snapshot-update`.
+`backend/tests/contract_v2/` holds snapshot tests that record what every `/api/v2` endpoint
+returns, and the whole OpenAPI document; they define the API contract. Read its
+[README](backend/tests/contract_v2/README.md) before running `--snapshot-update`.
 
 ### Frontend
 ```bash
@@ -594,22 +593,19 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 
 ## API Reference
 
-The frontend uses **`/api/v2`** only (interactive docs at http://localhost:8000/api/v2/docs; the
+There is one API, **`/api/v2`** (interactive docs at http://localhost:8000/api/v2/docs; the
 spec is [EPIC-01 §6](docs/specs/EPIC-01-frontend.md#6-api-apiv2)). It requires a session (see
-"Signing in locally"; sign-in endpoints in [EPIC-02 §8.2](docs/specs/EPIC-02-identity-tenancy.md#82-new-endpoints)). The frozen **`/api/v1`** stays
-for existing integrations until it is removed after E2:
+"Signing in locally"; sign-in endpoints in [EPIC-02 §8.2](docs/specs/EPIC-02-identity-tenancy.md#82-new-endpoints)),
+and every operation declares the permission it needs. Its OpenAPI document
+(`/api/v2/openapi.json`) is the source of the frontend's generated client. Outside it, the
+backend serves only the health checks:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/v1/campaigns` | Create campaign |
-| GET | `/api/v1/campaigns` | List all campaigns |
-| GET | `/api/v1/campaigns/{id}` | Get campaign + stats |
-| POST | `/api/v1/campaigns/{id}/upload` | Bulk upload PDFs |
-| GET | `/api/v1/campaigns/{id}/stream` | SSE real-time updates (this campaign's resumes only) |
-| GET | `/api/v1/campaigns/{id}/candidates` | List candidates (with filters) |
-| GET | `/api/v1/candidates/{id}` | Full candidate profile |
-| PUT | `/api/v1/candidates/{id}/category` | Override category |
-| GET | `/health`, `/health/ready` | Liveness and readiness (`/api/v1/health` is not mounted: B10) |
+| GET | `/health`, `/health/ready` | Liveness and readiness |
+
+The unauthenticated **`/api/v1`** was removed in E2-12 (its paths answer 404); the frontend had
+used only `/api/v2` since E1-10.
 
 ---
 
