@@ -98,3 +98,50 @@ async def test_person_profile_is_a_fixed_number_of_queries(
     assert len(resp.json()["applications"]) == 5
     # person, identifiers, conflicts, applications with their campaigns
     assert len(statements) == 4, statements
+
+
+@pytest.mark.parametrize("n", [3, 30])
+async def test_the_team_lists_are_a_fixed_number_of_queries(
+    client: AsyncClient, db_session: AsyncSession, n: int
+) -> None:
+    """E2-07: members (each limited to a client) and open invitations."""
+    import uuid
+    from datetime import timedelta
+
+    from app.modules.identity.models import Invitation, Membership, MembershipClient, User
+    from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+
+    for i in range(n):
+        user = User(id=uuid.uuid4(), email=f"m{i}@example.com", display_name=f"M{i}")
+        db_session.add(user)
+        await db_session.flush()  # no ORM relationship orders the inserts
+        membership = Membership(
+            id=uuid.uuid4(),
+            agency_id=DEFAULT_AGENCY_ID,
+            user_id=user.id,
+            role="viewer",
+            all_clients=False,
+        )
+        db_session.add(membership)
+        await db_session.flush()
+        db_session.add(MembershipClient(membership_id=membership.id, client_id=DEFAULT_CLIENT_ID))
+        db_session.add(
+            Invitation(
+                agency_id=DEFAULT_AGENCY_ID,
+                email=f"i{i}@example.com",
+                role="viewer",
+                all_clients=False,
+                client_ids=[DEFAULT_CLIENT_ID],
+                token_hash=uuid.uuid4().bytes,
+                invited_by_user_id=user.id,
+                expires_at=at(i) + timedelta(days=7),
+            )
+        )
+    await db_session.flush()
+    # total, the page (with each member's client ids, or each invitation's inviter), client names
+    for path in ("/team/members?page_size=100", "/team/invitations?page_size=100"):
+        async with _requests(db_session) as statements:
+            resp = await client.get(V2 + path)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["total"] == n
+        assert len(statements) == 3, "\n\n".join(statements)
