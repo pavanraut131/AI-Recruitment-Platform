@@ -16,6 +16,10 @@
     token from the last link sent to an address.
 ``browser`` (E2-07)
     A second client with cookies of its own (the invitee next to the signed-in owner).
+``fake_oidc`` (E2-08)
+    :class:`tests.identity.fake_oidc.FakeProviders`: Google and Microsoft configured in the
+    settings, played in-process by fake providers (discovery, JWKS, token endpoint) at their
+    real URLs; ``tests/identity/fake_oidc.py`` has the browser's side (``sign_in``).
 
 ``AUTH_REQUIRED`` is ``true`` here (the default; the test environment does not set it). The
 password hash cost stays at its default so the timing tests see real Argon2 work.
@@ -42,6 +46,7 @@ if TYPE_CHECKING:
 
     from app.modules.identity.schemas import Role
     from app.platform.email import EmailMessage
+    from tests.identity.fake_oidc import FakeProviders
 
 # Never import ``app`` at the top of a conftest: pytest loads it before the session hook has
 # configured the environment (tests/conftest.py).
@@ -223,6 +228,29 @@ def mailbox(celery_calls: CeleryRecorder) -> Iterator[Mailbox]:
     email.outbox.clear()
     yield Mailbox(celery_calls)
     email.outbox.clear()
+
+
+@pytest.fixture
+def fake_oidc(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeProviders]:
+    from app.modules.identity import oidc
+    from app.platform.config import settings
+    from tests.identity import fake_oidc as fake
+
+    providers = fake.new_providers()
+    for name, value in {
+        "OIDC_GOOGLE_CLIENT_ID": fake.GOOGLE_CLIENT_ID,
+        "OIDC_GOOGLE_CLIENT_SECRET": fake.GOOGLE_CLIENT_SECRET,
+        "OIDC_MICROSOFT_CLIENT_ID": fake.MICROSOFT_CLIENT_ID,
+        "OIDC_MICROSOFT_CLIENT_SECRET": fake.MICROSOFT_CLIENT_SECRET,
+        "OIDC_MICROSOFT_TENANT": "organizations",
+        "API_PUBLIC_URL": "http://localhost:8000",
+        "FRONTEND_URL": "http://localhost:3000",
+    }.items():
+        monkeypatch.setattr(settings, name, value)
+    monkeypatch.setattr(oidc, "TRANSPORT", providers.transport())
+    oidc.clear_caches()
+    yield providers
+    oidc.clear_caches()
 
 
 @pytest_asyncio.fixture
