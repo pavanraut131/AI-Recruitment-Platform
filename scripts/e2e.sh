@@ -9,8 +9,10 @@
 #
 # E2E_KEEP=1 keeps the stack up after `run` (to debug: `scripts/e2e.sh test --ui`, then `down`).
 # The stack is its own Compose project (E2E_PROJECT, default hireflow-e2e) on its own ports
-# (E2E_FRONTEND_PORT 13000, E2E_BACKEND_PORT 18000), configured from .env.example; it never
-# touches the dev stack or reads .env. See docker-compose.e2e.yml.
+# (E2E_FRONTEND_PORT 13000, E2E_BACKEND_PORT 18000, and E2E_MAILPIT_PORT for Mailpit's HTTP API:
+# by default E2E_BACKEND_PORT + 25, so projects on different ports never share it), configured
+# from .env.example; it never touches the dev stack or reads .env. Playwright gets
+# E2E_MAILPIT_URL to read the emails (invitation and reset links). See docker-compose.e2e.yml.
 #
 # Playwright runs on the host: `cd frontend && npm ci && npx playwright install chromium` once.
 set -euo pipefail
@@ -23,7 +25,8 @@ export MSYS_NO_PATHCONV=1
 PROJECT="${E2E_PROJECT:-hireflow-e2e}"
 export E2E_FRONTEND_PORT="${E2E_FRONTEND_PORT:-13000}"
 export E2E_BACKEND_PORT="${E2E_BACKEND_PORT:-18000}"
-SERVICES=(postgres redis minio backend worker_extract worker_ai frontend)
+export E2E_MAILPIT_PORT="${E2E_MAILPIT_PORT:-$((E2E_BACKEND_PORT + 25))}"
+SERVICES=(postgres redis minio mailpit backend worker_extract worker_ai worker_default frontend)
 # A small deterministic background dataset (campaigns, People, Applications) so lists are not
 # empty. The tests create the data they assert on and do not depend on it.
 SEED_ARGS=(--people 40 --campaigns 3 --seed 42)
@@ -34,7 +37,7 @@ compose() {
 }
 
 up() {
-  echo "▶ Starting the E2E stack (project $PROJECT; frontend :$E2E_FRONTEND_PORT, API :$E2E_BACKEND_PORT)"
+  echo "▶ Starting the E2E stack (project $PROJECT; frontend :$E2E_FRONTEND_PORT, API :$E2E_BACKEND_PORT, Mailpit :$E2E_MAILPIT_PORT)"
   compose up --build --detach --wait --wait-timeout 300 "${SERVICES[@]}"
   echo "▶ Migrating"
   compose exec -T backend alembic upgrade head
@@ -45,7 +48,8 @@ up() {
 
 run_tests() {
   echo "▶ Running Playwright against http://localhost:$E2E_FRONTEND_PORT"
-  (cd frontend && E2E_BASE_URL="http://localhost:$E2E_FRONTEND_PORT" npx playwright test "$@")
+  (cd frontend && E2E_BASE_URL="http://localhost:$E2E_FRONTEND_PORT" \
+    E2E_MAILPIT_URL="http://localhost:$E2E_MAILPIT_PORT" npx playwright test "$@")
 }
 
 down() {
