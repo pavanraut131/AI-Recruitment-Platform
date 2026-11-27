@@ -91,6 +91,10 @@ Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenan
 
 Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenancy.md#e2-04--row-level-security). Design: spec §6, §7.2 and §11.1–11.2; [ADR 0009](../adr/0009-tenant-isolation-row-level-security.md) is accepted in this ticket.
 
+**Notes:**
+- Deploy order and commands: [runbook](../runbooks/tenancy-rls.md) (drain the queues, `make db-roles`, migrate as the owner, recreate the services). Its section 8 is the exact list for an existing local stack; no `.env` edit is needed (Compose builds the URLs from `POSTGRES_DB` and two password variables with defaults). No new dependency, so no image rebuild, but the postgres container is recreated (new mounts) and the backend services are recreated (new URLs).
+- **Merged with E2-05** (which merges first, PR #58): `e2c04a7f3b18` now follows `e2c05b3f7a21`. The identity tables are global (on `app.platform.rls.GLOBAL_TABLES`) and keep the grants E2-05's migration gives them (`audit_events`: `SELECT, INSERT` only; E2-04's downgrade leaves them alone). The identity CLI connects as the owner (`MIGRATION_DATABASE_URL`); the seed and `seed_users` stay on the app role (identity tables are global; the default agency's data through a bound session). The API sweep signs in for real as an owner of the default agency (`users` / `auth_client`). One local upgrade covers both: runbook section 8 (rebuild for `argon2-cffi`, `make db-roles`, migrate, recreate).
+
 ---
 
 ### E2-05 · Identity core

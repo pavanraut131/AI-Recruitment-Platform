@@ -608,9 +608,14 @@ def test_the_same_identifiers_in_two_agencies_are_two_people(sync_session: Sessi
     assert theirs.person_id != ours.person_id
     assert theirs.matched_existing is False and theirs.conflict_id is None
     assert again == ResolveResult(person_id=theirs.person_id, matched_existing=True)
-    rows = sync_session.execute(
-        select(PersonIdentifier.agency_id, PersonIdentifier.person_id, PersonIdentifier.kind)
-    ).all()
+    # Each agency's session sees its own rows only (row-level security): read both.
+    rows = [
+        row
+        for session in (sync_session, other)
+        for row in session.execute(
+            select(PersonIdentifier.agency_id, PersonIdentifier.person_id, PersonIdentifier.kind)
+        ).all()
+    ]
     assert sorted(rows, key=str) == sorted(
         [
             (DEFAULT_AGENCY_ID, ours.person_id, "email"),
@@ -623,10 +628,13 @@ def test_the_same_identifiers_in_two_agencies_are_two_people(sync_session: Sessi
 
     # Every row written for the other agency carries it.
     def per_agency(model: Any) -> dict[uuid.UUID, int]:
-        rows = sync_session.execute(
-            select(model.agency_id, func.count()).group_by(model.agency_id)
-        ).tuples()
-        return dict(rows.all())
+        return {
+            agency: n
+            for session in (sync_session, other)
+            for agency, n in session.execute(
+                select(model.agency_id, func.count()).group_by(model.agency_id)
+            ).tuples()
+        }
 
     assert per_agency(Person) == {DEFAULT_AGENCY_ID: 1, OTHER_AGENCY: 1}
     assert per_agency(PersonResume) == {DEFAULT_AGENCY_ID: 1, OTHER_AGENCY: 2}

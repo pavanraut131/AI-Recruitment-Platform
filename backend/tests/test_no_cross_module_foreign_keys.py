@@ -1,7 +1,7 @@
 """ADR 0003: no foreign key crosses a module boundary.
 
 Reads every foreign key of the migrated schema (the session database, at ``head``) from
-``information_schema`` and checks that the referencing and the referenced table belong to the
+``pg_constraint`` and checks that the referencing and the referenced table belong to the
 same module. :data:`TABLE_OWNERS` is the ownership map (spec §4); every table in the schema
 must be in it, so a new table has to be given an owner before this passes. Since the contract
 migration (E0-20) dropped ``resumes.campaign_id -> campaigns``, there are none left.
@@ -40,13 +40,15 @@ TABLE_OWNERS = {
 }
 NOT_OWNED = {"alembic_version"}  # Alembic's bookkeeping
 
+# From pg_catalog, not information_schema: the suite runs as the application role
+# (hireflow_app, E2-04), and information_schema.constraint_column_usage only lists the tables a
+# role owns.
 FOREIGN_KEYS = """
-SELECT tc.constraint_name, tc.table_name, ccu.table_name AS referenced_table
-FROM information_schema.table_constraints AS tc
-JOIN information_schema.constraint_column_usage AS ccu
-  ON ccu.constraint_schema = tc.constraint_schema AND ccu.constraint_name = tc.constraint_name
-WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
-ORDER BY tc.constraint_name
+SELECT c.conname AS constraint_name, c.conrelid::regclass::text AS table_name,
+       c.confrelid::regclass::text AS referenced_table
+FROM pg_constraint AS c
+WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+ORDER BY c.conname
 """
 
 TABLES = """

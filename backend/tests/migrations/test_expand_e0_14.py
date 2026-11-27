@@ -22,7 +22,6 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Connection, create_engine, inspect, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -277,26 +276,19 @@ async def test_deleting_a_person_cascades_to_identifiers(db_session: AsyncSessio
 # ── Upgrade → downgrade → upgrade on a throwaway database ─────
 @pytest.fixture
 def scratch_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    """A new, empty database in the test container; ``alembic`` is pointed at it.
+    """A new, empty database in the test container, with the roles (``tests/postgres.py``);
+    ``alembic`` is pointed at it.
 
-    ``alembic/env.py`` takes its URL from ``settings.SYNC_DATABASE_URL``, so that is patched for
-    the test. The database is dropped afterwards.
+    ``alembic/env.py`` takes its URL from ``settings.MIGRATION_DATABASE_URL``, so that is
+    patched for the test. The fixture yields that URL: the owner role, which the tests also use
+    to arrange and read rows (as the migrations and the operator commands do). The database is
+    dropped afterwards.
     """
     from app.platform.config import settings
 
-    name = f"e0_14_{uuid.uuid4().hex[:8]}"
-    base_url = make_url(settings.SYNC_DATABASE_URL)
-    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = base_url.set(database=name).render_as_string(hide_password=False)
-    monkeypatch.setattr(settings, "SYNC_DATABASE_URL", url)
-    try:
+    with postgres.scratch_database("e0_14") as url:
+        monkeypatch.setattr(settings, "MIGRATION_DATABASE_URL", url)
         yield url
-    finally:
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
 
 
 def _alembic_config() -> Config:

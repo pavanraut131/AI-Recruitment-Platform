@@ -9,7 +9,8 @@ caller decides where a unit of work ends.
 (:func:`_resumes_of`, through ``app.platform.tenancy.tenant_filter``) and raises
 ``TenantNotBound`` on an unbound session; :func:`add` sets ``agency_id`` from the same binding.
 The functions under "Every agency" serve operator commands (``reset_stuck``, the verification,
-``storage_orphans``) and read all agencies on purpose, through an unbound session.
+``storage_orphans``) and read all agencies on purpose, through an unbound session as the owner
+role (``app.platform.maintenance``; as the application role it would see nothing).
 """
 
 import uuid
@@ -321,12 +322,12 @@ def get_sync(db: Session, resume_id: uuid.UUID) -> Resume | None:
     ).scalar_one_or_none()
 
 
-# ── Every agency: operator commands and the verification (sync, unbound session) ──
-def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, uuid.UUID | None, str]]:
+# ── Every agency: operator commands and the verification (sync, unbound owner session) ──
+def reset_stuck_sync(db: Session) -> list[tuple[uuid.UUID, uuid.UUID, str]]:
     """Set every ``extracting``, ``processing`` or ``failed`` resume of **every agency** back to
     ``pending`` (retry count and error cleared); returns their ``(id, agency_id,
-    original_filename)`` (``agency_id`` is ``None`` for a row not backfilled yet, E2-02). The
-    caller commits."""
+    original_filename)``. Needs a session as the owner role (``app.platform.maintenance``);
+    the application role would reset only one agency's, or none. The caller commits."""
     result = db.execute(
         update(Resume)
         .where(Resume.status.in_(["extracting", "processing", "failed"]))

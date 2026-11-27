@@ -16,15 +16,19 @@
   checkout; a session that commits and goes on (the Celery tasks do, several times) gets the
   setting again at its next ``BEGIN``. Session-level settings of ``app.*`` are forbidden
   anywhere in the code base (``tests/tenancy/test_no_session_level_setting.py`` checks).
-  Row-level security reads the setting from E2-04 on (spec §6.2); until then nothing does.
+  Row-level security reads the setting (E2-04, spec §6.2; :mod:`app.platform.rls`): the
+  application role sees and writes only the rows of the transaction's agency, and an unbound
+  session sees none. In development and tests, :func:`guard_pool_checkouts` also asserts that
+  every connection a pool hands out carries no agency.
 - :class:`TenantContext` is "which agency"; :class:`AccessScope` adds which of its clients the
   caller may see (``None``: all of them). Services that list or fetch campaign data take an
   ``AccessScope``; until E2-06 every scope covers all clients.
 
 Operator commands that span agencies (``reset_stuck``, ``storage_orphans``,
-``verify_people_applications``) use **unbound** sessions on purpose and call only repository
-functions that say they read every agency; those never call :func:`agency_id_of`. From E2-04
-they connect as the owner role (spec §6.2).
+``verify_people_applications``, ``backfill_tenancy``) connect as the owner role through
+:mod:`app.platform.maintenance` (unbound sessions, the ``maintenance`` policy: every agency) and
+call only repository functions that say they read every agency; those never call
+:func:`agency_id_of`. As the application role an unbound session would see nothing.
 
 **Transition constants** (E2-01 to E2-12):
 
@@ -34,13 +38,6 @@ they connect as the owner role (spec §6.2).
 - :data:`DEFAULT_CLIENT_ID`: the client (hiring's ``clients``) of the default agency that every
   existing campaign is run for, named **"General"** (spec §15, Q7). New campaigns get it until
   E2-06 makes the client a required field.
-
-**Rows without an agency** (before the E2-02 backfill). Rows written before E2-01 have
-``agency_id IS NULL`` until ``backfill_tenancy`` runs, and they belong to the default agency
-(spec §7). So that E2-03 can merge before E2-02 without hiding them, :func:`tenant_filter` also
-matches ``agency_id IS NULL`` **while the default agency is bound** (and only then: another
-agency never sees them). Once E2-02's contract migration has made ``agency_id`` NOT NULL the
-extra branch matches nothing; E2-04 deletes it together with enabling RLS.
 
 The values are fixed, so the migration, the code and the runbooks agree without a lookup.
 Never reuse them for anything else. They live here, not in ``identity`` or ``hiring``, because
@@ -53,7 +50,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Final
 
-from sqlalchemy import ColumnElement, Connection, event, or_, text
+from sqlalchemy import ColumnElement, Connection, Engine, event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Session, SessionTransaction
 
@@ -61,7 +58,7 @@ DEFAULT_AGENCY_ID: Final = uuid.UUID("00000000-0000-4000-8000-00000000a001")
 DEFAULT_CLIENT_ID: Final = uuid.UUID("00000000-0000-4000-8000-00000000c001")
 
 SETTING: Final = "app.agency_id"
-"""The transaction-local Postgres setting that carries the agency (read by RLS from E2-04)."""
+"""The transaction-local Postgres setting that carries the agency (read by RLS, spec §6.2)."""
 
 _INFO_KEY: Final = "tenant"
 # set_config(name, value, is_local=true) is SET LOCAL with bind parameters: no SQL formatting.
@@ -74,6 +71,10 @@ class TenantNotBound(RuntimeError):
 
 class TenantMismatch(RuntimeError):
     """A session or scope was used with a different agency than it is bound to."""
+
+
+class TenantLeak(RuntimeError):
+    """A pooled connection was handed out with an agency still set (a session-level setting)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,15 +141,10 @@ def agency_id_of(session: AnySession) -> uuid.UUID:
 
 
 def tenant_filter(session: AnySession, column: InstrumentedAttribute[Any]) -> ColumnElement[bool]:
-    """``column = <the session's agency>``, for a model's ``agency_id`` column.
-
-    Transition (until E2-04): while the default agency is bound, rows not backfilled yet
-    (``agency_id IS NULL``, spec §7) match too; see the module docstring.
-    """
-    agency_id = agency_id_of(session)
-    if agency_id == DEFAULT_AGENCY_ID:
-        return or_(column == agency_id, column.is_(None))
-    return column == agency_id
+    """``column = <the session's agency>``, for a model's ``agency_id`` column (``NOT NULL``
+    since the E2-02 contract). Row-level security applies the same condition underneath; the
+    explicit filter keeps the intent readable and the ``(agency_id, …)`` indexes usable."""
+    return column == agency_id_of(session)
 
 
 def require_scope(session: AnySession, scope: AccessScope) -> AccessScope:
@@ -168,3 +164,47 @@ def _set_transaction_tenant(
     tenant: TenantContext | None = session.info.get(_INFO_KEY)
     if tenant is not None:
         connection.execute(_SET_LOCAL, {"name": SETTING, "agency_id": str(tenant.agency_id)})
+
+
+# ── Pool checkouts (development and tests) ────────────────────
+_CHECKOUT_SETTING = f"SELECT current_setting('{SETTING}', true)"
+
+
+def pooled_setting(dbapi_connection: Any) -> str | None:
+    """``app.agency_id`` on a raw DBAPI connection, outside any transaction of its own (the
+    statement's implicit transaction is rolled back)."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute(_CHECKOUT_SETTING)
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        dbapi_connection.rollback()
+    value: str | None = row[0] if row else None
+    return value
+
+
+def guard_pool_checkouts(engine: Engine) -> None:
+    """Assert, at every checkout from ``engine``'s pool, that the connection carries no agency
+    (spec §6.3): a transaction-local setting ends with its transaction, so a non-empty value
+    means something set it for the session. Raises :class:`TenantLeak`.
+
+    For development and tests only (``APP_ENV``), where the extra round trip per checkout does
+    not matter; the callers decide. Pass ``engine.sync_engine`` for an ``AsyncEngine``. It
+    talks to the DBAPI connection directly, so statement-counting listeners never see it.
+    """
+
+    @event.listens_for(engine, "checkout")
+    def _assert_no_agency(dbapi_connection: Any, record: Any, proxy: Any) -> None:
+        value = pooled_setting(dbapi_connection)
+        if value:
+            raise TenantLeak(
+                f"a pooled connection was checked out with {SETTING}={value!r}: something set "
+                "it for the session instead of the transaction (set_config(..., true) only)"
+            )
+
+
+def guard_in_development(engine: Engine, app_env: str) -> None:
+    """:func:`guard_pool_checkouts` when ``app_env`` is ``development`` or ``test``."""
+    if app_env.strip().lower() in {"development", "test"}:
+        guard_pool_checkouts(engine)

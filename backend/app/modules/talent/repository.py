@@ -10,7 +10,7 @@ the agency the session is bound to (``app.platform.tenancy.tenant_filter``): the
 lookup (:func:`find_identifiers`, per agency like ``UNIQUE(agency_id, kind, value_normalized)``),
 the Person it locks and the stored resolution. The advisory-lock keys are per agency too (the
 service builds them). The verification reads and the tenancy backfill read **every agency** on
-purpose (operator commands, unbound sessions).
+purpose (operator commands: unbound sessions as the owner role, ``app.platform.maintenance``).
 """
 
 import uuid
@@ -97,7 +97,7 @@ def lock_person(session: Session, person_id: uuid.UUID) -> Person:
     ).scalar_one()
 
 
-# ── Reads for the verification (spec §6.3): every agency, unbound session ──
+# ── Reads for the verification (spec §6.3): every agency, unbound owner session ──
 def table_counts(session: Session) -> dict[str, int]:
     def count(model: type[Person | PersonIdentifier | IdentityConflict | PersonResume]) -> int:
         return session.execute(select(func.count()).select_from(model)).scalar_one()

@@ -31,7 +31,7 @@ argument ``agency_id`` (:func:`enqueue_extraction`, :func:`enqueue_analysis`). T
 (``app.platform.celery_app.TenantTask``) logs it with every line and opens every database
 session bound to it, the failure handlers' too, so the task reads and writes only that agency's
 rows; it publishes progress on that agency's channel of the campaign. A message without
-``agency_id`` (queued before E2-03) runs for the default agency until E2-04.
+``agency_id`` (queued by code older than E2-03) is rejected without running (E2-04).
 
 The tasks run in Celery worker processes, which have no event loop, so they use a synchronous
 engine and ``Session`` (created here, used by nothing else).
@@ -56,15 +56,16 @@ from app.modules.talent.schemas import PersonProfile, ResolveResult
 from app.platform import storage
 from app.platform.celery_app import AGENCY_ID_ARG, TenantTask, celery_app
 from app.platform.config import settings
-from app.platform.tenancy import agency_id_of
+from app.platform.tenancy import agency_id_of, guard_in_development
 
 logger = structlog.get_logger()
 
 EXTRACT_TASK_NAME = "workers.extract_task.extract_resume"
 AI_TASK_NAME = "workers.ai_task.process_candidate_ai"
 
-# Sync engine for Celery workers
+# Sync engine for Celery workers: the application role, like the API (spec §6.2).
 sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
+guard_in_development(sync_engine, settings.APP_ENV)
 SyncSession = sessionmaker(bind=sync_engine)
 
 QUOTA_EXCEEDED_MESSAGE = (

@@ -113,9 +113,12 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # app.platform.config.Settings requires both URLs at import time; Alembic uses the sync one.
-      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-      SYNC_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      # The roles of row-level security (EPIC-02 spec §7.2): `ci` is the bootstrap superuser
+      # (it only runs docker/postgres/roles.sql); Alembic runs as hireflow_owner
+      # (MIGRATION_DATABASE_URL), and Settings requires the app role's URLs at import time.
+      DATABASE_URL: postgresql+asyncpg://hireflow_app:ci_app@localhost:5432/ci
+      SYNC_DATABASE_URL: postgresql://hireflow_app:ci_app@localhost:5432/ci
+      MIGRATION_DATABASE_URL: postgresql://hireflow_owner:ci_owner@localhost:5432/ci
       # Migrations never call an AI provider. With the fake one Settings needs no GEMINI_API_KEY
       # (the default, gemini, would refuse to load without one).
       AI_PROVIDER: fake
@@ -133,8 +136,29 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      # The same SQL as the Compose init script and `make db-roles`, run by psql inside the
+      # service container as its superuser.
+      - name: Create the database roles
+        working-directory: .
+        run: >-
+          docker exec -i ${{ job.services.postgres.id }}
+          psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -U ci -d ci
+          -v owner_password=ci_owner -v app_password=ci_app -f -
+          < docker/postgres/roles.sql
+
       - name: Apply all migrations to an empty database
         run: uv run alembic upgrade head
+
+      # Row-level security on every tenant table, the grants and the roles (spec §11.2).
+      - name: Check the row-level-security catalogue
+        run: uv run python -m app.devtools.check_rls
+
+      # The RLS migration is reversible: down to the contract, up again, still correct.
+      - name: Downgrade and upgrade the row-level-security migration
+        run: |
+          uv run alembic downgrade e2c05b3f7a21
+          uv run alembic upgrade head
+          uv run python -m app.devtools.check_rls
 
       # Fails if the models have changes that no migration captures.
       - name: Check models and migrations agree

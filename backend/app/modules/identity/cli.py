@@ -21,6 +21,9 @@ or, with ``--password-stdin``, from the first line of standard input (for script
 (12 to 128 characters, not the email). An existing user keeps their password and gets the
 membership. Each command is one transaction and prints what it did; it exits 1 with a message
 when it cannot.
+
+Like the other operator commands (spec §6.2), it connects as the owner role
+(``MIGRATION_DATABASE_URL``, ``app.platform.maintenance``), not as the application role.
 """
 
 from __future__ import annotations
@@ -31,12 +34,11 @@ import getpass
 import sys
 from collections.abc import Sequence
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service
 from app.modules.identity.schemas import Role
-from app.platform.config import settings
+from app.platform import maintenance
 from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 
@@ -118,7 +120,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 async def run(args: argparse.Namespace) -> list[str]:
-    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    engine = maintenance.owner_async_engine()
     try:
         async with AsyncSession(engine, expire_on_commit=False) as db:
             if args.command == "create-agency":

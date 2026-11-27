@@ -17,7 +17,10 @@ from app.platform.config import settings
 from app.platform.database import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.SYNC_DATABASE_URL)
+# Migrations run as the owner role, hireflow_owner (EPIC-02 spec §6.2, §7.2): it owns the schema
+# and every table, and row-level security lets it see every agency (the `maintenance` policy).
+# Never the application role: the tables would not be its own to alter.
+config.set_main_option("sqlalchemy.url", settings.migration_database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

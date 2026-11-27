@@ -10,7 +10,9 @@ Every identity table is **global**, not under agency row-level security (spec §
 read before a tenant is known (sign-in by email, the session lookup on every request, the agency
 switcher), and only this module reads them. ``agencies`` is referenced by ``agency_id`` on every
 tenant table of ``hiring``, ``talent`` and ``ingestion``, always **without** a foreign key
-(ADR 0003); inside identity the foreign keys are ordinary.
+(ADR 0003): row-level security (E2-04: a row's agency must be the transaction's) and the
+verification (E2-02) keep those ids consistent instead; inside identity the foreign keys are
+ordinary.
 
 ``audit_events`` is append-only for the application: the app role gets ``SELECT`` and
 ``INSERT`` only (granted in the migration when the role exists, E2-04), and its ids and agency

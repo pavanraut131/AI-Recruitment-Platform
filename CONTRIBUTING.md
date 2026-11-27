@@ -44,6 +44,17 @@ locally"). Until the login screen arrives (E2-09) the dev and E2E stacks run wit
 fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
 need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`.
 
+### Tests run under row-level security
+
+The test session connects as `hireflow_app` (E2-04), so Postgres RLS is on for every test: a
+session sees and writes only the rows of the agency it is bound to. Write another agency's rows
+through a session bound to it (`session_for` / `other_agency.db` in `tests/tenancy/conftest.py`).
+Migrations, `alembic_version` and reads across agencies use the owner role
+(`settings.migration_database_url`; `postgres.throwaway_database` yields an owner engine and
+`postgres.as_role(engine, postgres.APP_ROLE)` the app role's URL). A new table needs
+`enable_tenant_rls` in its migration or a reasoned entry in `app.platform.rls.GLOBAL_TABLES`;
+`tests/tenancy/test_isolation.py` fails otherwise.
+
 ## Branch protection on `master` (repo owner, one-time)
 
 Do this after ticket **E0-05** (the CI rewrite) has merged and its workflow has run at least once.

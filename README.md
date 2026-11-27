@@ -222,11 +222,14 @@ used on your machine, change the matching `*_HOST_PORT` variable in `.env`.
 make setup
 ```
 
-This builds the images, starts every service, waits until they report
-healthy, runs `alembic upgrade head`, and then seeds fake data with `make seed`
-(skipped if the database already has applications). Without `make`, run the same steps:
+This creates the database roles (`make db-roles`), builds the images, starts every service,
+waits until they report healthy, runs `alembic upgrade head`, and then seeds fake data with
+`make seed` (skipped if the database already has applications). Without `make`, run the same
+steps:
 
 ```bash
+docker compose up -d --wait postgres
+docker compose exec -T postgres bash /docker-entrypoint-initdb.d/10-roles.sh
 docker compose up --build -d --wait
 docker compose exec backend alembic upgrade head
 docker compose exec -T backend python -m app.devtools.seed --people 800 --campaigns 15 --seed 42 --if-empty
@@ -254,6 +257,14 @@ seeded resumes do not work. The same `--seed` always produces the same data.
   without running the matching code (documented in `backend/app/devtools/seed.py`). Check them
   with `docker compose exec backend python -m app.modules.ingestion.verify_people_applications
   --manifest /app/seed-manifest.json`.
+
+> Database roles (EPIC-02, E2-04): the API and the workers connect as `hireflow_app`, which
+> row-level security limits to one agency's rows; Alembic and the operator commands connect as
+> `hireflow_owner`, which owns the tables. Compose builds the URLs from `POSTGRES_DB` and
+> `HIREFLOW_OWNER_PASSWORD` / `HIREFLOW_APP_PASSWORD` (defaults in `docker-compose.yml`). A stack
+> created before E2-04 keeps its `.env` but needs `make db-roles` once: see
+> [the RLS runbook](docs/runbooks/tenancy-rls.md#8-your-local-dev-stack-after-merging-e2-04)
+> for the exact upgrade steps.
 
 > Upgrading from an older checkout? The Postgres image moved from 15 to 16
 > (`pgvector/pgvector:pg16`), so run `docker compose down -v` once to drop the
@@ -506,7 +517,9 @@ for existing integrations until it is removed after E2:
 | `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
 | `GEMINI_API_KEY` | Google Gemini API key. **Required** when `AI_PROVIDER=gemini` (start-up fails with a clear error without it); not needed with `AI_PROVIDER=fake` | — |
 | `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` |
-| `DATABASE_URL` | Async PostgreSQL URL | — |
+| `DATABASE_URL`, `SYNC_DATABASE_URL` | PostgreSQL URLs of the API (async) and the workers (sync), as `hireflow_app`; they refuse to start as a superuser, a `BYPASSRLS` role or a table owner. Built by `docker-compose.yml` | — |
+| `MIGRATION_DATABASE_URL` | PostgreSQL URL as `hireflow_owner`, for Alembic and the operator commands (verify, `reset_stuck`, `storage_orphans`, `identity.cli`). Built by `docker-compose.yml` | — |
+| `HIREFLOW_OWNER_PASSWORD`, `HIREFLOW_APP_PASSWORD` | Passwords of the two database roles (`make db-roles` sets them) | `hireflow_owner_secret`, `hireflow_app_secret` |
 | `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
 | `MINIO_ENDPOINT` | MinIO host | `minio:9000` |
 | `MAX_FILE_SIZE_MB` | Max PDF size | `10` |

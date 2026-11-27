@@ -127,7 +127,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
     cfg = _alembic_config()
     engine = create_engine(scratch_db)
     try:
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, REVISION)
         with engine.begin() as conn:
             before = _tables(conn)
             assert before >= TABLES
@@ -135,7 +135,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
         command.downgrade(cfg, BEFORE)
         with engine.connect() as conn:
             assert _tables(conn) == before - TABLES
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")  # with what follows it (E2-04): alembic check needs head
         with engine.begin() as conn:
             assert _tables(conn) == before
             assert conn.execute(text("SELECT count(*) FROM users")).scalar_one() == 0
@@ -198,7 +198,7 @@ def test_audit_events_are_append_only_for_the_app_role(
             conn.execute(
                 text(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {app_role}")
             )
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, REVISION)
         with engine.connect() as conn:
             assert _privileges(conn, "audit_events") == {"SELECT", "INSERT"}
             for table in TABLES - {"audit_events"}:
@@ -211,7 +211,7 @@ def test_audit_events_are_append_only_for_the_app_role(
                 {"r": app_role, "s": sequence},
             ).scalar_one()
         command.downgrade(cfg, BEFORE)  # the grants go with the tables
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, REVISION)
         with engine.connect() as conn:
             assert _privileges(conn, "audit_events") == {"SELECT", "INSERT"}
     finally:

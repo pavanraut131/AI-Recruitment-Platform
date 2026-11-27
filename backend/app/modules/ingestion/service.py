@@ -325,7 +325,7 @@ async def delete_stored_files(files: StoredFiles) -> list[str]:
 
 
 def stored_resume_paths(db: Session) -> set[str]:
-    """The storage key of every resume row of **every agency** (sync, unbound session; for
+    """The storage key of every resume row of **every agency** (sync, unbound owner session; for
     ``app.devtools.storage_orphans``)."""
     return repository.storage_paths_sync(db)
 

@@ -86,7 +86,7 @@ Rows written before E2-01 get their agency from the tenancy backfill
 (``app.modules.ingestion.backfill_tenancy``, E2-02) through :func:`fill_tenancy_batch`; it and
 the verification's reads (:func:`application_refs`, :func:`campaign_tenancy`,
 :func:`client_agencies`, :func:`agency_census`) read **every agency** on purpose (operator
-commands, unbound sessions).
+commands: unbound sessions as the owner role, ``app.platform.maintenance``).
 """
 
 import csv

@@ -1,5 +1,17 @@
 
 
+# ─── Database roles (EPIC-02 spec §6.2, §7.2; docs/runbooks/tenancy-rls.md) ─────
+# POSTGRES_USER is the bootstrap superuser, for administration only. The init script
+# (docker/postgres/init/10-roles.sh, on a new volume; `make db-roles` on an existing one)
+# creates hireflow_owner (owns the schema: migrations and operator commands) and hireflow_app
+# (the API and the workers, under row-level security). The backend services get their URLs
+# from these values below, so a .env only needs the POSTGRES_* values (and, optionally, other
+# passwords); `environment` overrides any DATABASE_URL / SYNC_DATABASE_URL left in .env.
+x-database-urls: &database-urls
+  DATABASE_URL: postgresql+asyncpg://hireflow_app:${HIREFLOW_APP_PASSWORD:-hireflow_app_secret}@postgres:5432/${POSTGRES_DB:-resumeai}
+  SYNC_DATABASE_URL: postgresql://hireflow_app:${HIREFLOW_APP_PASSWORD:-hireflow_app_secret}@postgres:5432/${POSTGRES_DB:-resumeai}
+  MIGRATION_DATABASE_URL: postgresql://hireflow_owner:${HIREFLOW_OWNER_PASSWORD:-hireflow_owner_secret}@postgres:5432/${POSTGRES_DB:-resumeai}
+
 services:
   # ─── Infrastructure ───────────────────────────────────────────
   postgres:
@@ -9,10 +21,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-resumeai}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resumeai_secret}
       POSTGRES_DB: ${POSTGRES_DB:-resumeai}
+      # Read by docker/postgres/init/10-roles.sh (a new volume, or `make db-roles`).
+      HIREFLOW_OWNER_PASSWORD: ${HIREFLOW_OWNER_PASSWORD:-hireflow_owner_secret}
+      HIREFLOW_APP_PASSWORD: ${HIREFLOW_APP_PASSWORD:-hireflow_app_secret}
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres:/hireflow:ro
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-resumeai}"]
       interval: 10s
@@ -60,6 +77,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file: .env
     environment:
+      <<: *database-urls
       # /api/v2 requires a session from E2-05, but the frontend has no login screen until
       # E2-09: a local .env without the setting keeps the stack usable (no session = the default
       # agency's owner). Set AUTH_REQUIRED=true in .env to try sign-in for real. Development
@@ -91,6 +109,7 @@ services:
     container_name: resumeai_worker_extract
     command: celery -A app.platform.celery_app worker -Q extract_queue --concurrency=4 --loglevel=info -n extract@%h
     env_file: .env
+    environment: *database-urls
     volumes:
       - ./backend:/app
     depends_on:
@@ -108,6 +127,7 @@ services:
     container_name: resumeai_worker_ai
     command: celery -A app.platform.celery_app worker -Q ai_queue --concurrency=2 --loglevel=info -n ai@%h
     env_file: .env
+    environment: *database-urls
     volumes:
       - ./backend:/app
     depends_on:
@@ -123,6 +143,7 @@ services:
     container_name: resumeai_beat
     command: celery -A app.platform.celery_app beat --loglevel=info
     env_file: .env
+    environment: *database-urls
     volumes:
       - ./backend:/app
     depends_on:
@@ -136,6 +157,7 @@ services:
     container_name: resumeai_flower
     command: celery -A app.platform.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
     env_file: .env
+    environment: *database-urls
     ports:
       - "${FLOWER_HOST_PORT:-5555}:5555"
     depends_on:

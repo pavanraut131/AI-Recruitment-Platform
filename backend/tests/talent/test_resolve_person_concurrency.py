@@ -4,7 +4,9 @@ Every worker opens its **own** connection and transaction, calls ``resolve_perso
 exactly like 20 Celery workers would. That needs committed data, so these tests do not use the
 rolled-back ``sync_session``: the module gets a dedicated, throwaway database in the test
 container (migrated to ``head``, dropped afterwards) and every test empties the talent tables
-first. The session database is never touched.
+first. The session database is never touched. The workers connect as the application role,
+under row-level security, like the Celery workers; the tests empty and inspect the tables as the
+owner role (``owner``), which sees every agency.
 
 A deadlock would make Postgres abort one of the transactions (``deadlock_timeout`` is 1 s), and a
 lost race would surface as a unique violation: both are exceptions in a worker, and the tests fail
@@ -25,10 +27,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.modules.talent import service
@@ -42,39 +41,29 @@ T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture(scope="module")
-def engine() -> Iterator[Engine]:
-    """A throwaway database at ``head``, with a pool big enough for every worker at once."""
-    from app.platform.config import settings
+def owner() -> Iterator[Engine]:
+    """A throwaway database at ``head``, as the owner role: to empty the tables and read every
+    agency's rows (the row-level security ``maintenance`` policy)."""
+    with postgres.throwaway_database("e0_15", pool_size=2, max_overflow=0) as eng:
+        yield eng
 
-    name = f"e0_15_{uuid.uuid4().hex[:8]}"
-    base_url = make_url(settings.SYNC_DATABASE_URL)
-    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = base_url.set(database=name).render_as_string(hide_password=False)
 
-    original = settings.SYNC_DATABASE_URL
-    settings.SYNC_DATABASE_URL = url  # alembic/env.py reads it
-    try:
-        cfg = Config()  # no ini file: env.py would reconfigure logging
-        cfg.set_main_option("script_location", str(postgres.BACKEND_DIR / "alembic"))
-        command.upgrade(cfg, "head")
-    finally:
-        settings.SYNC_DATABASE_URL = original
-
-    eng = create_engine(url, pool_size=WORKERS, max_overflow=0)
+@pytest.fixture(scope="module")
+def engine(owner: Engine) -> Iterator[Engine]:
+    """The same database as the application role (what the workers connect as, under RLS),
+    with a pool big enough for every worker at once."""
+    eng = create_engine(
+        postgres.as_role(owner, postgres.APP_ROLE), pool_size=WORKERS, max_overflow=0
+    )
     try:
         yield eng
     finally:
         eng.dispose()
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
 
 
 @pytest.fixture(autouse=True)
-def empty_tables(engine: Engine) -> None:
-    with engine.begin() as conn:
+def empty_tables(owner: Engine) -> None:
+    with owner.begin() as conn:
         conn.execute(
             text("TRUNCATE people, person_identifiers, identity_conflicts, person_resumes")
         )
@@ -135,8 +124,9 @@ def calls(n: int, make: Callable[[int], tuple[str | None, str | None]]) -> list[
     return out
 
 
-def snapshot(engine: Engine) -> dict[str, Any]:
-    with Session(engine) as session:
+def snapshot(owner: Engine) -> dict[str, Any]:
+    """Every agency's rows (as the owner)."""
+    with Session(owner) as session:
         return {
             "people": session.execute(select(func.count()).select_from(Person)).scalar_one(),
             "identifiers": sorted(
@@ -173,14 +163,16 @@ EMAIL_FORMS = ["a.sharma@gmail.com", "ASharma+jobs@Gmail.com", "asharma@googlema
 PHONE_FORMS = ["+91 98765 43210", "09876543210", "98765-43210", "0091 98765 43210"]
 
 
-def test_twenty_concurrent_resolutions_of_one_identity_create_one_person(engine: Engine) -> None:
+def test_twenty_concurrent_resolutions_of_one_identity_create_one_person(
+    engine: Engine, owner: Engine
+) -> None:
     batch = calls(
         WORKERS, lambda i: (EMAIL_FORMS[i % len(EMAIL_FORMS)], PHONE_FORMS[i % len(PHONE_FORMS)])
     )
 
     results = run_concurrently(engine, batch)
 
-    state = snapshot(engine)
+    state = snapshot(owner)
     person_ids = {r.person_id for r in results}
     assert len(person_ids) == 1
     (person_id,) = person_ids
@@ -196,21 +188,23 @@ def test_twenty_concurrent_resolutions_of_one_identity_create_one_person(engine:
     assert state["profiles"][person_id] == ("v19", batch[-1].resume_id)
 
 
-def test_twenty_concurrent_resolutions_of_one_email_create_one_person(engine: Engine) -> None:
+def test_twenty_concurrent_resolutions_of_one_email_create_one_person(
+    engine: Engine, owner: Engine
+) -> None:
     results = run_concurrently(engine, calls(WORKERS, lambda i: (EMAIL_FORMS[i % 3], None)))
 
     assert len({r.person_id for r in results}) == 1
-    assert snapshot(engine)["people"] == 1
+    assert snapshot(owner)["people"] == 1
 
 
-def test_concurrent_retries_of_one_resume_resolve_it_once(engine: Engine) -> None:
+def test_concurrent_retries_of_one_resume_resolve_it_once(engine: Engine, owner: Engine) -> None:
     resume_id = uuid.uuid4()
     batch = [Call("a@example.com", None, resume_id, T0) for _ in range(WORKERS)]
 
     results = run_concurrently(engine, batch)
 
     assert len(set(results)) == 1
-    state = snapshot(engine)
+    state = snapshot(owner)
     assert state["people"] == 1
     assert len(state["identifiers"]) == 1
 
@@ -233,7 +227,9 @@ def _seed(engine: Engine, email: str, phone: str) -> uuid.UUID:
     return result.person_id
 
 
-def test_cross_over_identifiers_never_deadlock_and_end_in_one_state(engine: Engine) -> None:
+def test_cross_over_identifiers_never_deadlock_and_end_in_one_state(
+    engine: Engine, owner: Engine
+) -> None:
     # A and B already exist; workers write their identifiers in every combination, crossed over
     # (A's email with B's phone and the other way round), alone, and alongside new identifiers.
     a = _seed(engine, "a@example.com", "+91 98765 43210")
@@ -272,7 +268,7 @@ def test_cross_over_identifiers_never_deadlock_and_end_in_one_state(engine: Engi
         assert result.matched_existing is True
         assert (result.conflict_id is not None) is conflict
 
-    state = snapshot(engine)
+    state = snapshot(owner)
     assert state["people"] == 2
     new_emails = {
         (a, "email", f"new{i}@example.com", False) for i in range(6, WORKERS, len(shapes))
@@ -302,7 +298,7 @@ def test_cross_over_identifiers_never_deadlock_and_end_in_one_state(engine: Engi
         assert state["profiles"][person_id] == (latest.name, latest.resume_id)
 
 
-def test_cross_over_without_existing_people_never_deadlocks(engine: Engine) -> None:
+def test_cross_over_without_existing_people_never_deadlocks(engine: Engine, owner: Engine) -> None:
     # Nothing exists yet: email-only, phone-only and both-in-either-order workers race to create
     # the person. The outcome depends on who wins (that is inherent), but no worker may fail and
     # the invariants must hold: one owner per identifier, and at most two people.
@@ -318,7 +314,7 @@ def test_cross_over_without_existing_people_never_deadlocks(engine: Engine) -> N
 
     results = run_concurrently(engine, batch)
 
-    state = snapshot(engine)
+    state = snapshot(owner)
     assert 1 <= state["people"] <= 2
     assert sorted((k, v) for _, k, v, _ in state["identifiers"]) == [
         ("email", "x@example.com"),
@@ -332,7 +328,9 @@ def test_cross_over_without_existing_people_never_deadlocks(engine: Engine) -> N
 OTHER_AGENCY = uuid.UUID("00000000-0000-4000-8000-0000000000b2")
 
 
-def test_the_same_identity_in_two_agencies_creates_one_person_per_agency(engine: Engine) -> None:
+def test_the_same_identity_in_two_agencies_creates_one_person_per_agency(
+    engine: Engine, owner: Engine
+) -> None:
     # 20 workers, alternating agencies, every form of one email and phone.
     batch = [
         Call(
@@ -348,7 +346,7 @@ def test_the_same_identity_in_two_agencies_creates_one_person_per_agency(engine:
 
     results = run_concurrently(engine, batch)
 
-    with Session(engine) as session:
+    with Session(owner) as session:
         people = dict(session.execute(select(Person.id, Person.agency_id)).tuples().all())
         identifiers = sorted(
             session.execute(
@@ -375,7 +373,7 @@ def test_the_same_identity_in_two_agencies_creates_one_person_per_agency(engine:
     )
     # One "new person" per agency; every other call matched its own agency's Person.
     assert sorted(r.matched_existing for r in results) == [False] * 2 + [True] * (WORKERS - 2)
-    assert snapshot(engine)["conflicts"] == []
+    assert snapshot(owner)["conflicts"] == []
 
 
 def _resolve_holding_locks(session: Session, agency_id: uuid.UUID) -> None:
@@ -391,7 +389,7 @@ def _resolve_holding_locks(session: Session, agency_id: uuid.UUID) -> None:
     )
 
 
-def test_an_agency_never_waits_on_another_agencys_locks(engine: Engine) -> None:
+def test_an_agency_never_waits_on_another_agencys_locks(engine: Engine, owner: Engine) -> None:
     """Agency A's resolution holds its advisory locks (not committed). The same identifiers in
     agency B resolve at once; in agency A they would wait (the control)."""
     from sqlalchemy.exc import OperationalError
@@ -412,5 +410,5 @@ def test_an_agency_never_waits_on_another_agencys_locks(engine: Engine) -> None:
             _resolve_holding_locks(same, DEFAULT_AGENCY_ID)
         holder.rollback()
 
-    with Session(engine) as session:
+    with Session(owner) as session:
         assert session.execute(select(Person.agency_id)).scalars().all() == [OTHER_AGENCY]

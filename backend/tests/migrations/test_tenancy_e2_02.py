@@ -29,10 +29,10 @@ from typing import Any
 import pytest
 from alembic import command
 from sqlalchemy import Connection, create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
 from tests import postgres
 from tests.factories import make_campaign, make_resume
 from tests.migrations.tenancy import CONTRACT, EXPAND, backfill
@@ -257,19 +257,25 @@ async def _expect_violation(db: AsyncSession, constraint: str, sql: str, **param
             await db.execute(text(sql), params)
 
 
-async def _other_agency(db: AsyncSession) -> None:
+async def _other_agency(db: AsyncSession) -> AsyncSession:
+    """Agency B and its client; returns a session bound to B on the test's connection. Row-level
+    security (E2-04) accepts B's rows only from such a session, so the composite keys below are
+    exercised with a row that passes the policy and then fails the key."""
     await db.execute(
         text("INSERT INTO agencies (id, name, slug, status) VALUES (:a, 'B', 'b', 'active')"),
         {"a": OTHER_AGENCY},
     )
-    await db.execute(
+    other = AsyncSession(bind=db.bind, join_transaction_mode="create_savepoint")
+    bind(other, OTHER_AGENCY)
+    await other.execute(
         text("INSERT INTO clients (id, agency_id, name, status) VALUES (:c, :a, 'B', 'active')"),
         {"a": OTHER_AGENCY, "c": OTHER_CLIENT},
     )
+    return other
 
 
 async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -> None:
-    await _other_agency(db_session)
+    other = await _other_agency(db_session)
     campaign = await make_campaign(db_session)
     resume = await make_resume(db_session, campaign)
 
@@ -285,7 +291,7 @@ async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -
     )
     # An application in another agency than its campaign.
     await _expect_violation(
-        db_session,
+        other,
         "fk_applications_agency_id_campaign_id_campaigns",
         "INSERT INTO applications (id, agency_id, campaign_id, person_id, resume_id, strengths, "
         "weaknesses, missing_skills) VALUES (:id, :a, :c, :p, :r, '[]', '[]', '[]')",
@@ -305,7 +311,7 @@ async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -
         {"id": person, "a": DEFAULT_AGENCY_ID},
     )
     await _expect_violation(
-        db_session,
+        other,
         "fk_person_identifiers_agency_id_person_id_people",
         "INSERT INTO person_identifiers (id, agency_id, person_id, kind, value_normalized, "
         "raw_value) VALUES (:id, :a, :p, 'email', 'x@example.com', 'x@example.com')",
@@ -314,7 +320,7 @@ async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -
         p=person,
     )
     await _expect_violation(
-        db_session,
+        other,
         "fk_person_resumes_agency_id_person_id_people",
         "INSERT INTO person_resumes (resume_id, agency_id, person_id, uploaded_at, "
         "matched_existing) VALUES (:r, :a, :p, now(), false)",
@@ -323,7 +329,7 @@ async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -
         p=person,
     )
     await _expect_violation(
-        db_session,
+        other,
         "fk_identity_conflicts_agency_id_chosen_person_id_people",
         "INSERT INTO identity_conflicts (id, agency_id, resume_id, chosen_person_id, "
         "conflicting_person_id, reason) VALUES (:id, :a, :r, :p, :p, 'x')",
@@ -332,24 +338,25 @@ async def test_a_child_of_another_agency_is_rejected(db_session: AsyncSession) -
         r=uuid.uuid4(),
         p=person,
     )
-    # And no agency at all.
-    await _expect_violation(
-        db_session,
-        'null value in column "agency_id"',
-        "UPDATE resumes SET agency_id = NULL WHERE id = :id",
-        id=resume.id,
-    )
+    # And no agency at all: as the app role, row-level security refuses it before the NOT NULL
+    # constraint is checked (the constraint itself is in the catalogue check above).
+    with pytest.raises(DBAPIError, match='row-level security policy for table "resumes"'):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text("UPDATE resumes SET agency_id = NULL WHERE id = :id"), {"id": resume.id}
+            )
+    await other.close()
 
 
 async def test_an_identifier_is_unique_per_agency(db_session: AsyncSession) -> None:
-    await _other_agency(db_session)
+    sessions = {DEFAULT_AGENCY_ID: db_session, OTHER_AGENCY: await _other_agency(db_session)}
     people = {DEFAULT_AGENCY_ID: uuid.uuid4(), OTHER_AGENCY: uuid.uuid4()}
     insert_identifier = (
         "INSERT INTO person_identifiers (id, agency_id, person_id, kind, value_normalized, "
         "raw_value) VALUES (:id, :a, :p, 'email', 'asha@example.com', 'asha@example.com')"
     )
     for agency, person in people.items():
-        await db_session.execute(
+        await sessions[agency].execute(
             text(
                 "INSERT INTO people (id, agency_id, skills, education, work_experience, "
                 "certifications, projects) VALUES (:id, :a, '[]', '[]', '[]', '[]', '[]')"
@@ -357,7 +364,7 @@ async def test_an_identifier_is_unique_per_agency(db_session: AsyncSession) -> N
             {"id": person, "a": agency},
         )
         # The same value in two agencies: two People, both stored.
-        await db_session.execute(
+        await sessions[agency].execute(
             text(insert_identifier), {"id": uuid.uuid4(), "a": agency, "p": person}
         )
 
@@ -369,6 +376,7 @@ async def test_an_identifier_is_unique_per_agency(db_session: AsyncSession) -> N
         a=DEFAULT_AGENCY_ID,
         p=people[DEFAULT_AGENCY_ID],
     )
+    await sessions[OTHER_AGENCY].close()
 
 
 # ── On a throwaway database ───────────────────────────────────
@@ -530,13 +538,17 @@ def test_a_run_that_failed_half_way_finishes_when_run_again(scratch_db: str) -> 
                     "CREATE INDEX ix_resumes_agency_id_campaign_id ON resumes (agency_id, campaign_id)"
                 )
             )
-            # The test container's user is a superuser: mark it as a failed build would.
+        # As the test container's superuser (the owner role may not write the catalog): mark
+        # it as a failed build would.
+        admin = create_engine(postgres.admin_url(scratch_db))
+        with admin.begin() as conn:
             conn.execute(
                 text(
                     "UPDATE pg_index SET indisvalid = false "
                     "WHERE indexrelid = 'ix_resumes_agency_id_campaign_id'::regclass"
                 )
             )
+        admin.dispose()
         with engine.connect() as conn:
             assert _catalog(conn)["indexes"]["ix_resumes_agency_id_campaign_id"] is False
 

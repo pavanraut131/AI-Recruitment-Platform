@@ -130,8 +130,10 @@ def test_the_cli_end_to_end(
     """``main`` against a throwaway database: its own engine and transaction, the password from
     stdin, exit codes."""
     with postgres.throwaway_database("e205_cli") as engine:
-        url = engine.url.set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-        monkeypatch.setattr(settings, "DATABASE_URL", url)
+        # The CLI connects as the owner role (MIGRATION_DATABASE_URL), like the other operator
+        # commands (E2-04); the throwaway database's engine is the owner's.
+        url = engine.url.render_as_string(hide_password=False)
+        monkeypatch.setattr(settings, "MIGRATION_DATABASE_URL", url)
         monkeypatch.setattr("sys.stdin", io.StringIO(PASSWORD + "\n"))
         assert (
             cli.main(

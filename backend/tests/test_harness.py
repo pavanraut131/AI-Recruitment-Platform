@@ -3,23 +3,35 @@
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from httpx import AsyncClient
-from sqlalchemy import func, select, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.modules.hiring.models import Campaign
+from app.modules.hiring.models import Campaign, Client
 from app.modules.ingestion.tasks import extract_resume, process_candidate_ai
 from app.platform import storage
+from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
 from tests.fakes import CeleryRecorder, InMemoryStorage
 
 
-async def test_migrations_are_at_head(db_session: AsyncSession) -> None:
+def test_migrations_are_at_head() -> None:
+    from app.platform.config import settings
+
     cfg = Config(str(postgres.ALEMBIC_INI))
     cfg.set_main_option("script_location", str(postgres.BACKEND_DIR / "alembic"))
     head = ScriptDirectory.from_config(cfg).get_current_head()
 
-    version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+    # As the owner: the app role has no grant on alembic_version (EPIC-02 spec §6.2).
+    owner = create_engine(settings.migration_database_url)
+    with owner.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    owner.dispose()
     assert version == head
+
+
+async def test_the_suite_runs_as_the_app_role(db_session: AsyncSession) -> None:
+    """Spec §11.1: no test talks to tenant tables as a superuser or the owner."""
+    assert await db_session.scalar(text("SELECT current_user")) == postgres.APP_ROLE
 
 
 async def test_commit_is_rolled_back_after_the_test(
@@ -31,9 +43,14 @@ async def test_commit_is_rolled_back_after_the_test(
     count = select(func.count()).select_from(Campaign).where(Campaign.title == "Tx")
     assert (await db_session.execute(count)).scalar_one() == 1
 
-    # ...but it only released a savepoint: another connection cannot see it.
-    async with db_engine.connect() as other:
+    # ...but it only released a savepoint: another connection, of the same agency, cannot see it.
+    async with db_engine.begin() as other:
+        await other.execute(
+            text("SELECT set_config('app.agency_id', :agency, true)"),
+            {"agency": str(DEFAULT_AGENCY_ID)},
+        )
         assert (await other.execute(count)).scalar_one() == 0
+        assert (await other.execute(select(func.count()).select_from(Client))).scalar_one() == 1
 
 
 async def test_database_starts_empty(db_session: AsyncSession) -> None:

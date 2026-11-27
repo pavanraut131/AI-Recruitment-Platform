@@ -14,8 +14,9 @@ PDF behind (bug B6), so an older stack has many.
 What it does
     Lists every object under the resume prefixes, ``agencies/`` (uploads since E2-03,
     ``agencies/<agency>/campaigns/<campaign>/resumes/<resume>.pdf``) and ``campaigns/`` (older
-    uploads, which keep their keys), and every resume's ``storage_path`` in **every agency** (an
-    unbound session: an operator command spanning agencies, spec §6.3), and prints:
+    uploads, which keep their keys), and every resume's ``storage_path`` in **every agency** (as
+    the owner role, ``MIGRATION_DATABASE_URL``: an operator command spanning agencies, spec
+    §6.2), and prints:
 
     * **orphans**: objects no resume refers to (each key, then the count). Objects modified less
       than ``--min-age-minutes`` ago are skipped: an upload stores the PDF before it commits its
@@ -38,11 +39,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.modules.ingestion import service as ingestion_service
-from app.platform import storage
+from app.platform import maintenance, storage
 from app.platform.config import settings
 
 PROG = "storage_orphans"
@@ -95,16 +95,8 @@ def main(
         objects: dict[str, datetime] = {}
         for prefix in ingestion_service.RESUME_STORAGE_PREFIXES:
             objects.update(storage.list_objects(prefix))
-        if session_factory is None:
-            engine = create_engine(settings.SYNC_DATABASE_URL)
-            try:
-                with Session(engine) as db:
-                    paths = ingestion_service.stored_resume_paths(db)
-            finally:
-                engine.dispose()
-        else:
-            with session_factory() as db:
-                paths = ingestion_service.stored_resume_paths(db)
+        with (session_factory or maintenance.owner_session)() as db:
+            paths = ingestion_service.stored_resume_paths(db)
     except Exception as exc:  # storage or database unreachable: report, don't trace back
         print(f"{PROG}: cannot read storage or the database: {exc}", file=sys.stderr)
         return 2
