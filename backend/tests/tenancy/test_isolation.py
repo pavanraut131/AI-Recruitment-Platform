@@ -35,13 +35,12 @@ from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier
 from app.platform import rls
 from app.platform.config import settings
 from app.platform.tenancy import (
-    DEFAULT_AGENCY_ID,
-    DEFAULT_CLIENT_ID,
     TenantLeak,
     bind,
     guard_pool_checkouts,
 )
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.factories import make_campaign, make_candidate, make_resume
 from tests.tenancy.conftest import OtherAgency, SessionFor
 

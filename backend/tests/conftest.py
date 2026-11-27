@@ -124,7 +124,8 @@ async def db_connection(db_engine: AsyncEngine) -> AsyncIterator[AsyncConnection
 
 @pytest_asyncio.fixture
 async def db_session(db_connection: AsyncConnection) -> AsyncIterator[AsyncSession]:
-    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+    from app.platform.tenancy import bind
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     session = AsyncSession(
         bind=db_connection,

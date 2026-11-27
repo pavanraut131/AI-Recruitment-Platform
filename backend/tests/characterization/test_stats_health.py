@@ -7,9 +7,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from tests.characterization.snapshot_utils import response_data
 from tests.factories import make_campaign, make_candidate, make_resume
 from tests.fakes import FakeRedis
+from tests.snapshot_utils import response_data
 
 API = "/api/v1"
 

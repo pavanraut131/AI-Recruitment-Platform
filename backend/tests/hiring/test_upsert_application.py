@@ -19,7 +19,7 @@ from sqlalchemy.pool import NullPool
 from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import service
 from app.modules.hiring.models import Application, Campaign
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 LOW = ScoringResult(
@@ -47,7 +47,8 @@ HIGH = ScoringResult(
 @pytest.fixture
 def db() -> Iterator[Session]:
     from app.platform.config import settings
-    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+    from app.platform.tenancy import bind
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     engine = create_engine(settings.SYNC_DATABASE_URL, poolclass=NullPool)
     with engine.connect() as conn:

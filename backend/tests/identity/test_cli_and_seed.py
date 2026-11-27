@@ -13,8 +13,8 @@ from app.devtools import seed_users
 from app.modules.identity import cli, passwords, service
 from app.modules.identity.models import Agency, Membership, User
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 PASSWORD = "operator chosen password"
 

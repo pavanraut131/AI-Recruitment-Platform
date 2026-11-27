@@ -34,10 +34,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.ingestion.events import publish_resume_event
 from app.platform.tenancy import DEFAULT_AGENCY_ID
-from tests.characterization.snapshot_utils import response_data
-from tests.characterization.sse import read_sse
 from tests.factories import make_campaign, make_resume
 from tests.fakes import FakeRedis
+from tests.snapshot_utils import response_data
+from tests.sse import read_sse
 
 API = "/api/v1"
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"

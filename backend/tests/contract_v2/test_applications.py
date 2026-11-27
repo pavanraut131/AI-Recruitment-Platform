@@ -12,10 +12,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Application, LegacyCandidateMap
 from app.modules.ingestion.models import Resume
-from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import UNKNOWN_ID, V2, applicant, ranked_campaign
 from tests.factories import make_campaign, make_resume
 from tests.fakes import InMemoryStorage
+from tests.snapshot_utils import response_data
 
 
 def _names(resp_json: dict[str, object]) -> list[object]:

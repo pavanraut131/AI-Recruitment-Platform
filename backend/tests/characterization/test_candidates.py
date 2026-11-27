@@ -12,9 +12,9 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
-from tests.characterization.snapshot_utils import response_data
 from tests.factories import at, make_campaign, make_candidate, make_resume
 from tests.fakes import InMemoryStorage
+from tests.snapshot_utils import response_data
 
 API = "/api/v1"
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"

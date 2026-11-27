@@ -29,7 +29,8 @@ def sync_engine() -> Iterator[Engine]:
 
 @pytest.fixture
 def sync_session(sync_engine: Engine) -> Iterator[Session]:
-    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+    from app.platform.tenancy import bind
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     with sync_engine.connect() as conn:
         outer = conn.begin()

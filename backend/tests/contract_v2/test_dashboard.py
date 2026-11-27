@@ -11,10 +11,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.api.v2 import dashboard
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_AGENCY_ID
-from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import V2, applicant
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import at, make_campaign, make_client, make_resume
+from tests.snapshot_utils import response_data
 
 
 async def _workspace(db: AsyncSession) -> None:

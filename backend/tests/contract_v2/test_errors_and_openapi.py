@@ -14,8 +14,8 @@ from fastapi import APIRouter, FastAPI
 from httpx import AsyncClient
 from syrupy.assertion import SnapshotAssertion
 
-from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import V2
+from tests.snapshot_utils import response_data
 
 CAMEL_CASE = re.compile(r"^[a-z]+(?:[A-Z][a-z0-9]*)*$")
 

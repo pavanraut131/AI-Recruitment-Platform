@@ -18,10 +18,10 @@ from sse_starlette.sse import AppStatus
 from app.devtools import storage_orphans
 from app.modules.ingestion import service as ingestion_service
 from app.modules.ingestion.events import campaign_channel, publish_resume_event
-from app.platform.tenancy import DEFAULT_AGENCY_ID
-from tests.characterization.sse import read_sse
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import make_campaign
 from tests.fakes import InMemoryStorage
+from tests.sse import read_sse
 from tests.tenancy.conftest import OtherAgency
 
 OTHER_AGENCY = uuid.UUID("bbbbbbbb-0000-4000-8000-000000000002")

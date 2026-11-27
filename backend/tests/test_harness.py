@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from app.modules.hiring.models import Campaign, Client
 from app.modules.ingestion.tasks import extract_resume, process_candidate_ai
 from app.platform import storage
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.fakes import CeleryRecorder, InMemoryStorage
 
 

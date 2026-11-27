@@ -25,8 +25,8 @@ from sqlalchemy.engine import make_url
 
 from app.platform import rls
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.migrations.tenancy import EXPAND, backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,

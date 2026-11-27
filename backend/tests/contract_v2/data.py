@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application, Campaign
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import BASE_TIME, at, make_campaign, make_candidate, make_resume
 
 V2 = "/api/v2"

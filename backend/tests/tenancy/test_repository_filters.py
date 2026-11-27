@@ -22,7 +22,8 @@ from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope, agency_id_of
+from app.platform.tenancy import AccessScope, agency_id_of
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import make_campaign, make_candidate
 from tests.fakes import CeleryRecorder, InMemoryStorage
 from tests.ingestion.test_service import PDF, FakeUpload

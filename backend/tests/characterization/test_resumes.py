@@ -19,13 +19,13 @@ from syrupy.assertion import SnapshotAssertion
 from app.modules.hiring.models import Campaign
 from app.modules.ingestion.models import Resume
 from app.platform.config import settings
-from tests.characterization.snapshot_utils import (
+from tests.factories import at, make_campaign, make_resume
+from tests.fakes import CeleryRecorder, InMemoryStorage
+from tests.snapshot_utils import (
     celery_calls_data,
     response_data,
     stored_objects_data,
 )
-from tests.factories import at, make_campaign, make_resume
-from tests.fakes import CeleryRecorder, InMemoryStorage
 
 API = "/api/v1"
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"

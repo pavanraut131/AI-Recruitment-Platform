@@ -31,8 +31,8 @@ from app.modules.hiring.models import Application, Campaign, Client
 from app.modules.identity.permissions import ROLE_PERMISSIONS
 from app.modules.identity.schemas import Role
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from app.v2 import route_permissions, v2_app
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.factories import at, make_campaign, make_candidate, make_client, make_resume
 from tests.identity.conftest import V2, Mailbox, Users, anonymous_csrf, csrf, problem
 from tests.tenancy.test_api_sweep import BODIES, STREAMS

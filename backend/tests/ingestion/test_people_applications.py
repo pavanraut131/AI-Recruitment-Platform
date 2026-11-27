@@ -55,8 +55,9 @@ from app.modules.ingestion import tasks, verify_people_applications
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
+from app.platform.tenancy import bind
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import InMemoryStorage
 
 # The task message's agency (EPIC-02 §6.3); one without it is tests/tenancy's.

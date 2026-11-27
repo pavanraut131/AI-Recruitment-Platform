@@ -17,7 +17,6 @@ from app.modules.hiring import service as hiring_service
 from app.modules.talent import service as talent_service
 from app.platform.config import settings
 from app.platform.tenancy import (
-    DEFAULT_AGENCY_ID,
     AccessScope,
     TenantMismatch,
     TenantNotBound,
@@ -25,6 +24,7 @@ from app.platform.tenancy import (
     bind,
     tenant_of,
 )
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 A = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000001")
 B = uuid.UUID("bbbbbbbb-0000-4000-8000-000000000002")

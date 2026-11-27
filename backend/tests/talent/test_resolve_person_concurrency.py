@@ -33,8 +33,9 @@ from sqlalchemy.orm import Session
 from app.modules.talent import service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+from app.platform.tenancy import bind
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 WORKERS = 20
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)

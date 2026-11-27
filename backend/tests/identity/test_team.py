@@ -20,7 +20,7 @@ from app.modules.identity.dependencies import DEV_FALLBACK
 from app.modules.identity.models import AuditEvent, Membership
 from app.modules.identity.schemas import Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.identity.conftest import V2, Users, csrf, problem
 
 OWNER = "owner@example.com"

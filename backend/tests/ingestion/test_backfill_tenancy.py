@@ -30,8 +30,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.devtools import seed
 from app.modules.ingestion import backfill_tenancy, verify_people_applications
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
+from app.platform.tenancy import bind
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.ingestion.test_people_applications import make_application, make_campaign
 
 EXPAND = "e2a01d5c8f36"

@@ -29,7 +29,8 @@ from app.modules.ingestion import tasks
 from app.modules.ingestion.events import campaign_channel
 from app.modules.ingestion.models import Resume
 from app.platform.celery_app import MissingAgency, TenantTask
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of, bind
+from app.platform.tenancy import agency_id_of, bind
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.test_tasks import RESUME_TEXT, make_pdf
 

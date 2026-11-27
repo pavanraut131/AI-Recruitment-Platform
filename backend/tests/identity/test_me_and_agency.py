@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity.models import AuditEvent, UserSession
 from app.modules.identity.schemas import Role
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import make_campaign
 from tests.identity.conftest import (
     PASSWORD,

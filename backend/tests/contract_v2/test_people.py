@@ -12,10 +12,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Application
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_AGENCY_ID
-from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import UNKNOWN_ID, V2, add_conflict, add_identifier, applicant
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import at, make_campaign, make_resume
+from tests.snapshot_utils import response_data
 
 
 async def _people(db: AsyncSession) -> dict[str, Person]:

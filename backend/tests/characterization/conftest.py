@@ -10,7 +10,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from syrupy.assertion import SnapshotAssertion
 
-from tests.characterization.snapshot_utils import MaskedAmberExtension
+from tests.snapshot_utils import MaskedAmberExtension
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

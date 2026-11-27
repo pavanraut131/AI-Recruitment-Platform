@@ -27,8 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import make_campaign, make_resume
 from tests.migrations.tenancy import upgrade_to_head_through_backfill
 

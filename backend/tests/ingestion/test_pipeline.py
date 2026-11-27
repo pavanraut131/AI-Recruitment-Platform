@@ -37,7 +37,7 @@ from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import InMemoryStorage
 from tests.ingestion.conftest import Events
 

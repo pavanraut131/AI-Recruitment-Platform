@@ -21,7 +21,7 @@ from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
 from app.modules.ingestion.events import campaign_channel
 from app.modules.ingestion.models import Resume
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import CeleryRecorder, FakeRedis, InMemoryStorage
 from tests.ingestion.conftest import Events
 

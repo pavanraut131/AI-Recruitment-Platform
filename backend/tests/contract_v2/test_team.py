@@ -18,8 +18,8 @@ from app.modules.hiring.models import Client
 from app.modules.identity.models import Membership
 from app.modules.identity.schemas import Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.contract_v2.test_identity import _data
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.identity.conftest import V2, Users, browser, csrf  # noqa: F401 (fixture)
 
 ACME = uuid.UUID("0000000a-0000-4000-8000-00000000acde")

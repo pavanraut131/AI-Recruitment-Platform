@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 from app.modules.talent import repository, service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.modules.talent.schemas import PersonProfile, ResolveResult
-from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+from app.platform.tenancy import bind
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 

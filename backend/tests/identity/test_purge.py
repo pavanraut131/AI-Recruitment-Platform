@@ -18,7 +18,7 @@ from app.modules.identity import tasks
 from app.modules.identity.models import Invitation, PasswordResetToken, User, UserSession
 from app.modules.identity.service import hash_token, utcnow
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 DAY = timedelta(days=1)
 

@@ -105,7 +105,7 @@ class Users:
         """A user with these memberships (default: owner of the default agency)."""
         from app.modules.identity import service
         from app.modules.identity.schemas import Role
-        from app.platform.tenancy import DEFAULT_AGENCY_ID
+        from tests.default_agency import DEFAULT_AGENCY_ID
 
         user = await service.ensure_user(
             self.db, email, display_name=email.split("@")[0], password=password
@@ -129,7 +129,7 @@ class Users:
         from sqlalchemy import select
 
         from app.modules.identity.models import Membership, MembershipClient
-        from app.platform.tenancy import DEFAULT_AGENCY_ID
+        from tests.default_agency import DEFAULT_AGENCY_ID
 
         membership = await self.db.scalar(
             select(Membership).where(

@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.ingestion import service, tasks
 from app.modules.ingestion.models import Resume
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope
+from app.platform.tenancy import AccessScope
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.factories import at, make_campaign, make_resume
 from tests.fakes import CeleryRecorder, InMemoryStorage
 
