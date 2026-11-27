@@ -34,7 +34,7 @@ from app.modules.identity.models import (
 )
 from app.modules.identity.schemas import OidcProvider, Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.fakes import FakeRedis
 from tests.identity.conftest import Mailbox, Users, csrf, problem, set_cookie_headers
 from tests.identity.fake_oidc import (

@@ -10,7 +10,7 @@ import uuid
 from alembic import command
 from sqlalchemy import Connection, create_engine, text
 
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,

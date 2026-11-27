@@ -80,8 +80,8 @@ def application_filters(
         Query(description="Order; scores sort unscored last; ties by id."),
     ] = ApplicationSort.score_desc,
 ) -> hiring.ApplicationQuery:
-    """The list filters, shared by the list and the export (the export applies all of them,
-    unlike v1's: B8)."""
+    """The list filters, shared by the list and the export (the export applies all of them:
+    B8)."""
     return hiring.ApplicationQuery(
         campaign_id=campaign_id,
         q=q,

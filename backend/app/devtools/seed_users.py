@@ -40,7 +40,7 @@ from app.modules.hiring import service as hiring
 from app.modules.identity import service as identity
 from app.modules.identity.schemas import Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+from app.platform.tenancy import bind
 
 DEV_PASSWORD: Final = "hireflow-dev-password"
 SECOND_AGENCY_NAME: Final = "Northbank Talent"
@@ -68,13 +68,13 @@ async def seed_users(db: AsyncSession) -> list[SeededUser]:
         raise SeedUsersRefused(
             f"refusing to create development accounts: APP_ENV={settings.APP_ENV}"
         )
-    default = await identity.get_agency(db, DEFAULT_AGENCY_ID)
+    default = await identity.get_agency_by_slug(db, identity.DEFAULT_AGENCY_SLUG)
     if default is None:
         raise SeedUsersRefused("the default agency is missing: run the migrations first")
     second = await identity.ensure_agency(db, SECOND_AGENCY_NAME, SECOND_AGENCY_SLUG)
     seeded: list[SeededUser] = []
     agencies: tuple[tuple[uuid.UUID, str, str], ...] = (
-        (default.id, default.name, "default"),
+        (default.id, default.name, identity.DEFAULT_AGENCY_SLUG),
         (second.id, second.name, SECOND_AGENCY_SLUG),
     )
     for agency_id, agency_name, domain in agencies:

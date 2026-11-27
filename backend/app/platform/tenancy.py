@@ -31,19 +31,12 @@ Operator commands that span agencies (``reset_stuck``, ``storage_orphans``,
 call only repository functions that say they read every agency; those never call
 :func:`agency_id_of`. As the application role an unbound session would see nothing.
 
-**Transition constants** (E2-01 to E2-12):
-
-- :data:`DEFAULT_AGENCY_ID`: the agency (identity's ``agencies``) that every existing row
-  belongs to, named **"Default agency"** (slug ``default``). Until E2-05 every HTTP request is
-  bound to it, and ``/api/v1`` stays bound to it until it is removed (E2-12).
-- :data:`DEFAULT_CLIENT_ID`: the client (hiring's ``clients``) of the default agency that every
-  existing campaign is run for, named **"General"** (spec §15, Q7). Since E2-06 a campaign is
-  created for the client its request names (or the caller's default client); the E2-06
-  migration gave every other agency a "General" client too.
-
-The values are fixed, so the migration, the code and the runbooks agree without a lookup.
-Never reuse them for anything else. They live here, not in ``identity`` or ``hiring``, because
-every tenant module needs them and none of them may import ``identity`` (a leaf).
+**The default agency.** The E2-01 migration made the data that existed before E2 into one
+agency, **"Default agency"** (slug ``default``), with one client, **"General"** (spec §7, §15
+Q7). Until E2-12 their fixed ids were constants here, for the transition (``/api/v1`` was bound
+to that agency, the tenancy backfill filled it in). Since then the code has no fixed agency: the
+default agency is an ordinary one, and the commands that need it (the development seed,
+``identity.cli create-owner``, the backfill) look it up by its slug.
 """
 
 from __future__ import annotations
@@ -56,9 +49,6 @@ from typing import Any, Final
 from sqlalchemy import ColumnElement, Connection, Engine, event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Session, SessionTransaction
-
-DEFAULT_AGENCY_ID: Final = uuid.UUID("00000000-0000-4000-8000-00000000a001")
-DEFAULT_CLIENT_ID: Final = uuid.UUID("00000000-0000-4000-8000-00000000c001")
 
 SETTING: Final = "app.agency_id"
 """The transaction-local Postgres setting that carries the agency (read by RLS, spec §6.2)."""

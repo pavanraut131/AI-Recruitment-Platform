@@ -20,10 +20,11 @@ What it does
     ``docs/specs/EPIC-00-platform-core.md`` §6.4); ``verify_people_applications --manifest``
     compares them (§6.3).
 
-    Tenancy (EPIC-02): everything is created in the default agency
-    (``app.platform.tenancy.DEFAULT_AGENCY_ID``) and every campaign is run for its default client.
-    ``generate`` needs a session bound to the default agency (E2-03: the services it calls take
-    the agency from the session); the CLI binds its own.
+    Tenancy (EPIC-02): everything is created in the agency the session is bound to (E2-03: the
+    services it calls take the agency from the session), and every campaign is run for that
+    agency's oldest active client (``hiring.service.first_client_id``). The CLI binds the default
+    agency, which it looks up by its slug ``default`` (``identity.service.DEFAULT_AGENCY_SLUG``;
+    the E2-01 migration created it, with its client "General").
 
     Sign-in accounts (E2-05): before anything else, every run (``--if-empty`` and ``--reset``
     too) makes sure a second agency and one user per role in each agency exist, with a
@@ -41,8 +42,8 @@ Safety
     * Refuses to run when ``APP_ENV=production`` (``SeedRefused``).
     * Refuses when any application exists, unless ``--reset`` is given. ``--reset`` deletes the
       rows of ``applications``, ``resumes`` and ``campaigns`` and of the tables derived from
-      them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``,
-      ``legacy_candidate_map``; nothing else: ``agencies`` and ``clients`` stay) and prints how
+      them (``people``, ``person_identifiers``, ``identity_conflicts``, ``person_resumes``;
+      nothing else: ``agencies`` and ``clients`` stay) and prints how
       many it deleted. ``--if-empty``
       instead exits successfully without changes (used by ``make setup``).
     * Commits every :data:`BATCH_SIZE` resumes (the CLI; ``--reset`` with the first batch):
@@ -167,13 +168,14 @@ from sqlalchemy.orm import Session
 from app.devtools import seed_users
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import service as hiring_service
-from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign
+from app.modules.identity import service as identity_service
 from app.modules.ingestion.models import Resume
 from app.modules.ingestion.tasks import person_profile
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of, bind
+from app.platform.tenancy import agency_id_of, bind
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "seed-manifest.json"
@@ -261,7 +263,6 @@ RECOMMENDATIONS = {
 # (children first): what the pipeline derives from resumes. Their rows are meaningless without
 # the resumes they came from.
 DERIVED_MODELS: tuple[type[Any], ...] = (
-    LegacyCandidateMap,
     PersonResume,
     IdentityConflict,
     PersonIdentifier,
@@ -532,10 +533,8 @@ class _Builder:
             created = BASE_TIME + timedelta(hours=i)
             rows.append(
                 {
+                    # The agency and client are the session's (generate): not part of the plan.
                     "id": _uuid(self.rng),
-                    # The default agency and client, as the create endpoint sets them (E2-01).
-                    "agency_id": DEFAULT_AGENCY_ID,
-                    "client_id": DEFAULT_CLIENT_ID,
                     "title": f"{role} - Hiring Round {i // len(ROLES) + 1}",
                     "role": role,
                     "description": f"We are hiring a {role} to join our {self.fake.city()} team.",
@@ -556,7 +555,6 @@ class _Builder:
         filename = f"{h.first}_{h.last}_resume{suffix}.pdf"
         sub.resume_row = {
             "id": resume_id,
-            "agency_id": campaign["agency_id"],
             "campaign_id": campaign["id"],
             "original_filename": filename,
             "file_hash": hashlib.sha256(f"seed:{self.seed}:resume:{position}".encode()).hexdigest(),
@@ -694,7 +692,7 @@ def existing_counts(session: Session) -> dict[str, int]:
 
 def reset(session: Session) -> dict[str, Any]:
     """Delete every application, resume and campaign row, and everything the pipeline derives
-    from resumes (People, identifiers, conflicts, resolutions, the legacy id map), so a
+    from resumes (People, identifiers, conflicts, resolutions), so a
     rehearsal starts from nothing. Returns the counts of the three seeded tables and, under
     ``derived``, the rows deleted from the others. Stored PDFs are not touched (the seed
     stores none)."""
@@ -725,16 +723,24 @@ def generate(
     through the pipeline's services: ``talent.resolve_person`` (stored as
     ``resumes.person_id``) and ``hiring.upsert_application``. Only flushes, unless ``on_batch``
     is given: it is called after every :data:`BATCH_SIZE` resumes (the CLI commits there).
-    ``session`` must be bound to the default agency (``app.platform.tenancy.bind``).
+    ``session`` must be bound to an agency (``app.platform.tenancy.bind``; the CLI binds the
+    default agency) that has an active client: every row is written in that agency, and every
+    campaign is run for its oldest active client.
     """
     ensure_not_production()
-    if agency_id_of(session) != DEFAULT_AGENCY_ID:
-        raise SeedRefused("the seed writes the default agency: bind the session to it")
+    agency_id = agency_id_of(session)
+    client_id = hiring_service.first_client_id(session, agency_id)
+    if client_id is None:
+        raise SeedRefused(f"agency {agency_id} has no active client to run the campaigns for")
     if existing_counts(session)["applications"]:
         raise SeedRefused("refusing to seed: applications already exist (use --reset)")
     plan = build_plan(people, campaigns, seed)
-    session.execute(insert(Campaign), plan.campaign_rows)
-    session.execute(insert(Resume), [s.resume_row for s in plan.submissions])
+    tenant = {"agency_id": agency_id}
+    session.execute(
+        insert(Campaign),
+        [{**row, **tenant, "client_id": client_id} for row in plan.campaign_rows],
+    )
+    session.execute(insert(Resume), [{**s.resume_row, **tenant} for s in plan.submissions])
 
     application_of: dict[uuid.UUID, uuid.UUID] = {}  # resume id -> application id
     for done, sub in enumerate(plan.submissions, start=1):
@@ -828,8 +834,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         for line in seed_users.describe(asyncio.run(seed_users.run())):
             print(line)
         engine = create_engine(settings.SYNC_DATABASE_URL)
+        with Session(engine) as lookup:  # agencies is global: no agency needed to read it
+            default_agency = identity_service.agency_id_by_slug(
+                lookup, identity_service.DEFAULT_AGENCY_SLUG
+            )
+        if default_agency is None:  # seed_users.run() refuses first
+            raise SeedRefused("the default agency is missing: run the migrations first")
         with Session(engine) as session:
-            bind(session, DEFAULT_AGENCY_ID)
+            bind(session, default_agency)
             before = existing_counts(session)
             if before["applications"] and args.if_empty:
                 print(f"seed: skipped, {before['applications']} applications already exist")

@@ -1,6 +1,8 @@
 # Runbook · Person/Application backfill, read switch and contract (EPIC-00 phases 2 to 5)
 
 > **Historical since E0-20 (contract, section 9).** The `candidates` table, the backfill command and `verify_backfill` are gone; sections 1 to 8 are the record of how phases 2 to 4 were run, and work only on code up to E0-19 (check out `e0-19-read-switch` to run them). What still applies today: section 9 (the contract deploy and its verification), section 8.3's *"After E0-20"* (rollback needs a rebuild), and `python -m app.modules.ingestion.verify_people_applications`, which replaced `verify_backfill` without the legacy checks.
+>
+> **Since E2-12** `/api/v1` is gone, and with it the tools that compared its responses (`app.devtools.capture_api`, `compare_api`: sections 8.2 and 9, steps 1 and 4) and `legacy_candidate_map` (the merged legacy ids, dropped by migration `e2f12a6c9d40`). Run those steps from a checkout before E2-12; the `/api/v1` URLs below are the record of how it was done.
 
 Converts every legacy `candidates` row into People (`talent`) and Applications (`hiring`), proves the result, then switches the API's reads to them (section 8, E0-19). Spec: [EPIC-00 §6.1–6.3](../specs/EPIC-00-platform-core.md#6-migration-plan-expand--backfill--contract). Code (up to E0-19): `app/modules/ingestion/backfill.py`, `app/modules/ingestion/verify_backfill.py` (their module docstrings hold the details).
 

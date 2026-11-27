@@ -36,7 +36,6 @@ TABLE_OWNERS = {
     "clients": "hiring",
     "campaigns": "hiring",
     "applications": "hiring",
-    "legacy_candidate_map": "hiring",
     "resumes": "ingestion",
     "people": "talent",
     "person_identifiers": "talent",
@@ -85,7 +84,6 @@ async def test_the_same_module_foreign_keys_are_the_expected_ones(db_session: As
     assert {(table, referenced) for _, table, referenced in rows} == {
         ("campaigns", "clients"),  # (agency_id, client_id), E2-02
         ("applications", "campaigns"),
-        ("legacy_candidate_map", "applications"),
         ("person_identifiers", "people"),
         ("identity_conflicts", "people"),
         ("person_resumes", "people"),

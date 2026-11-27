@@ -58,6 +58,10 @@ def agency_ids_sync(db: Session) -> set[uuid.UUID]:
     return set(db.execute(select(Agency.id)).scalars())
 
 
+def agency_id_by_slug_sync(db: Session, slug: str) -> uuid.UUID | None:
+    return db.execute(select(Agency.id).where(Agency.slug == slug)).scalar_one_or_none()
+
+
 # ── Users and memberships ─────────────────────────────────────
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     result = await db.execute(select(User).where(User.email == email))

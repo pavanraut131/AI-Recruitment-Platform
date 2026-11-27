@@ -15,10 +15,10 @@ share a channel, even if a campaign id were reused. Until E2-03 the channel was
 the old code during a deploy reaches no stream (a progress update is missed, the page catches up
 on its next fetch). The frontend never sees channel names.
 
-The payload is ``{"resume_id": ..., "status": ..., **extra}``; its shape per status is pinned by
-``tests/characterization/test_sse.py`` and did not change with the channel. Since E0-16 the
-``done`` event also carries ``person_id`` and ``matched_existing`` (additive; no other event
-knows the Person yet).
+The payload is ``{"resume_id": ..., "status": ..., **extra}``; the ``/api/v2`` stream validates
+it into ``ResumeEvent`` (:func:`typed_campaign_event_stream`, pinned by
+``tests/contract_v2/test_uploads.py``). Since E0-16 the ``done`` event also carries ``person_id``
+and ``matched_existing`` (additive; no other event knows the Person yet).
 """
 
 import asyncio
@@ -62,8 +62,10 @@ def publish_resume_event(
 async def campaign_event_stream(
     agency_id: uuid.UUID, campaign_id: uuid.UUID
 ) -> AsyncIterator[dict[str, str]]:
-    """SSE events for a campaign's page: ``connected`` first, then a ``resume_update`` per event
-    published for one of **this campaign's** resumes (on the agency's channel)."""
+    """The raw events of a campaign's stream: ``connected`` first, then a ``resume_update`` per
+    event published for one of **this campaign's** resumes (on the agency's channel), as
+    published (``/api/v1``'s stream sent them so until E2-12; :func:`typed_campaign_event_stream`
+    validates them)."""
     channel = campaign_channel(agency_id, campaign_id)
     r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()

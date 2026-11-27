@@ -8,14 +8,15 @@ Request validation errors (422) add ``errors``, one entry per invalid field, eac
 path (``loc``, e.g. ``["query", "page_size"]`` or ``["body", "title"]``) and a message.
 
 :func:`install_problem_handlers` registers the handlers on **one** FastAPI application (the v2
-sub-application, ``app.v2``). The v1 application never gets them, so v1 responses stay exactly as
-the characterization snapshots record them.
+sub-application, ``app.v2``); the root application (``app.main``) serves only the health checks.
+An unhandled exception is logged here (``unhandled_exception``); the root application had a
+handler for that until ``/api/v1`` was removed (E2-12).
 
 Routers raise ``HTTPException`` (or :class:`ProblemError` for a custom ``type``/``title``) as
 usual; :func:`errors_as_http` turns a module service's error classes into ``HTTPException``\\ s
 with the status codes a router chooses. ``type`` is ``about:blank`` unless a more specific
 problem type is given; with ``about:blank`` the ``title`` is the HTTP status phrase (RFC 9457
-§4.2.1). A 500 never echoes the request URL or the exception (unlike v1's handler, B10).
+§4.2.1). A 500 never echoes the request URL or the exception (v1's handler did: B10).
 """
 
 from collections.abc import Iterator, Mapping, Sequence
@@ -23,11 +24,14 @@ from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = structlog.get_logger()
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 ABOUT_BLANK = "about:blank"
@@ -147,8 +151,12 @@ def _field_error(error: Mapping[str, Any]) -> FieldError:
 
 
 async def _unhandled(request: Request, exc: Exception) -> ProblemResponse:
-    # Not logged here: Starlette re-raises the exception after this response, and the root
-    # application's handler (app.main) logs it.
+    # Logged here, with the path only (never the query string: it may carry an OIDC code or
+    # state). Starlette re-raises the exception after this response, so the server logs its
+    # traceback too.
+    logger.error(
+        "unhandled_exception", method=request.method, path=request.url.path, error=str(exc)
+    )
     return problem_response(500, "Internal server error")
 
 

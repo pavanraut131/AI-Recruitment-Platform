@@ -1,8 +1,8 @@
 """identity ORM models (EPIC-02 spec §3.3). Private to the identity module: other modules use
 ``app.modules.identity.service``.
 
-- ``agencies`` (E2-01, migration ``e2a01d5c8f36``, with the default agency
-  :data:`app.platform.tenancy.DEFAULT_AGENCY_ID`): the tenants.
+- ``agencies`` (E2-01, migration ``e2a01d5c8f36``, with the "Default agency" of the data that
+  existed before E2, slug ``default``: ``service.DEFAULT_AGENCY_SLUG``): the tenants.
 - ``users``, ``memberships``, ``membership_clients``, ``user_sessions`` and ``audit_events``
   (E2-05, migration ``e2c05b3f7a21``).
 - ``invitations`` and ``password_reset_tokens`` (E2-07, migration ``e2d07c3f9b12``): emailed,

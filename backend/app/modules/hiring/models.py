@@ -1,9 +1,10 @@
-"""hiring ORM models: ``Client``, ``Campaign``, ``Application`` and ``LegacyCandidateMap``.
+"""hiring ORM models: ``Client``, ``Campaign`` and ``Application``.
 
-Tables ``clients`` (E2-01), ``campaigns``, ``applications`` and ``legacy_candidate_map`` (the last
-two created by the E0-14 expand migration). The upload pipeline writes ``applications`` through
-``service.upsert_application``; the API reads and writes them since the read switch (E0-19).
-The legacy ``candidates`` table was dropped by the contract migration (E0-20, spec §6.1 phase 5).
+Tables ``clients`` (E2-01), ``campaigns`` and ``applications`` (created by the E0-14 expand
+migration). The upload pipeline writes ``applications`` through ``service.upsert_application``;
+the API reads and writes them since the read switch (E0-19). The legacy ``candidates`` table was
+dropped by the contract migration (E0-20, spec §6.1 phase 5), and ``legacy_candidate_map`` (the
+ids of legacy candidates merged into an application, read only by ``/api/v1``) with v1 in E2-12.
 
 Private to the hiring module: other modules use ``app.modules.hiring.service`` instead.
 
@@ -13,7 +14,7 @@ crosses a module boundary any more (E0-20 dropped the last one, ``resumes.campai
 campaigns.id``; ``tests/test_no_cross_module_foreign_keys.py`` checks the whole schema).
 ``applications.campaign_id`` is a same-module foreign key (``ON DELETE CASCADE``), which the
 database applies on a campaign delete; the campaign's resumes are deleted by ingestion in the
-same transaction (``app.api``, ``DELETE /campaigns/{id}``).
+same transaction (``app.api.v2``, ``DELETE /campaigns/{id}``).
 
 **Tenancy (EPIC-02).** ``clients``, ``campaigns`` and ``applications`` carry ``agency_id``
 (``NOT NULL``): identity's agency, a plain UUID with no foreign key (ADR 0003). Added by the
@@ -22,7 +23,7 @@ database keeps the agency consistent with **composite foreign keys** to ``UNIQUE
 id)`` targets: a campaign's client is of the campaign's agency (``(agency_id, client_id) ->
 clients``), and an application's campaign of the application's (``(agency_id, campaign_id) ->
 campaigns``, ``ON DELETE CASCADE``, which replaced the single-column key). Every insert sets the
-agency (``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03); ``campaigns.client_id``
+agency of its session (``app.platform.tenancy``); ``campaigns.client_id``
 (``NOT NULL``) is the client the campaign is run for (E2-06: chosen by the request, or the
 caller's default client), and ``Campaign.client`` loads it with the campaign.
 ``campaigns.created_by_user_id`` refers to identity's users (E2-05), also without a foreign key.
@@ -37,7 +38,6 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Float,
-    ForeignKey,
     ForeignKeyConstraint,
     Index,
     String,
@@ -67,8 +67,8 @@ class ClientStatus(str, enum.Enum):
 class Client(Base):
     """An agency's customer; every campaign is run for one client (spec §3.1, §3.3).
 
-    Created by the E2-01 expand migration with the default agency's default client ("General",
-    ``app.platform.tenancy.DEFAULT_CLIENT_ID``). A new table, so ``agency_id`` is ``NOT NULL``
+    Created by the E2-01 expand migration with the default agency's client ("General", which
+    every campaign before E2 is run for). A new table, so ``agency_id`` is ``NOT NULL``
     and its unique constraints include it from the start: a client name is unique per agency
     (case-insensitively), and ``(agency_id, id)`` is the target of the composite foreign key
     from ``campaigns`` that E2-02 adds.
@@ -205,26 +205,3 @@ class Application(Base):
 
     # Tenancy: identity's agency (no foreign key); see the module docstring.
     agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-
-
-class LegacyCandidateMap(Base):
-    """A historical id map: the id of a legacy candidate that the backfill (E0-17) merged into
-    another application, and that application.
-
-    Old candidate ids (bookmarks, links) keep resolving through it to the surviving application
-    (spec §7). ``candidate_id`` never had a foreign key, so the map outlived ``candidates``
-    (dropped in E0-20); it refers to nothing any more and no new rows are written.
-    ``application_id`` is a same-module foreign key with ``ON DELETE CASCADE``, so deleting an
-    application drops its redirects; it is indexed because Postgres does not index FK columns and
-    the cascade looks rows up by it.
-    """
-
-    __tablename__ = "legacy_candidate_map"
-
-    candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    application_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("applications.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )

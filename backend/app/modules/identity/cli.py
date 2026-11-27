@@ -11,9 +11,9 @@ Usage (from ``backend/``, or inside the backend container)::
         [--name "Your Name"] [--agency-name "Your Agency"]
 
 ``create-agency`` creates an agency and makes the user its owner. ``create-owner`` makes the
-user an owner of the **default agency** (the one every pre-E2 row belongs to,
-``app.platform.tenancy.DEFAULT_AGENCY_ID``) and, with ``--agency-name``, renames that agency
-(it is created as "Default agency" by the E2-01 migration).
+user an owner of the **default agency** (the one every pre-E2 row belongs to: the E2-01 migration
+created it as "Default agency", slug ``default``, :data:`service.DEFAULT_AGENCY_SLUG`) and, with
+``--agency-name``, renames that agency.
 
 A user who does not exist yet is created, with a password read from the terminal (asked twice)
 or, with ``--password-stdin``, from the first line of standard input (for scripts:
@@ -39,7 +39,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.identity import service
 from app.modules.identity.schemas import Role
 from app.platform import maintenance
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 
 
 def _read_password(from_stdin: bool) -> str:
@@ -85,11 +84,17 @@ async def create_owner(
     password: str | None,
 ) -> list[str]:
     lines = []
+    default = await service.get_agency_by_slug(db, service.DEFAULT_AGENCY_SLUG)
+    if default is None:
+        raise service.OperatorError(
+            f"there is no agency with the slug {service.DEFAULT_AGENCY_SLUG!r} (the migrations "
+            "create it): use create-agency"
+        )
     if agency_name:
-        agency = await service.rename_agency(db, DEFAULT_AGENCY_ID, agency_name)
+        agency = await service.rename_agency(db, default.id, agency_name)
         lines.append(f"default agency renamed to {agency.name!r}")
     user = await service.ensure_user(db, email, display_name=name, password=password)
-    created = await service.ensure_membership(db, DEFAULT_AGENCY_ID, user.id, Role.owner)
+    created = await service.ensure_membership(db, default.id, user.id, Role.owner)
     lines.append(
         f"{'created user' if user.created else 'existing user'} {user.email} "
         f"{'is now an' if created else 'is an'} owner of the default agency"

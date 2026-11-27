@@ -25,7 +25,7 @@ E?-?? · [sprint-XX.md](https://github.com/pavanraut131/AI-Recruitment-Platform/
 
 ## Snapshot / contract changes
 
-<!-- If any characterization snapshot or API contract changed, explain each
+<!-- If any contract snapshot (backend/tests/contract_v2) or API contract changed, explain each
 change and why it is intended. Otherwise write "None". -->
 
 None

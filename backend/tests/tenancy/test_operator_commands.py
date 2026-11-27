@@ -22,8 +22,8 @@ from app.modules.identity.models import Agency
 from app.modules.ingestion import repository, reset_stuck, tasks
 from app.modules.ingestion.models import Resume
 from app.platform import maintenance
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import CeleryRecorder
 
 OTHER = uuid.UUID("00000000-0000-4000-8000-0000000000b4")

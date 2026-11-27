@@ -2,8 +2,8 @@
 
 Every processed resume writes a Person (``talent.resolve_person``) and an Application
 (``hiring.upsert_application``), committed together; the text lives on the resume, a new
-application gets a fresh id and no ``legacy_candidate_map`` row is written (the legacy
-``candidates`` table was dropped in E0-20). Covered here:
+application gets a fresh id (the legacy ``candidates`` table was dropped in E0-20). Covered
+here:
 
 - matching across campaigns and within one campaign (newer resume's scoring wins), resumes
   without contact details, and an email/phone conflict;
@@ -32,12 +32,12 @@ from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult, JobRequirements, ScoringResult
 from app.modules.ai.service import AIQuotaExceeded
 from app.modules.hiring import service as hiring_service
-from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import tasks
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import IdentityConflict, Person, PersonIdentifier, PersonResume
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import InMemoryStorage
 from tests.ingestion.conftest import Events
 
@@ -146,7 +146,6 @@ COUNTED = {
     "identity_conflicts": IdentityConflict,
     "person_resumes": PersonResume,
     "applications": Application,
-    "legacy_candidate_map": LegacyCandidateMap,
 }
 
 
@@ -201,7 +200,6 @@ def test_repeat_applicant_to_two_campaigns_is_one_person_with_two_applications(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "legacy_candidate_map": 0,  # nothing is merged by the pipeline
     }
     first, second = reload(sync_db, first), reload(sync_db, second)
     assert first.person_id is not None and first.person_id == second.person_id
@@ -250,8 +248,6 @@ def test_same_campaign_twice_keeps_one_application_with_the_newer_resumes_scorin
         newer_scoring.missing_skills,
         newer_scoring.summary,
     )
-    # Nothing to redirect: the application kept its id.
-    assert counts(sync_db)["legacy_candidate_map"] == 0
 
 
 def test_resumes_without_contact_details_each_get_their_own_person(
@@ -272,7 +268,6 @@ def test_resumes_without_contact_details_each_get_their_own_person(
         "identity_conflicts": 0,
         "person_resumes": 2,
         "applications": 2,
-        "legacy_candidate_map": 0,
     }
     person_ids = {reload(sync_db, r).person_id for r in resumes}
     assert len(person_ids) == 2 and None not in person_ids
@@ -305,7 +300,6 @@ def test_email_and_phone_of_different_people_records_a_conflict_and_uses_the_ema
         "identity_conflicts": 1,
         "person_resumes": 3,
         "applications": 3,
-        "legacy_candidate_map": 0,
     }
     asha, ravi, mixed = (reload(sync_db, r) for r in (asha, ravi, mixed))
     assert mixed.person_id == asha.person_id != ravi.person_id
@@ -426,7 +420,6 @@ CLEAN_COUNTS = {
     "identity_conflicts": 0,
     "person_resumes": 1,
     "applications": 1,
-    "legacy_candidate_map": 0,
 }
 
 

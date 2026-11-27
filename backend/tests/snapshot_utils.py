@@ -1,4 +1,5 @@
-"""Shared snapshot serializer for the characterization tests.
+"""The snapshot serializer of the contract tests (``tests/contract_v2``), and helpers that turn
+responses into plain data.
 
 ``MaskedAmberExtension`` is syrupy's default Amber format with one change: before the data is
 serialized it goes through a :class:`Masker`, which replaces the values that change between runs
@@ -10,17 +11,18 @@ with stable placeholders:
   snapshot assertions, so relationships stay visible (a resume id in the upload response is the
   same ``<uuid:3>`` as in the stored object key and the Celery call).
 * datetimes (``datetime`` objects and ISO-8601 timestamps inside strings) become ``<datetime>``.
-* the fixed id of the default agency (``app.platform.tenancy.DEFAULT_AGENCY_ID``, the same in
-  every run) becomes ``<default-agency>``, not a number: since E2-03 it appears in the Celery
-  calls' ``agency_id`` and in new storage keys, and naming it keeps the other numbers as they
-  were. Likewise the default agency's client (``DEFAULT_CLIENT_ID``) becomes
-  ``<default-client>``: since E2-06 every v2 ``Campaign`` shows its client.
+* the fixed id of the default agency (``tests.default_agency.DEFAULT_AGENCY_ID``, the same in
+  every run: the E2-01 migration inserts it) becomes ``<default-agency>``, not a number: it
+  appears in the Celery calls' ``agency_id`` and in new storage keys, and naming it keeps the
+  other numbers stable. Likewise the default agency's client (``DEFAULT_CLIENT_ID``) becomes
+  ``<default-client>``: every ``Campaign`` shows its client.
 
 Dict keys are visited in sorted order (the order Amber prints them in), so numbering follows the
 order you read the snapshot in.
 
-The ``snapshot`` fixture in ``tests/characterization/conftest.py`` uses this extension, so tests
-simply ``assert data == snapshot``.
+The ``snapshot`` fixture in ``tests/contract_v2/conftest.py`` uses this extension, so tests
+simply ``assert data == snapshot``. Until E2-12 the ``/api/v1`` characterization tests used it
+too (they were removed with v1).
 """
 
 from __future__ import annotations
@@ -33,11 +35,11 @@ from typing import Any
 import httpx
 from syrupy.extensions.amber import AmberSnapshotExtension
 
-# app.platform.tenancy.DEFAULT_AGENCY_ID (not imported: the masker must not depend on app).
-DEFAULT_AGENCY_ID = "00000000-0000-4000-8000-00000000a001"
+from tests import default_agency
+
+DEFAULT_AGENCY_ID = str(default_agency.DEFAULT_AGENCY_ID)
 DEFAULT_AGENCY_PLACEHOLDER = "<default-agency>"
-# app.platform.tenancy.DEFAULT_CLIENT_ID.
-DEFAULT_CLIENT_ID = "00000000-0000-4000-8000-00000000c001"
+DEFAULT_CLIENT_ID = str(default_agency.DEFAULT_CLIENT_ID)
 DEFAULT_CLIENT_PLACEHOLDER = "<default-client>"
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
@@ -118,18 +120,4 @@ def celery_calls_data(recorder: Any) -> list[dict[str, Any]]:
     return [
         {"task": c.task, "args": list(c.args), "kwargs": c.kwargs, "options": c.options}
         for c in recorder.calls
-    ]
-
-
-def stored_objects_data(storage: Any) -> list[dict[str, Any]]:
-    """Objects in ``tests.fakes.InMemoryStorage``, in upload order (keys contain random UUIDs,
-    so sorting by key would not be stable)."""
-    return [
-        {
-            "key": key,
-            "content_type": obj.content_type,
-            "size": len(obj.body),
-            "starts_with": obj.body[:8],
-        }
-        for key, obj in storage.objects.items()
     ]

@@ -50,6 +50,7 @@ always checked.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 
@@ -64,17 +65,21 @@ from app.platform.auth_cookies import cleared_session_cookie_header, session_coo
 from app.platform.config import settings
 from app.platform.database import get_db
 from app.platform.problems import FieldError, ProblemError
-from app.platform.request_tenant import bind_request
-from app.platform.tenancy import DEFAULT_AGENCY_ID, AccessScope
+from app.platform.tenancy import AccessScope, bind
 
 NOT_SIGNED_IN = "Not signed in"
 SESSION_ENDED = "Your session has ended. Sign in again."
 CHOOSE_AGENCY = "Choose an agency"
 
+# The fallback acts as an owner of the agency the E2-01 migration made of the data that existed
+# before E2 (slug "default"): the only fixed agency id left in the app.
+# removed with AUTH_REQUIRED in E2-11
+_FALLBACK_AGENCY = uuid.UUID("00000000-0000-4000-8000-00000000a001")
+
 DEV_FALLBACK = Principal(
-    agency_id=DEFAULT_AGENCY_ID,
+    agency_id=_FALLBACK_AGENCY,
     role=Role.owner,
-    scope=AccessScope(DEFAULT_AGENCY_ID),
+    scope=AccessScope(_FALLBACK_AGENCY),
     user_id=None,
     membership_id=None,
     session=None,
@@ -150,8 +155,12 @@ async def current_principal(signed_in: SignedIn | None = Depends(_session)) -> P
 async def tenant_db(
     db: AsyncSession = Depends(get_db), principal: Principal = Depends(current_principal)
 ) -> AsyncSession:
-    """The request's session (``get_db``), bound to the principal's agency."""
-    return bind_request(db, principal.agency_id)
+    """The request's session (``get_db``), bound to the principal's agency, which every log line
+    of the request then names (spec §6.6). Test overrides of ``get_db`` keep working: the session
+    the override yields is bound here."""
+    bind(db, principal.agency_id)
+    structlog.contextvars.bind_contextvars(agency_id=str(principal.agency_id))
+    return db
 
 
 def access_scope(principal: Principal = Depends(current_principal)) -> AccessScope:

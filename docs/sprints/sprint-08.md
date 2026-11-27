@@ -104,6 +104,12 @@ Goal and acceptance criteria: [spec §12, E2-07](../specs/EPIC-02-identity-tenan
 
 [Spec §12, E2-12](../specs/EPIC-02-identity-tenancy.md#e2-12--remove-apiv1). It closes backlog bugs B5 and B7–B10 for v1 and removes `legacy_candidate_map`. It decides the "merged legacy candidate ids" backlog item; old links already predate any customer.
 
+**Notes** (the full notes are in the spec, under E2-12):
+- **Backend only.** v1's routers, schemas, use cases and characterization tests are gone; `/api/v1/*` answers 404 and the root app serves only the health checks. No v2 snapshot, no OpenAPI byte and no generated-client byte changed; the frontend is untouched.
+- **The default agency is an ordinary agency:** the fixed ids left `app.platform.tenancy`; the seed, `identity.cli create-owner` and the tenancy backfill find it by its slug `default`. The backfill is kept (it is how a pre-E2 database still reaches `head`); `capture_api` / `compare_api` went with v1.
+- **Waits for E2-11:** the `AUTH_REQUIRED=false` fallback keeps the agency's id (`identity.dependencies._FALLBACK_AGENCY`, marked `# removed with AUTH_REQUIRED in E2-11`); it goes when E2-11 is merged in, before this PR merges.
+- **After pulling:** `docker compose exec backend alembic upgrade head` (drops `legacy_candidate_map`), then restart the workers.
+
 ---
 
 ## Sprint review & retro

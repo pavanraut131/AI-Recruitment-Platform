@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.devtools import seed
-from app.modules.hiring.models import Application, Campaign, LegacyCandidateMap
+from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion import verify_people_applications
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import IdentityConflict, Person
@@ -78,7 +78,6 @@ async def test_row_counts_match_the_manifest(db_session: AsyncSession) -> None:
     assert await count(db_session, Person) == expected["people"]
     assert await count(db_session, Application) == expected["applications"]
     assert await count(db_session, IdentityConflict) == expected["identity_conflicts"]
-    assert await count(db_session, LegacyCandidateMap) == 0
 
 
 async def test_the_seed_passes_verify_people_applications_with_its_manifest(

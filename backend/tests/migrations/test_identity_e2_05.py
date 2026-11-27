@@ -25,7 +25,8 @@ from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
+from tests.migrations.tenancy import DROPPED_BY_E2_12
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -139,7 +140,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
             assert _tables(conn) == before - TABLES
         command.upgrade(cfg, "head")  # with what follows it (E2-04): alembic check needs head
         with engine.begin() as conn:
-            assert _tables(conn) - LATER_TABLES == before
+            assert _tables(conn) - LATER_TABLES == before - DROPPED_BY_E2_12
             assert conn.execute(text("SELECT count(*) FROM users")).scalar_one() == 0
             _fill(conn)
         command.check(cfg)  # raises if the models and the migrated schema differ

@@ -138,6 +138,11 @@ TOUCH_INTERVAL: Final = timedelta(minutes=5)
 
 USER_AGENT_MAX: Final = 500
 SLUG_MAX: Final = 100
+DEFAULT_AGENCY_SLUG: Final = "default"
+"""The slug of the "Default agency", the one the E2-01 migration made of the data that existed
+before E2 (EPIC-02 spec §7). An ordinary agency since E2-12 (its fixed id is gone with
+``/api/v1``); the commands that work on it look it up by this slug: ``cli create-owner``, the
+development seed and the tenancy backfill."""
 
 
 # ── Errors ────────────────────────────────────────────────────
@@ -630,6 +635,18 @@ async def get_agency(db: AsyncSession, agency_id: uuid.UUID) -> AgencySummary | 
 def agency_ids(db: Session) -> set[uuid.UUID]:
     """The id of every agency (synchronous: for the verification command)."""
     return repository.agency_ids_sync(db)
+
+
+async def get_agency_by_slug(db: AsyncSession, slug: str) -> AgencySummary | None:
+    """The agency with this slug, or ``None``."""
+    agency = await repository.get_agency_by_slug(db, slug)
+    return None if agency is None else AgencySummary.model_validate(agency)
+
+
+def agency_id_by_slug(db: Session, slug: str) -> uuid.UUID | None:
+    """The id of the agency with this slug, or ``None`` (synchronous: for the operator commands
+    and the seed; ``agencies`` is global, so any session reads it)."""
+    return repository.agency_id_by_slug_sync(db, slug)
 
 
 async def get_agency_v2(db: AsyncSession, principal: Principal) -> AgencyResource:

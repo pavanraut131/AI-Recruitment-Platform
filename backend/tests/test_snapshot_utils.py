@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from tests.characterization.snapshot_utils import Masker
+from tests.snapshot_utils import Masker
 
 A = "3f2b8c1e-9d4a-4e6b-8a7c-1b2c3d4e5f60"
 B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -58,7 +58,7 @@ def test_other_values_are_untouched() -> None:
 
 
 def test_the_default_agency_is_named_not_numbered() -> None:
-    from app.platform.tenancy import DEFAULT_AGENCY_ID
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     masker = Masker()
     key = f"agencies/{DEFAULT_AGENCY_ID}/campaigns/{A}/resumes/{B}.pdf"
@@ -69,7 +69,7 @@ def test_the_default_agency_is_named_not_numbered() -> None:
 
 
 def test_the_default_client_is_named_not_numbered() -> None:
-    from app.platform.tenancy import DEFAULT_CLIENT_ID
+    from tests.default_agency import DEFAULT_CLIENT_ID
 
     masker = Masker()
     campaign = {"client": {"id": str(DEFAULT_CLIENT_ID), "name": "General"}, "id": A}

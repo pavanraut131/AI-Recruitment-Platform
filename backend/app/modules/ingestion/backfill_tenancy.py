@@ -12,11 +12,21 @@ Runbook: ``docs/runbooks/tenancy-backfill.md``. Then check the result with
 What it does
     The E2-01 expand migration added a nullable ``agency_id`` to the seven tenant tables, and
     since then every insert sets it; rows written before that have ``NULL``. This command gives
-    each of them the default agency (``app.platform.tenancy.DEFAULT_AGENCY_ID``), and every
-    campaign without a client the default agency's client "General" (``DEFAULT_CLIENT_ID``), in
+    each of them the default agency (the one with the slug ``default``, which the same migration
+    created: ``identity.service.DEFAULT_AGENCY_SLUG``), and every campaign without a client that
+    agency's client "General" (its oldest active client, ``hiring.service.first_client_id``), in
     this order: ``campaigns``, ``applications`` (hiring), ``people``, ``person_identifiers``,
     ``identity_conflicts``, ``person_resumes`` (talent), ``resumes`` (ingestion). It never
     changes a row that already has its values, nor any ``updated_at``.
+
+When it is needed
+    Only between the E2-01 expand (``e2a01d5c8f36``) and the E2-02 contract (``e2b02c7a4d19``),
+    which makes ``agency_id`` ``NOT NULL`` and refuses to run before the backfill has finished: a
+    database migrated past the contract has nothing to fill, and the command reports ``0`` rows.
+    It is kept (looking the agency up by its slug since E2-12 removed the fixed ids) so that a
+    database from before E2, such as an old backup, can still be brought to ``head`` with the
+    current code: upgrade to the expand revision, run this, then ``alembic upgrade head``
+    (runbook).
 
 Why ingestion owns it
     It is the top layer, like E0's backfill: ``identity`` is a leaf and may not write the other
@@ -70,10 +80,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.hiring import service as hiring_service
+from app.modules.identity import service as identity_service
 from app.modules.ingestion import repository
 from app.modules.talent import service as talent_service
 from app.platform import maintenance
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 logger = structlog.get_logger()
 
@@ -87,7 +97,37 @@ RETRY_PAUSE_S = 0.5
 RETRYABLE_SQLSTATES = frozenset({"40P01", "55P03"})
 
 SessionFactory = Callable[[], Session]
-FillBatch = Callable[[Session, "uuid.UUID | None", int], list[uuid.UUID]]
+
+
+class NoDefaultAgency(RuntimeError):
+    """The agency to fill rows with (slug ``default``), or its client, does not exist."""
+
+
+@dataclass(frozen=True)
+class DefaultAgency:
+    """What the rows without an agency get: the default agency, and its client for campaigns."""
+
+    agency_id: uuid.UUID
+    client_id: uuid.UUID
+
+
+def default_agency(db: Session) -> DefaultAgency:
+    """The agency with the slug ``default`` and its oldest active client ("General"): what the
+    E2-01 migration created for the existing data. :class:`NoDefaultAgency` when either is
+    missing (a database below the expand revision)."""
+    agency_id = identity_service.agency_id_by_slug(db, identity_service.DEFAULT_AGENCY_SLUG)
+    if agency_id is None:
+        raise NoDefaultAgency(
+            f"no agency has the slug {identity_service.DEFAULT_AGENCY_SLUG!r}: migrate to the "
+            "E2-01 expand revision (e2a01d5c8f36) first, which creates it"
+        )
+    client_id = hiring_service.first_client_id(db, agency_id)
+    if client_id is None:
+        raise NoDefaultAgency(f"the default agency {agency_id} has no active client")
+    return DefaultAgency(agency_id, client_id)
+
+
+FillBatch = Callable[[Session, DefaultAgency, "uuid.UUID | None", int], list[uuid.UUID]]
 
 
 @dataclass(frozen=True)
@@ -100,12 +140,14 @@ class Target:
 
 
 def _hiring_target(table: str) -> Target:
-    def fill(db: Session, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
+    def fill(
+        db: Session, default: DefaultAgency, after: uuid.UUID | None, limit: int
+    ) -> list[uuid.UUID]:
         return hiring_service.fill_tenancy_batch(
             db,
             table,
-            agency_id=DEFAULT_AGENCY_ID,
-            client_id=DEFAULT_CLIENT_ID,
+            agency_id=default.agency_id,
+            client_id=default.client_id,
             after=after,
             limit=limit,
         )
@@ -114,18 +156,22 @@ def _hiring_target(table: str) -> Target:
 
 
 def _talent_target(table: str) -> Target:
-    def fill(db: Session, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
+    def fill(
+        db: Session, default: DefaultAgency, after: uuid.UUID | None, limit: int
+    ) -> list[uuid.UUID]:
         return talent_service.fill_tenancy_batch(
-            db, table, agency_id=DEFAULT_AGENCY_ID, after=after, limit=limit
+            db, table, agency_id=default.agency_id, after=after, limit=limit
         )
 
     return Target(table, fill, lambda db: talent_service.count_tenancy_gaps(db, table))
 
 
 def _resumes_target() -> Target:
-    def fill(db: Session, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
+    def fill(
+        db: Session, default: DefaultAgency, after: uuid.UUID | None, limit: int
+    ) -> list[uuid.UUID]:
         return repository.fill_tenancy_batch_sync(
-            db, agency_id=DEFAULT_AGENCY_ID, after=after, limit=limit
+            db, agency_id=default.agency_id, after=after, limit=limit
         )
 
     return Target("resumes", fill, repository.count_tenancy_gaps_sync)
@@ -182,6 +228,7 @@ class Summary:
 def _fill_one_batch(
     session_factory: SessionFactory,
     target: Target,
+    default: DefaultAgency,
     after: uuid.UUID | None,
     batch_size: int,
     result: TableResult,
@@ -191,7 +238,7 @@ def _fill_one_batch(
         try:
             with session_factory() as db:
                 db.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
-                keys = target.fill(db, after, batch_size)
+                keys = target.fill(db, default, after, batch_size)
                 db.commit()
             return keys
         except DBAPIError as exc:
@@ -221,14 +268,17 @@ def run(
     """Fill ``tables`` (default: all, in :data:`TABLES` order). ``max_batches`` caps the batches
     of the whole run. Prints one line per batch to ``out``. Raises when a batch fails for a
     reason other than a lock timeout or deadlock (after its retries); the batches committed
-    before it are kept."""
+    before it are kept. Raises :class:`NoDefaultAgency`, before any batch, when the agency to fill
+    rows with is missing."""
     stream = out or sys.stdout
+    with session_factory() as db:
+        default = default_agency(db)
     selected = [t for t in targets() if tables is None or t.table in tables]
     summary = Summary(results=[TableResult(t.table) for t in selected])
     started = time.perf_counter()
     batches = 0
     print(
-        f"{PROG}: agency {DEFAULT_AGENCY_ID}, client {DEFAULT_CLIENT_ID}, batch size {batch_size}",
+        f"{PROG}: agency {default.agency_id}, client {default.client_id}, batch size {batch_size}",
         file=stream,
     )
     for target, result in zip(selected, summary.results, strict=True):
@@ -238,7 +288,7 @@ def run(
             if max_batches is not None and batches >= max_batches:
                 summary.stopped_early = True
                 break
-            keys = _fill_one_batch(session_factory, target, after, batch_size, result)
+            keys = _fill_one_batch(session_factory, target, default, after, batch_size, result)
             if not keys:
                 break
             batches += 1
@@ -313,6 +363,9 @@ def main(argv: Sequence[str] | None = None, session_factory: SessionFactory | No
     except DBAPIError as exc:
         logger.exception("backfill_tenancy_failed")
         print(f"{PROG}: a batch failed: {exc.orig!r}. Committed batches are kept; run again.")
+        return 1
+    except NoDefaultAgency as exc:
+        print(f"{PROG}: {exc}")
         return 1
     print(summary.render())
     if summary.stopped_early:

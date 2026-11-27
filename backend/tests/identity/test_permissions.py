@@ -40,7 +40,7 @@ from app.modules.identity.permissions import (
     permissions_of,
 )
 from app.modules.identity.schemas import Role
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.identity.conftest import V2, Users, csrf, problem
 
 P = Permission

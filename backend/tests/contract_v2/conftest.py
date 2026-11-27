@@ -1,8 +1,8 @@
 """Fixtures for the ``/api/v2`` contract tests. See README.md in this folder.
 
-Same snapshot pattern as the v1 characterization tests: syrupy Amber snapshots through the same
-masking serializer (``tests.characterization.snapshot_utils``), and the same database, fakes and
-``client`` (``tests/conftest.py``; it overrides ``get_db`` in the mounted v2 app too).
+Syrupy Amber snapshots through the masking serializer (``tests.snapshot_utils``), and the shared
+database, fakes and ``client`` (``tests/conftest.py``; it overrides ``get_db`` in the mounted v2
+app too).
 """
 
 from __future__ import annotations
@@ -16,10 +16,9 @@ from httpx import ASGITransport, AsyncClient
 from sse_starlette.sse import AppStatus
 from syrupy.assertion import SnapshotAssertion
 
-from tests.characterization.snapshot_utils import MaskedAmberExtension
-
 # Real sign-in for the identity contract tests (test_identity.py): see tests/identity/conftest.py.
 from tests.identity.conftest import auth_client, users  # noqa: E402, F401
+from tests.snapshot_utils import MaskedAmberExtension
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

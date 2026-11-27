@@ -35,8 +35,8 @@ from app.modules.identity.models import Invitation, Membership
 from app.modules.identity.schemas import Role
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_CLIENT_ID
 from app.v2 import v2_app
+from tests.default_agency import DEFAULT_CLIENT_ID
 from tests.factories import make_campaign, make_candidate
 from tests.identity.conftest import PASSWORD, Users, csrf
 from tests.tenancy.conftest import OtherAgency

@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
 from app.modules.identity.schemas import Role
-from app.platform.tenancy import DEFAULT_AGENCY_ID
-from tests.characterization.snapshot_utils import response_data
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.identity.conftest import PASSWORD, V2, Users, csrf
+from tests.snapshot_utils import response_data
 
 COOKIE_VALUE = re.compile(r"^([^=]+)=([^;]*)")
 EXPIRES = re.compile(r"expires=[^;]+")

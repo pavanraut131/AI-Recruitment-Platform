@@ -40,7 +40,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.hiring.models import Application, Campaign, Client
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of
+from app.platform.tenancy import agency_id_of
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
 BASE_TIME = datetime(2025, 1, 6, 9, 0, tzinfo=UTC)
 

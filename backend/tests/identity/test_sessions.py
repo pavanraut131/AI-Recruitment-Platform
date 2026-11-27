@@ -172,7 +172,7 @@ async def test_sign_in_picks_the_only_or_the_last_used_agency(
     users: Users, auth_client: AsyncClient, db_session: AsyncSession
 ) -> None:
     from app.modules.identity.schemas import Role
-    from app.platform.tenancy import DEFAULT_AGENCY_ID
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     northbank = await users.agency()
     user_id = await users.user(

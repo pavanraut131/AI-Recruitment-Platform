@@ -109,7 +109,7 @@ async def test_the_team_lists_are_a_fixed_number_of_queries(
     from datetime import timedelta
 
     from app.modules.identity.models import Invitation, Membership, MembershipClient, User
-    from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+    from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 
     for i in range(n):
         user = User(id=uuid.uuid4(), email=f"m{i}@example.com", display_name=f"M{i}")

@@ -2,9 +2,9 @@
 
 A ``Campaign`` carries counts of its resumes (ingestion) and applications (hiring): hiring builds
 the resource and asks ingestion for the resume tallies through ``ingestion.resume_tallies(db)``
-(a port, as the v1 stats take ingestion's counts). Creating a campaign needs only hiring
-(``app.modules.hiring.router_v2``). Deleting one deletes hiring's campaign and applications and
-ingestion's resumes in one transaction, then the stored PDFs (as v1, spec §7.1).
+(a port). Creating a campaign needs only hiring (``app.modules.hiring.router_v2``). Deleting one
+deletes hiring's campaign and applications and ingestion's resumes in one transaction, then the
+stored PDFs (EPIC-01 spec §7.1).
 
 Each endpoint declares its permission (EPIC-02 §5.2, §8.3) and passes the caller's
 ``AccessScope`` on: a campaign outside it is a 404, and the list's ``client_id`` filter narrows

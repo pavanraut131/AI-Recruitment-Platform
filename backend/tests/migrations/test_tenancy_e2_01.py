@@ -28,8 +28,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity import service as identity_service
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, bind
+from app.platform.tenancy import bind
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.migrations.tenancy import upgrade_to_head_through_backfill
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,

@@ -18,7 +18,7 @@ from app.modules.hiring.models import Client
 from app.modules.identity.models import AuditEvent, Invitation, Membership, User, UserSession
 from app.modules.identity.schemas import Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.identity.conftest import (
     PASSWORD,
     SESSION_COOKIE,

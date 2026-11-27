@@ -43,7 +43,8 @@ def sync_connection() -> Iterator[Connection]:
 @pytest.fixture
 def sync_db(sync_connection: Connection, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     from app.modules.ingestion import tasks
-    from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
+    from app.platform.tenancy import bind
+    from tests.default_agency import DEFAULT_AGENCY_ID
 
     factory = sessionmaker(bind=sync_connection, join_transaction_mode="create_savepoint")
     monkeypatch.setattr(tasks, "SyncSession", factory)

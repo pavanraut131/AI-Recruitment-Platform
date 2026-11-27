@@ -20,7 +20,7 @@ the legacy candidate endpoints show as the candidate's name, contacts and profil
 ``uploaded_by_user_id`` (identity's user, from E2-05) are plain UUIDs with no foreign key
 (ADR 0003), added by the E2-01 expand migration; E2-02 backfilled ``agency_id``, made it
 ``NOT NULL`` and added the index ``(agency_id, campaign_id)`` (a campaign's resumes). The upload
-sets ``agency_id`` (``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03).
+sets ``agency_id`` from its session (``app.platform.tenancy``).
 """
 
 import uuid

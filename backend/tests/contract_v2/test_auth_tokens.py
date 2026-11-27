@@ -15,8 +15,8 @@ from syrupy.assertion import SnapshotAssertion
 from app.modules.identity.models import Invitation
 from app.modules.identity.schemas import Role
 from app.platform.email import EmailMessage
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.contract_v2.test_identity import _data
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.identity.conftest import (  # noqa: F401 (fixtures)
     V2,
     Mailbox,

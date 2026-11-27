@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from app.modules.hiring.models import Campaign, Client
 from app.modules.ingestion.tasks import extract_resume, process_candidate_ai
 from app.platform import storage
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 from tests.fakes import CeleryRecorder, InMemoryStorage
 
 
@@ -38,7 +38,7 @@ async def test_commit_is_rolled_back_after_the_test(
     client: AsyncClient, db_session: AsyncSession, db_engine: AsyncEngine
 ) -> None:
     # The endpoint commits; the test's session sees the row...
-    resp = await client.post("/api/v1/campaigns", json={"title": "Tx", "role": "Dev"})
+    resp = await client.post("/api/v2/campaigns", json={"title": "Tx", "role": "Dev"})
     assert resp.status_code == 201
     count = select(func.count()).select_from(Campaign).where(Campaign.title == "Tx")
     assert (await db_session.execute(count)).scalar_one() == 1

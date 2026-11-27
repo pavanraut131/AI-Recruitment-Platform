@@ -14,10 +14,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Client
 from app.modules.identity.models import AuditEvent
-from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
-from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import UNKNOWN_ID, V2
+from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.factories import at, make_client
+from tests.snapshot_utils import response_data
 
 
 async def _clients(db: AsyncSession) -> None:

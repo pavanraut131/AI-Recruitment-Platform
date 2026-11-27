@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     # and test it must be at least 32 bytes and not a template value (_check_deployment_safety);
     # generate one with `openssl rand -hex 32`.
     SECRET_KEY: str = "change_me"
-    API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
 
     # Database (EPIC-02 spec §6.2, §7.2). The API (async) and the Celery workers (sync) connect

@@ -25,9 +25,9 @@ from sqlalchemy.engine import make_url
 
 from app.platform import rls
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
-from tests.migrations.tenancy import EXPAND, backfill
+from tests.default_agency import DEFAULT_AGENCY_ID
+from tests.migrations.tenancy import EXPAND, backfill, catalogue_problems_before_e2_12
 from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a fixture)
     _alembic_config,
     scratch_db,
@@ -121,7 +121,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
         command.upgrade(cfg, RLS)
         with engine.connect() as conn:
             assert _revision(conn) == RLS
-            assert rls.catalogue_problems(conn) == []
+            assert catalogue_problems_before_e2_12(conn) == []
             assert _values(conn) == values  # the owner sees every row (maintenance policy)
         seen = _app_counts(scratch_db, DEFAULT_AGENCY_ID)
         assert seen == {table: len(rows) for table, rows in values.items()}
@@ -282,7 +282,7 @@ def test_identity_tables_keep_the_grants_e2_05_gave_them(scratch_db: str) -> Non
             after = dict(conn.execute(privileges, {"t": list(IDENTITY_TABLES)}).tuples().all())
             assert after == by_e2_05
             assert conn.execute(sequence).scalar_one()
-            assert rls.catalogue_problems(conn) == []
+            assert catalogue_problems_before_e2_12(conn) == []
 
         command.downgrade(cfg, IDENTITY)
         with owner.connect() as conn:

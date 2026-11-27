@@ -13,8 +13,8 @@ from app.devtools import seed_users
 from app.modules.identity import cli, passwords, service
 from app.modules.identity.models import Agency, Membership, User
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests import postgres
+from tests.default_agency import DEFAULT_AGENCY_ID
 
 PASSWORD = "operator chosen password"
 
@@ -122,6 +122,16 @@ async def test_create_owner_for_the_default_agency_and_rename_it(
         db_session, email="you@agency.example", name=None, agency_name=None, password=None
     )
     assert again == ["existing user you@agency.example is an owner of the default agency"]
+
+
+async def test_create_owner_finds_the_default_agency_by_its_slug(db_session: AsyncSession) -> None:
+    """Since E2-12 the code has no fixed agency id: ``create-owner`` acts on the agency with the
+    slug ``default`` (the E2-01 migration's), and says so when there is none."""
+    await db_session.execute(text("UPDATE agencies SET slug = 'renamed' WHERE slug = 'default'"))
+    with pytest.raises(service.OperatorError, match="no agency with the slug 'default'"):
+        await cli.create_owner(
+            db_session, email="x@agency.example", name=None, agency_name=None, password=PASSWORD
+        )
 
 
 def test_the_cli_end_to_end(
