@@ -42,7 +42,14 @@ pre-commit install   # once per clone; runs the hooks on every commit
 locally"). Until the login screen arrives (E2-09) the dev and E2E stacks run with
 `AUTH_REQUIRED=false`, so the frontend works without signing in. In backend tests the `client`
 fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
-need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`.
+need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`
+(`users.limit(...)` makes a membership limited to some clients).
+
+Every `/api/v2` route declares who may call it (E2-06): a permission of the matrix in
+`app.modules.identity.permissions`, with `Depends(require_permission(Permission.…))`, or the
+`any_member` / `public` marker; the app refuses to start otherwise. Give a new operation its row in
+`EXPECTED` in `tests/identity/test_permissions.py` (the role × operation test runs from it) and,
+if it takes a body or a new kind of id, an entry in `tests/tenancy/test_api_sweep.py`.
 
 ### Tests run under row-level security
 
