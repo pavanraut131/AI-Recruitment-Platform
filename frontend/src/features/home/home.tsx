@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { Schema } from "@/lib/api/client"
 import { displayName } from "@/lib/applications"
+import { firstName } from "@/lib/auth/roles"
+import { useSignedInUser } from "@/lib/auth/session"
 import { applicationHref, campaignHref } from "@/lib/routes"
 import { cn } from "@/lib/utils"
 
 import { useHome, useWorkspaceStats, type Home as HomeData, type ProcessingResume, type RecentMatch } from "./queries"
-import { homeFacts, longDate, plural, type HomeFact } from "./summary"
+import { homeFacts, longDate, plural, timeOfDayGreeting, type HomeFact } from "./summary"
 
 type Campaign = Schema<"Campaign">
 
@@ -45,6 +47,17 @@ function readClock(): string {
 function useToday(): string | null {
   return useSyncExternalStore(subscribeToMinutes, readClock, () => null)
 }
+function readGreeting(): string {
+  return timeOfDayGreeting(new Date())
+}
+
+/** "Good afternoon, Priya": the signed-in user's first name, by the reader's clock (D3: only with a name). */
+function useGreeting(): string | null {
+  const timeOfDay = useSyncExternalStore(subscribeToMinutes, readGreeting, () => null)
+  const me = useSignedInUser()
+  const name = me ? firstName(me.user.display_name) : null
+  return timeOfDay && name ? `${timeOfDay}, ${name}` : null
+}
 
 /**
  * `/` (spec §4), a calm "today" page that uses the window like the workspace:
@@ -58,6 +71,7 @@ export function Home() {
   const home = useHome()
   const stats = useWorkspaceStats()
   const today = useToday()
+  const greeting = useGreeting()
 
   const firstRun = stats.data?.campaigns.total === 0 && home.data !== undefined && isEmpty(home.data)
   const facts = home.data && stats.data ? homeFacts(home.data, stats.data) : null
@@ -66,6 +80,7 @@ export function Home() {
     <div className="flex w-full flex-col gap-8 px-4 pt-3 pb-14 sm:px-6 lg:px-10 2xl:px-14">
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-col gap-1.5">
+          {greeting && <p className="text-dense text-muted-foreground">{greeting}</p>}
           <h1 className="text-title font-semibold tracking-tight">Home</h1>
           <div className="min-h-6">
             {facts ? (

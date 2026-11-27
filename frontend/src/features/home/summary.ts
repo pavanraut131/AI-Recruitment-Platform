@@ -1,14 +1,21 @@
 import type { Schema } from "@/lib/api/client"
 
 /*
- * Home's words (docs/design/README.md, voice): the date and the day's numbers,
- * built only from numbers the API gives. No greeting until there is a name to
- * greet (E2 adds sign-in).
+ * Home's words (docs/design/README.md, voice): a short greeting by first name,
+ * the date and the day's numbers, built only from numbers the API gives.
  */
 
 /** "Tuesday 24 November" (en-GB, the reader's time zone). */
 export function longDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+}
+
+/** "Good morning" until noon (from 5am), "Good afternoon" until 6pm, "Good evening" otherwise; the reader's clock. */
+export function timeOfDayGreeting(date: Date): string {
+  const hour = date.getHours()
+  if (hour >= 5 && hour < 12) return "Good morning"
+  if (hour >= 12 && hour < 18) return "Good afternoon"
+  return "Good evening"
 }
 
 export function plural(count: number, one: string, many = `${one}s`): string {

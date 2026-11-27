@@ -26,6 +26,7 @@ import { LogoMark } from "./logo"
 import { isActive, mainNav, settingsNav, type NavItem } from "./nav"
 import { ThemeToggle } from "./theme-toggle"
 import { useIsMac } from "./use-platform"
+import { UserMenu } from "./user-menu"
 
 /** Nav items as the mock-ups draw them: ink-2 at rest, ink and semibold on a sunken tile when current. */
 const NAV_ITEM = "h-8 gap-2.5 px-2.5 text-ink-2 data-active:font-semibold data-active:text-foreground"
@@ -129,6 +130,12 @@ export function AppSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <ThemeToggle className={NAV_ITEM} />
+          </SidebarMenuItem>
+        </SidebarMenu>
+        {/* The signed-in user under a hairline, as in the D1 mock-up. */}
+        <SidebarMenu className="mt-2 border-t pt-2">
+          <SidebarMenuItem>
+            <UserMenu />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

@@ -2,12 +2,14 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Schema } from "@/lib/api/client"
+import { queryKeys } from "@/lib/api/query-keys"
 import { makeQueryClient } from "@/lib/query/query-client"
+import { meFixture } from "@/test/auth"
 import { deferred, json, problem, renderWithProviders, toApiCall, type ApiCall } from "@/test/helpers"
 
 import { Home } from "./home"
 import { HOME_POLL_MS, homeQuery } from "./queries"
-import { homeFacts } from "./summary"
+import { homeFacts, timeOfDayGreeting } from "./summary"
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -127,9 +129,11 @@ function installHomeApi(routes: { home: () => Response | Promise<Response>; stat
   return calls
 }
 
-function renderHome() {
+function renderHome({ me }: { me?: Schema<"Me"> } = {}) {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } })
+  // The auth gate loaded the signed-in user before Home rendered.
+  if (me) queryClient.setQueryData(queryKeys.me.all, me)
   return renderWithProviders(<Home />, { queryClient })
 }
 
@@ -288,6 +292,34 @@ describe("Home", () => {
     expect(await screen.findByText("The database is starting.")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     expect(await screen.findByRole("region", { name: "Ready for review" })).toBeTruthy()
+  })
+})
+
+describe("the greeting", () => {
+  it("greets the signed-in user by first name, by the reader's clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 10, 27, 14, 30))
+    installHomeApi({ home: () => json(HOME) })
+    renderHome({ me: meFixture() })
+
+    expect(await screen.findByText("Good afternoon, Priya")).toBeTruthy()
+    vi.useRealTimers()
+  })
+
+  it("is left out without a name to greet", async () => {
+    installHomeApi({ home: () => json(HOME) })
+    renderHome()
+
+    await screen.findByRole("heading", { level: 1, name: "Home" })
+    expect(screen.queryByText(/^Good (morning|afternoon|evening)/)).toBeNull()
+  })
+
+  it("follows the time of day", () => {
+    expect(timeOfDayGreeting(new Date(2026, 10, 27, 5, 0))).toBe("Good morning")
+    expect(timeOfDayGreeting(new Date(2026, 10, 27, 11, 59))).toBe("Good morning")
+    expect(timeOfDayGreeting(new Date(2026, 10, 27, 12, 0))).toBe("Good afternoon")
+    expect(timeOfDayGreeting(new Date(2026, 10, 27, 18, 0))).toBe("Good evening")
+    expect(timeOfDayGreeting(new Date(2026, 10, 27, 2, 0))).toBe("Good evening")
   })
 })
 
