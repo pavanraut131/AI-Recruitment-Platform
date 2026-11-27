@@ -75,12 +75,25 @@ Tenancy (EPIC-02)
 -----------------
 The session is bound to an agency (``app.platform.tenancy``, E2-03): the repository filters
 every query to it, and every insert takes its ``agency_id`` from it (:func:`_new_campaign`,
-:func:`upsert_application`). A new campaign is run for the default client until E2-06 makes the
-client a field of the request.
+:func:`upsert_application`).
 
-The use cases that list or fetch campaign data take an ``AccessScope`` (spec §5.3, §5.4), which
-:func:`check_scope` checks against the session's agency. Every scope covers all clients until
-client scoping arrives (E2-06); a narrower one is refused rather than silently widened.
+**Clients (E2-06, spec §3.1, §8).** The agency's customers: listed, created, renamed and archived
+here (never deleted: campaigns refer to them). Every campaign is run for one client: the one its
+create request names, which must be an active client in the caller's scope, else the caller's
+default client (:func:`_campaign_client`); an update may move it to another such client.
+
+**Client scoping (E2-06, spec §5.3).** The use cases that list or fetch campaign data take an
+``AccessScope``: :func:`check_scope` checks its agency, and the repository keeps every query to
+its clients. Lists (campaigns, a campaign's applications, Home, stats, Insights, clients) show
+only what the scope covers; a single campaign, application or client outside it is
+:class:`NotFoundError` (a 404, as for another agency's), so nothing confirms that it exists. The
+talent pool stays agency-wide (``talent``), but a Person's applications to campaigns outside the
+scope are left out (:func:`person_applications`, :func:`people_activity`). A request's
+``client_id`` filter narrows the scope (``AccessScope.restricted_to``), never widens it.
+
+The ``/api/v1`` use cases serve the default agency's owner only (every client, until E2-12
+removes them); they refuse a client-limited scope (:func:`check_legacy_scope`) instead of
+filtering by it.
 
 Rows written before E2-01 get their agency from the tenancy backfill
 (``app.modules.ingestion.backfill_tenancy``, E2-02) through :func:`fill_tenancy_batch`; it and
@@ -107,7 +120,7 @@ from app.modules.ai import service as ai_service
 from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import repository
 from app.modules.hiring import schemas_v2 as v2
-from app.modules.hiring.models import Application, Campaign
+from app.modules.hiring.models import Application, Campaign, Client, ClientStatus
 from app.modules.hiring.schemas import (
     CampaignCreate,
     CampaignResponse,
@@ -141,11 +154,24 @@ class HiringError(Exception):
 
 
 class NotFoundError(HiringError):
-    """The campaign or candidate does not exist."""
+    """The campaign, application, candidate or client does not exist, or is outside the
+    caller's scope (the same answer, spec §5.3)."""
 
 
 class InvalidInputError(HiringError):
     """The request names a category or pipeline stage outside the allowed vocabulary."""
+
+
+class InvalidFieldError(InvalidInputError):
+    """A request body field the service rejects (``field``): a 422 naming it."""
+
+    def __init__(self, field: str, detail: str) -> None:
+        super().__init__(detail)
+        self.field = field
+
+
+class ConflictError(HiringError):
+    """The change conflicts with existing data (a client name taken in the agency)."""
 
 
 class JDParseError(HiringError):
@@ -155,25 +181,175 @@ class JDParseError(HiringError):
 
 # ── Tenancy ───────────────────────────────────────────────────
 def check_scope(db: AsyncSession, scope: AccessScope) -> None:
-    """``scope`` must be of the session's agency. Client scoping (spec §5.3) arrives with
-    E2-06: until then a scope limited to some clients is refused, never widened to all."""
+    """``scope`` must be of the session's agency (``TenantMismatch`` otherwise). The use case
+    then keeps to the scope's clients (spec §5.3)."""
     require_scope(db, scope)
+
+
+def check_legacy_scope(db: AsyncSession, scope: AccessScope) -> None:
+    """For the ``/api/v1`` use cases, which serve the default agency's owner (every client)
+    until E2-12 removes them: :func:`check_scope`, and a client-limited scope is a programming
+    error (``ValueError``), never silently widened to every client."""
+    check_scope(db, scope)
     if not scope.all_clients:
-        raise NotImplementedError("client-scoped access arrives with E2-06")
+        raise ValueError("the /api/v1 use cases take a scope of every client (default agency)")
+
+
+async def campaign_ids_in_scope(db: AsyncSession, scope: AccessScope) -> list[uuid.UUID] | None:
+    """The campaigns ``scope`` covers, for another module's lists of campaign-owned rows
+    (ingestion's resumes): ``None`` when it covers every client (no filter needed, no query),
+    else their ids (one query)."""
+    check_scope(db, scope)
+    if scope.all_clients:
+        return None
+    return await repository.campaign_ids_in(db, scope)
+
+
+# ── Clients ───────────────────────────────────────────────────
+def client_resource(client: Client) -> v2.Client:
+    return v2.Client(
+        id=client.id,
+        name=client.name,
+        status=v2.ClientStatus(client.status),
+        created_at=client.created_at,
+        updated_at=client.updated_at,
+    )
+
+
+@dataclass(frozen=True)
+class ClientQuery:
+    """The client list filters: any of ``statuses``; ``q`` contained in the name."""
+
+    statuses: Sequence[str] = ()
+    q: str | None = None
+
+
+async def list_clients(
+    db: AsyncSession, scope: AccessScope, query: ClientQuery, offset: int, limit: int
+) -> tuple[list[v2.Client], int]:
+    """A page of the clients in ``scope``, by name, and how many match: two queries."""
+    check_scope(db, scope)
+    clients, total = await repository.find_clients(
+        db, scope, query.statuses, query.q, offset=offset, limit=limit
+    )
+    return [client_resource(c) for c in clients], total
+
+
+async def _require_client(db: AsyncSession, scope: AccessScope, client_id: uuid.UUID) -> Client:
+    client = await repository.get_client(db, scope, client_id)
+    if client is None:
+        raise NotFoundError("Client not found")
+    return client
+
+
+async def get_client(db: AsyncSession, scope: AccessScope, client_id: uuid.UUID) -> v2.Client:
+    """The client (404 outside the agency or the scope)."""
+    check_scope(db, scope)
+    return client_resource(await _require_client(db, scope, client_id))
+
+
+DUPLICATE_CLIENT = "A client with this name already exists"
+
+
+async def create_client(
+    db: AsyncSession, scope: AccessScope, payload: v2.ClientCreate
+) -> v2.Client:
+    """A new active client of the agency. A name the agency already uses (ignoring case, any
+    status) is a :class:`ConflictError`. Flushes, does not commit: the caller records the
+    audit event in the same transaction and commits."""
+    check_scope(db, scope)
+    if await repository.client_named(db, payload.name) is not None:
+        raise ConflictError(DUPLICATE_CLIENT)
+    client = Client(
+        id=uuid.uuid4(),
+        agency_id=agency_id_of(db),
+        name=payload.name,
+        status=ClientStatus.active.value,
+    )
+    try:
+        await repository.flush_client(db, client)
+    except repository.DuplicateClientName:
+        raise ConflictError(DUPLICATE_CLIENT) from None
+    logger.info("client_created", client_id=str(client.id))
+    return client_resource(client)
+
+
+@dataclass(frozen=True)
+class ClientChange:
+    """An updated client and what changed: ``field -> (old, new)`` (empty: nothing did)."""
+
+    client: v2.Client
+    changes: Mapping[str, tuple[str, str]]
+
+
+async def update_client(
+    db: AsyncSession, scope: AccessScope, client_id: uuid.UUID, payload: v2.ClientUpdate
+) -> ClientChange:
+    """Rename, archive or restore the client (only the fields sent; 404 outside the agency or
+    the scope; a name taken by another client is a :class:`ConflictError`). Archiving keeps its
+    campaigns as they are. Flushes, does not commit: the caller records the audit event and
+    commits."""
+    check_scope(db, scope)
+    client = await _require_client(db, scope, client_id)
+    sent = payload.model_dump(exclude_unset=True, mode="json")
+    changes = {
+        name: (getattr(client, name), value)
+        for name, value in sent.items()
+        if getattr(client, name) != value
+    }
+    if "name" in changes and await repository.client_named(
+        db, changes["name"][1], other_than=client.id
+    ):
+        raise ConflictError(DUPLICATE_CLIENT)
+    for name, (_, value) in changes.items():
+        setattr(client, name, value)
+    if changes:
+        try:
+            await repository.flush_client(db, client)
+        except repository.DuplicateClientName:
+            raise ConflictError(DUPLICATE_CLIENT) from None
+        logger.info("client_updated", client_id=str(client.id), fields=sorted(changes))
+    return ClientChange(client_resource(client), changes)
+
+
+GENERAL_CLIENT = "General"
+
+
+async def ensure_first_client(db: AsyncSession) -> bool:
+    """Give the session's agency a client named "General" if it has no client at all (spec §15
+    Q7's name for migrated data; the E2-06 migration did the same for every agency then).
+    Returns whether it created one. Flushes; the caller commits. For the development seed."""
+    if await repository.count_clients(db):
+        return False
+    await repository.flush_client(
+        db,
+        Client(id=uuid.uuid4(), agency_id=agency_id_of(db), name=GENERAL_CLIENT, status="active"),
+    )
+    return True
 
 
 # ── Campaigns ─────────────────────────────────────────────────
-def _new_campaign(db: AsyncSession, fields: Mapping[str, Any]) -> Campaign:
-    """A campaign to insert, in the session's agency, run for the default client (the client
-    comes from the request from E2-06)."""
-    return Campaign(**fields, agency_id=agency_id_of(db), client_id=DEFAULT_CLIENT_ID)
+def _new_campaign(
+    db: AsyncSession,
+    fields: Mapping[str, Any],
+    client_id: uuid.UUID,
+    created_by: uuid.UUID | None = None,
+) -> Campaign:
+    """A campaign to insert, in the session's agency, run for ``client_id``."""
+    return Campaign(
+        **fields, agency_id=agency_id_of(db), client_id=client_id, created_by_user_id=created_by
+    )
 
 
 async def create_campaign(
     db: AsyncSession, scope: AccessScope, payload: CampaignCreate
 ) -> Campaign:
-    check_scope(db, scope)
-    campaign = await repository.add_campaign(db, _new_campaign(db, payload.model_dump()))
+    """``/api/v1``: a campaign of the default agency, run for its default client "General" as
+    before E2-06 (v1 is frozen until E2-12)."""
+    check_legacy_scope(db, scope)
+    campaign = await repository.add_campaign(
+        db, _new_campaign(db, payload.model_dump(), DEFAULT_CLIENT_ID)
+    )
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign
 
@@ -181,12 +357,14 @@ async def create_campaign(
 async def list_campaigns(
     db: AsyncSession, scope: AccessScope, skip: int, limit: int
 ) -> Sequence[Campaign]:
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     return await repository.list_campaigns(db, skip, limit)
 
 
-async def _require_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Campaign:
-    campaign = await repository.get_campaign(db, campaign_id)
+async def _require_campaign(
+    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
+) -> Campaign:
+    campaign = await repository.get_campaign(db, scope, campaign_id)
     if not campaign:
         raise NotFoundError("Campaign not found")
     return campaign
@@ -196,8 +374,8 @@ async def get_campaign(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
 ) -> CampaignResponse:
     """The campaign, without stats (``stats`` is ``None``; see :func:`campaign_stats`)."""
-    check_scope(db, scope)
-    campaign = await _require_campaign(db, campaign_id)
+    check_legacy_scope(db, scope)
+    campaign = await _require_campaign(db, scope, campaign_id)
     return CampaignResponse.model_validate(campaign)
 
 
@@ -205,8 +383,8 @@ async def update_campaign(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, payload: CampaignUpdate
 ) -> Campaign:
     """Apply the fields the client sent (unset fields are left alone)."""
-    check_scope(db, scope)
-    campaign = await _require_campaign(db, campaign_id)
+    check_legacy_scope(db, scope)
+    campaign = await _require_campaign(db, scope, campaign_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(campaign, field, value)
     await repository.commit_and_refresh(db, campaign)
@@ -219,10 +397,10 @@ async def delete_campaign(db: AsyncSession, scope: AccessScope, campaign_id: uui
 
     Flushes but does not commit: the caller (``app.api``) has ingestion delete the campaign's
     resumes in the same transaction and commits. Raises :class:`NotFoundError` for an unknown
-    campaign.
+    campaign or one outside the scope.
     """
     check_scope(db, scope)
-    campaign = await _require_campaign(db, campaign_id)
+    campaign = await _require_campaign(db, scope, campaign_id)
     await repository.delete_campaign(db, campaign)
     logger.info("campaign_deleted", id=str(campaign_id))
 
@@ -243,7 +421,7 @@ async def campaign_stats(
     of that resume held), taken oldest application first so equal counts keep a stable order.
     An unknown campaign id yields all-zero stats, not a 404.
     """
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     category_rows = await repository.application_category_stats(db, campaign_id)
     resume_ids = await repository.campaign_resume_ids(db, campaign_id)
     skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
@@ -300,8 +478,8 @@ async def global_stats(
 ) -> GlobalStats:
     """Aggregate counts across all campaigns, given the resume counts by status (from
     ingestion): single-table queries, no joins. ``total_candidates`` counts applications."""
-    check_scope(db, scope)
-    campaign_counts = await repository.campaign_status_counts(db)
+    check_legacy_scope(db, scope)
+    campaign_counts = await repository.campaign_status_counts(db, scope)
     total_candidates = await repository.count_applications(db)
     return build_global_stats(campaign_counts, resume_counts, total_candidates)
 
@@ -548,7 +726,7 @@ async def list_candidates(
     profiles: ResumeProfiles,
 ) -> list[CandidateListItem]:
     """One page of matching candidates (applications), best score first (unscored last)."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     applications = await _find_applications(
         db, filters, profiles, offset=(page - 1) * page_size, limit=page_size
     )
@@ -577,7 +755,7 @@ async def export_candidates_csv(
     db: AsyncSession, scope: AccessScope, filters: CandidateFilters, profiles: ResumeProfiles
 ) -> str:
     """All matching candidates (no paging) as a CSV document, best score first."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     applications = await _find_applications(db, filters, profiles)
     snapshots = await _snapshots(profiles, applications)
     return render_candidates_csv(
@@ -616,10 +794,12 @@ def render_candidates_csv(candidates: Iterable[CandidateDetail]) -> str:
     return output.getvalue()
 
 
-async def _require_application(db: AsyncSession, candidate_id: uuid.UUID) -> Application:
+async def _require_application(
+    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID
+) -> Application:
     """The application ``candidate_id`` names: its own id, or a merged legacy candidate's id
     redirected by ``legacy_candidate_map``."""
-    application = await repository.get_application(db, candidate_id)
+    application = await repository.get_application(db, scope, candidate_id)
     if not application:
         raise NotFoundError("Candidate not found")
     return application
@@ -630,8 +810,8 @@ async def get_candidate(
 ) -> CandidateDetail:
     """The candidate (application) with this id, or the application a merged legacy candidate
     with this id was redirected to; the response carries the application's id."""
-    check_scope(db, scope)
-    return await _detail(profiles, await _require_application(db, candidate_id))
+    check_legacy_scope(db, scope)
+    return await _detail(profiles, await _require_application(db, scope, candidate_id))
 
 
 async def get_candidate_by_resume(
@@ -640,7 +820,7 @@ async def get_candidate_by_resume(
     """The application a resume belongs to: the one it is the current resume of, else (an
     older resume of a merged application) the application of its Person in its campaign.
     404 while the resume is not processed yet (no application)."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     application = await repository.get_application_by_resume(db, resume_id)
     if application is None:
         owner = await profiles.owner(resume_id)
@@ -675,9 +855,9 @@ async def update_candidate_category(
     profiles: ResumeProfiles,
 ) -> CandidateDetail:
     """Recruiter override of the AI category. The value is checked before the lookup."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     _check_category(category)
-    application = await _require_application(db, candidate_id)
+    application = await _require_application(db, scope, candidate_id)
     application.category = category
     await repository.commit_and_refresh(db, application)
     logger.info(
@@ -696,8 +876,8 @@ async def update_candidate_notes(
     notes: str,
     profiles: ResumeProfiles,
 ) -> CandidateDetail:
-    check_scope(db, scope)
-    application = await _require_application(db, candidate_id)
+    check_legacy_scope(db, scope)
+    application = await _require_application(db, scope, candidate_id)
     application.notes = notes
     await repository.commit_and_refresh(db, application)
     logger.info("notes_updated", candidate_id=str(candidate_id), application_id=str(application.id))
@@ -712,9 +892,9 @@ async def update_candidate_pipeline(
     profiles: ResumeProfiles,
 ) -> CandidateDetail:
     """Move one candidate to a pipeline stage. The stage is checked before the lookup."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     _check_pipeline_stage(stage)
-    application = await _require_application(db, candidate_id)
+    application = await _require_application(db, scope, candidate_id)
     application.pipeline_stage = stage
     await repository.commit_and_refresh(db, application)
     logger.info(
@@ -735,7 +915,7 @@ async def bulk_update_pipeline(
 ) -> int:
     """Move the campaign's candidates (applications) that ``candidate_ids`` name to ``stage``;
     returns how many applications."""
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     _check_pipeline_stage(stage)
     applications = await repository.applications_in_campaign(
         db, campaign_id, candidate_ids, for_update=True
@@ -767,7 +947,7 @@ async def bulk_delete_candidates(
     Flushes but does not commit: the caller deletes their resumes in the same transaction and
     commits.
     """
-    check_scope(db, scope)
+    check_legacy_scope(db, scope)
     applications = await repository.applications_in_campaign(
         db, campaign_id, candidate_ids, for_update=True
     )
@@ -781,8 +961,8 @@ async def delete_candidate(
 ) -> DeletedApplication:
     """Delete one candidate (application). Flushes but does not commit: the caller deletes its
     resumes in the same transaction and commits."""
-    check_scope(db, scope)
-    application = await _require_application(db, candidate_id)
+    check_legacy_scope(db, scope)
+    application = await _require_application(db, scope, candidate_id)
     (deleted,) = await _delete_applications(db, [application])
     logger.info("candidate_deleted", candidate_id=str(candidate_id), application_id=str(deleted.id))
     return deleted
@@ -884,6 +1064,7 @@ def campaign_resource(
         description=campaign.description,
         required_skills=campaign.required_skills or [],
         status=_status(campaign.status),
+        client=v2.ClientRef(id=campaign.client.id, name=campaign.client.name),
         created_at=campaign.created_at,
         updated_at=campaign.updated_at,
         last_activity_at=max(t for t in changes if t is not None),
@@ -946,21 +1127,50 @@ async def list_campaigns_page(
     limit: int,
     tallies: ResumeTallies,
 ) -> tuple[list[v2.Campaign], int]:
-    """A page of campaigns, newest first, and how many match: four queries."""
+    """A page of the campaigns in ``scope``, newest first, and how many match: four queries."""
     check_scope(db, scope)
     campaigns, total = await repository.find_campaigns(
-        db, _campaign_clauses(query), offset=offset, limit=limit
+        db, scope, _campaign_clauses(query), offset=offset, limit=limit
     )
     return await _campaign_resources(db, campaigns, tallies), total
 
 
+NO_DEFAULT_CLIENT = "Choose a client: there is no active client you can use"
+
+
+async def _campaign_client(
+    db: AsyncSession, scope: AccessScope, client_id: uuid.UUID | None
+) -> Client:
+    """The client a campaign may be run for: ``client_id``, which must be an active client in
+    ``scope``; ``None`` is the caller's default client, the oldest active client in ``scope``.
+    Anything else is an :class:`InvalidFieldError` on ``client_id`` (a client outside the scope
+    reads like an unknown one)."""
+    if client_id is None:
+        default = await repository.default_client(db, scope)
+        if default is None:
+            raise InvalidFieldError("client_id", NO_DEFAULT_CLIENT)
+        return default
+    client = await repository.get_client(db, scope, client_id)
+    if client is None:
+        raise InvalidFieldError("client_id", "Unknown client")
+    if client.status != ClientStatus.active.value:
+        raise InvalidFieldError("client_id", "This client is archived")
+    return client
+
+
 async def create_campaign_v2(
-    db: AsyncSession, scope: AccessScope, payload: v2.CampaignCreate
+    db: AsyncSession,
+    scope: AccessScope,
+    payload: v2.CampaignCreate,
+    created_by: uuid.UUID | None = None,
 ) -> v2.Campaign:
-    """Create a campaign. A new campaign has no resumes or applications yet, so its counts are
-    zero without asking ingestion."""
+    """Create a campaign for the client the payload names (or the caller's default client,
+    :func:`_campaign_client`), recording who created it. A new campaign has no resumes or
+    applications yet, so its counts are zero without asking ingestion."""
     check_scope(db, scope)
-    campaign = await repository.add_campaign(db, _new_campaign(db, payload.model_dump(mode="json")))
+    client = await _campaign_client(db, scope, payload.client_id)
+    fields = payload.model_dump(mode="json", exclude={"client_id"})
+    campaign = await repository.add_campaign(db, _new_campaign(db, fields, client.id, created_by))
     logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
     return campaign_resource(campaign, None, ResumeTally())
 
@@ -969,7 +1179,8 @@ async def get_campaign_v2(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, tallies: ResumeTallies
 ) -> v2.Campaign:
     check_scope(db, scope)
-    (resource,) = await _campaign_resources(db, [await _require_campaign(db, campaign_id)], tallies)
+    campaign = await _require_campaign(db, scope, campaign_id)
+    (resource,) = await _campaign_resources(db, [campaign], tallies)
     return resource
 
 
@@ -980,10 +1191,17 @@ async def update_campaign_v2(
     payload: v2.CampaignUpdate,
     tallies: ResumeTallies,
 ) -> v2.Campaign:
-    """Apply the fields the client sent (unset fields are left alone)."""
+    """Apply the fields the client sent (unset fields are left alone). A new ``client_id`` must
+    be an active client in ``scope``, like the campaign itself (spec §8.3)."""
     check_scope(db, scope)
-    campaign = await _require_campaign(db, campaign_id)
+    campaign = await _require_campaign(db, scope, campaign_id)
     changes = payload.model_dump(exclude_unset=True, mode="json")
+    if "client_id" in changes:
+        moved_to = uuid.UUID(changes["client_id"])
+        if moved_to == campaign.client_id:
+            del changes["client_id"]
+        else:
+            changes["client_id"] = (await _campaign_client(db, scope, moved_to)).id
     for name, value in changes.items():
         setattr(campaign, name, value)
     await repository.commit_and_refresh(db, campaign)
@@ -1004,9 +1222,9 @@ async def campaign_insights(
     skills (from each application's current resume, oldest application first so equal counts
     keep a stable order), flagged when the campaign requires them. Six queries."""
     check_scope(db, scope)
-    campaign = await _require_campaign(db, campaign_id)
-    category_rows = await repository.category_score_rows(db, campaign_id)
-    stages = await repository.stage_counts(db, campaign_id)
+    campaign = await _require_campaign(db, scope, campaign_id)
+    category_rows = await repository.category_score_rows(db, scope, campaign_id)
+    stages = await repository.stage_counts(db, scope, campaign_id)
     buckets = await repository.score_buckets(db, campaign_id)
     resume_ids = await repository.campaign_resume_ids(db, campaign_id)
     skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
@@ -1081,12 +1299,12 @@ def top_skills(
 async def workspace_stats(
     db: AsyncSession, scope: AccessScope, resumes: ResumeTally
 ) -> v2.WorkspaceStats:
-    """Counts across every campaign, given every resume's tally (from ingestion): three
-    single-table queries."""
+    """Counts across every campaign in ``scope``, given their resumes' tally (from ingestion):
+    three queries."""
     check_scope(db, scope)
-    campaign_counts = await repository.campaign_status_counts(db)
-    category_rows = await repository.category_score_rows(db)
-    stages = await repository.stage_counts(db)
+    campaign_counts = await repository.campaign_status_counts(db, scope)
+    category_rows = await repository.category_score_rows(db, scope)
+    stages = await repository.stage_counts(db, scope)
     return v2.WorkspaceStats(
         campaigns=v2.CampaignStatusCounts(
             total=sum(campaign_counts.values()),
@@ -1260,7 +1478,7 @@ async def list_applications_page(
     """A page of the campaign's applications (404 for an unknown campaign) and how many match:
     at most 6 queries whatever the page size (campaign, at most 4 for the page, extractions)."""
     check_scope(db, scope)
-    await _require_campaign(db, query.campaign_id)
+    await _require_campaign(db, scope, query.campaign_id)
     applications, total = await _application_page(db, query, profiles, offset=offset, limit=limit)
     snapshots = await _snapshots(profiles, applications)
     return [application_resource(a, snapshots.get(a.resume_id)) for a in applications], total
@@ -1272,7 +1490,7 @@ async def export_applications_csv(
     """Every matching application (no paging) as CSV, in the query's order, with the columns
     of the legacy export (:data:`CSV_FIELDS`). 404 for an unknown campaign."""
     check_scope(db, scope)
-    await _require_campaign(db, query.campaign_id)
+    await _require_campaign(db, scope, query.campaign_id)
     applications, _ = await _application_page(db, query, profiles, offset=None, limit=None)
     snapshots = await _snapshots(profiles, applications)
     return render_candidates_csv(
@@ -1280,8 +1498,10 @@ async def export_applications_csv(
     )
 
 
-async def _require_application_v2(db: AsyncSession, application_id: uuid.UUID) -> Application:
-    application = await repository.get_application_by_id(db, application_id)
+async def _require_application_v2(
+    db: AsyncSession, scope: AccessScope, application_id: uuid.UUID
+) -> Application:
+    application = await repository.get_application_by_id(db, scope, application_id)
     if application is None:
         raise NotFoundError("Application not found")
     return application
@@ -1291,7 +1511,7 @@ async def get_application_v2(
     db: AsyncSession, scope: AccessScope, application_id: uuid.UUID, profiles: ResumeProfiles
 ) -> v2.Application:
     check_scope(db, scope)
-    return await _resource(profiles, await _require_application_v2(db, application_id))
+    return await _resource(profiles, await _require_application_v2(db, scope, application_id))
 
 
 async def update_application_v2(
@@ -1303,7 +1523,7 @@ async def update_application_v2(
 ) -> v2.Application:
     """The recruiter's changes: stage, notes, category override (only the fields sent)."""
     check_scope(db, scope)
-    application = await _require_application_v2(db, application_id)
+    application = await _require_application_v2(db, scope, application_id)
     changes = payload.model_dump(exclude_unset=True, mode="json")
     for name, value in changes.items():
         setattr(application, name, value)
@@ -1318,7 +1538,8 @@ async def delete_application_v2(
     """Delete one application. Flushes but does not commit: the caller deletes its resumes in
     the same transaction and commits."""
     check_scope(db, scope)
-    (deleted,) = await _delete_applications(db, [await _require_application_v2(db, application_id)])
+    application = await _require_application_v2(db, scope, application_id)
+    (deleted,) = await _delete_applications(db, [application])
     logger.info("application_deleted", application_id=str(application_id))
     return deleted
 
@@ -1335,7 +1556,7 @@ async def bulk_applications(
     commits.
     """
     check_scope(db, scope)
-    await _require_campaign(db, campaign_id)
+    await _require_campaign(db, scope, campaign_id)
     requested = list(dict.fromkeys(action.ids))
     applications = await repository.lock_campaign_applications(db, campaign_id, requested)
     found = {a.id for a in applications}
@@ -1368,10 +1589,10 @@ class PersonActivity:
 async def people_activity(
     db: AsyncSession, scope: AccessScope, person_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, PersonActivity]:
-    """The activity of each of these people (one grouped query); people without applications
-    get an empty :class:`PersonActivity`."""
+    """The activity of each of these people (one grouped query): their applications to campaigns
+    in ``scope`` only; people without any get an empty :class:`PersonActivity`."""
     check_scope(db, scope)
-    rows = await repository.person_activity(db, person_ids)
+    rows = await repository.person_activity(db, scope, person_ids)
     return {
         pid: PersonActivity(*rows[pid]) if pid in rows else PersonActivity() for pid in person_ids
     }
@@ -1380,7 +1601,9 @@ async def people_activity(
 async def person_applications(
     db: AsyncSession, scope: AccessScope, person_id: uuid.UUID
 ) -> list[v2.PersonApplication]:
-    """Every application of the Person, newest first, with its campaign (one query)."""
+    """The Person's applications, newest first, with their campaigns (one query). Only those to
+    campaigns in ``scope``: the others, with their scores and stages, are left out (spec §5.3,
+    §15 Q2)."""
     check_scope(db, scope)
     return [
         v2.PersonApplication(
@@ -1393,16 +1616,16 @@ async def person_applications(
             created_at=a.created_at,
             updated_at=a.updated_at,
         )
-        for a, c in await repository.applications_of_person(db, person_id)
+        for a, c in await repository.applications_of_person(db, scope, person_id)
     ]
 
 
 async def recent_strong_matches(
     db: AsyncSession, scope: AccessScope, limit: int, profiles: ResumeProfiles
 ) -> list[v2.RecentMatch]:
-    """The newest strong-match applications across campaigns (two queries)."""
+    """The newest strong-match applications across the campaigns in ``scope`` (two queries)."""
     check_scope(db, scope)
-    rows = await repository.recent_applications_in_category(db, STRONG_MATCH, limit)
+    rows = await repository.recent_applications_in_category(db, scope, STRONG_MATCH, limit)
     snapshots = await _snapshots(profiles, [a for a, _ in rows])
     return [
         v2.RecentMatch(
@@ -1421,10 +1644,11 @@ async def recent_strong_matches(
 async def active_campaigns(
     db: AsyncSession, scope: AccessScope, limit: int, tallies: ResumeTallies
 ) -> list[v2.Campaign]:
-    """The most recently updated active campaigns, with their counts (three queries)."""
+    """The most recently updated active campaigns in ``scope``, with their counts (three
+    queries)."""
     check_scope(db, scope)
     campaigns = await repository.recently_updated_campaigns(
-        db, v2.CampaignStatus.active.value, limit
+        db, scope, v2.CampaignStatus.active.value, limit
     )
     return await _campaign_resources(db, campaigns, tallies)
 
@@ -1432,9 +1656,10 @@ async def active_campaigns(
 async def campaign_refs(
     db: AsyncSession, scope: AccessScope, campaign_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, v2.CampaignRef]:
-    """``id -> CampaignRef`` of the campaigns among ``campaign_ids`` that exist."""
+    """``id -> CampaignRef`` of the campaigns among ``campaign_ids`` that exist in ``scope``."""
     check_scope(db, scope)
-    return {c.id: _campaign_ref(c) for c in await repository.campaigns_by_id(db, campaign_ids)}
+    campaigns = await repository.campaigns_by_id(db, scope, campaign_ids)
+    return {c.id: _campaign_ref(c) for c in campaigns}
 
 
 async def application_ids_of(
@@ -1447,7 +1672,7 @@ async def application_ids_of(
     pairs = list(
         dict.fromkeys((o.campaign_id, o.person_id) for o in owners if o.person_id is not None)
     )
-    found = await repository.application_ids_of(db, pairs)
+    found = await repository.application_ids_of(db, scope, pairs)
     return {
         owner: found[(owner.campaign_id, owner.person_id)]
         for owner in owners
@@ -1461,8 +1686,10 @@ async def application_ids_of(
 # so these take that Session and never commit: the task writes the resume and the application
 # in one transaction and commits it.
 async def campaign_exists(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> bool:
+    """Whether the campaign exists in ``scope``: what ingestion's campaign use cases (uploads,
+    resumes, retries, the progress stream) check first, so they follow the campaign's client."""
     check_scope(db, scope)
-    return await repository.get_campaign(db, campaign_id) is not None
+    return await repository.get_campaign(db, scope, campaign_id) is not None
 
 
 @dataclass(frozen=True)

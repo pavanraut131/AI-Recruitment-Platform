@@ -23,7 +23,8 @@ id)`` targets: a campaign's client is of the campaign's agency (``(agency_id, cl
 clients``), and an application's campaign of the application's (``(agency_id, campaign_id) ->
 campaigns``, ``ON DELETE CASCADE``, which replaced the single-column key). Every insert sets the
 agency (``app.platform.tenancy.DEFAULT_AGENCY_ID`` until E2-03); ``campaigns.client_id``
-(``NOT NULL``) is the client the campaign is run for, ``DEFAULT_CLIENT_ID`` until E2-06.
+(``NOT NULL``) is the client the campaign is run for (E2-06: chosen by the request, or the
+caller's default client), and ``Campaign.client`` loads it with the campaign.
 ``campaigns.created_by_user_id`` refers to identity's users (E2-05), also without a foreign key.
 """
 
@@ -46,7 +47,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.platform.database import Base
 
@@ -127,8 +128,20 @@ class Campaign(Base):
     agency_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # identity's user who created the campaign (no foreign key, ADR 0003); NULL for campaigns
-    # created before sign-in exists (E2-05).
+    # created before sign-in exists (E2-05) and by the development fallback owner.
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # The client, loaded with the campaign by an inner join on its primary key (the v2 Campaign
+    # shows its name; no query of its own). Read-only: a campaign moves to another client by
+    # ``client_id``.
+    client: Mapped[Client] = relationship(
+        Client,
+        primaryjoin="Campaign.client_id == Client.id",
+        foreign_keys="Campaign.client_id",
+        viewonly=True,
+        lazy="joined",
+        innerjoin=True,
+    )
 
 
 class Application(Base):

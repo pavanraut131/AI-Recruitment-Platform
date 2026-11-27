@@ -15,8 +15,12 @@ carrying the user-facing ``detail``; the router maps them to status codes.
 
 **Tenancy (E2-03).** The session is bound to an agency (``app.platform.tenancy``): the
 repository filters every query to it and new resumes get its ``agency_id``. The use cases that
-list or fetch a campaign's data take the caller's ``AccessScope`` and have hiring check it
-(``hiring.service.check_scope``, ``campaign_exists``). The agency travels on: every queued task
+list or fetch a campaign's data take the caller's ``AccessScope`` and have hiring check it:
+uploads, a campaign's resumes, retries and the progress stream go through the campaign
+(``hiring.service.campaign_exists``: 404 outside the scope), so they follow its client (spec
+§5.3, E2-06); the lists across campaigns (Home's resumes in progress, the stats' tally) keep to
+the campaigns hiring says the scope covers (``campaign_ids_in_scope``). The ``/api/v1`` use
+cases take only a scope of every client (``check_legacy_scope``). The agency travels on: every queued task
 carries it (``tasks.enqueue_*``), the progress stream subscribes to the agency's channel of the
 campaign (``events.campaign_channel``), and a new upload is stored under the agency's prefix
 (:func:`resume_storage_key`).
@@ -124,10 +128,15 @@ async def upload_resumes(
 
 
 async def _accept_uploads(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    files: Sequence[UploadedFile],
+    uploaded_by: uuid.UUID | None = None,
 ) -> tuple[list[uuid.UUID], list[dict[str, str]]]:
-    """The upload itself (see :func:`upload_resumes`): stores and queues the accepted files;
-    returns their resume ids and the rejected files with the reason."""
+    """The upload itself (see :func:`upload_resumes`): stores and queues the accepted files,
+    recording who uploaded them (``None``: unknown, v1 and the development fallback); returns
+    their resume ids and the rejected files with the reason."""
     if not await hiring_service.campaign_exists(db, scope, campaign_id):
         raise NotFoundError("Campaign not found")
 
@@ -179,7 +188,7 @@ async def _accept_uploads(
         object_key = resume_storage_key(agency_id_of(db), campaign_id, resume_id)
         storage.upload_file(content, object_key)
 
-        repository.add(  # in the session's agency; no uploading user yet (E2-05)
+        repository.add(  # in the session's agency
             db,
             Resume(
                 id=resume_id,
@@ -189,6 +198,7 @@ async def _accept_uploads(
                 file_hash=file_hash,
                 file_size_bytes=len(content),
                 status="pending",
+                uploaded_by_user_id=uploaded_by,
             ),
         )
         accepted_ids.append(resume_id)
@@ -214,12 +224,12 @@ async def list_resumes(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
 ) -> Sequence[Resume]:
     """The campaign's resumes, newest first. An unknown campaign has none (not a 404)."""
-    hiring_service.check_scope(db, scope)
+    hiring_service.check_legacy_scope(db, scope)
     return await repository.list_for_campaign(db, campaign_id)
 
 
 async def get_resume(db: AsyncSession, scope: AccessScope, resume_id: uuid.UUID) -> Resume:
-    hiring_service.check_scope(db, scope)
+    hiring_service.check_legacy_scope(db, scope)
     resume = await repository.get(db, resume_id)
     if not resume:
         raise NotFoundError("Resume not found")
@@ -234,7 +244,7 @@ async def retry_failed(db: AsyncSession, scope: AccessScope, campaign_id: uuid.U
     the AI task, which skips the steps already done; any other (failed text extraction, or
     processed before ``processing_step`` existed) starts again with text extraction.
     """
-    hiring_service.check_scope(db, scope)
+    hiring_service.check_legacy_scope(db, scope)
     return len(await _retry_failed(db, campaign_id))
 
 
@@ -266,7 +276,7 @@ async def resume_status_counts(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID | None = None
 ) -> dict[str, int]:
     """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
-    hiring_service.check_scope(db, scope)
+    hiring_service.check_legacy_scope(db, scope)
     return await repository.status_counts(db, campaign_id)
 
 
@@ -436,10 +446,15 @@ async def resume_resources(
 
 
 async def upload_resumes_v2(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
+    db: AsyncSession,
+    scope: AccessScope,
+    campaign_id: uuid.UUID,
+    files: Sequence[UploadedFile],
+    uploaded_by: uuid.UUID | None = None,
 ) -> v2.UploadResult:
-    """:func:`upload_resumes`, answering with the accepted resumes themselves."""
-    accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files)
+    """:func:`upload_resumes` (404 for a campaign outside the scope), answering with the accepted
+    resumes themselves."""
+    accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files, uploaded_by)
     stored = {r.id: r for r in await repository.by_ids(db, accepted_ids)}
     accepted = [stored[rid] for rid in accepted_ids]
     return v2.UploadResult(
@@ -479,9 +494,12 @@ async def retry_failed_v2(
 async def resumes_in_progress(
     db: AsyncSession, scope: AccessScope, limit: int
 ) -> tuple[list[v2.Resume], int]:
-    """The newest resumes still being processed, across campaigns, and how many there are."""
-    hiring_service.check_scope(db, scope)
-    resumes, total = await repository.page_in_statuses(db, IN_PROGRESS_STATUSES, limit=limit)
+    """The newest resumes still being processed, across the campaigns in ``scope``, and how many
+    there are."""
+    campaign_ids = await hiring_service.campaign_ids_in_scope(db, scope)
+    resumes, total = await repository.page_in_statuses(
+        db, IN_PROGRESS_STATUSES, campaign_ids, limit=limit
+    )
     return await resume_resources(db, scope, resumes), total
 
 
@@ -502,9 +520,13 @@ def _tally(rows: Sequence[repository.TallyRow]) -> hiring_service.ResumeTally:
 async def resume_tally(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID | None = None
 ) -> hiring_service.ResumeTally:
-    """The resume tally of one campaign, or (``None``) of every campaign: one query."""
-    hiring_service.check_scope(db, scope)
-    ids = [campaign_id] if campaign_id is not None else None
+    """The resume tally of one campaign, or (``None``) of every campaign in ``scope``: one query
+    (two for a client-limited scope)."""
+    if campaign_id is not None:
+        hiring_service.check_scope(db, scope)
+        ids: list[uuid.UUID] | None = [campaign_id]
+    else:
+        ids = await hiring_service.campaign_ids_in_scope(db, scope)
     return _tally(await repository.tallies(db, ids, RECENT_UPLOADS))
 
 
