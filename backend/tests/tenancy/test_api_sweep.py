@@ -11,7 +11,9 @@ has a campaign, an application, a Person and a resume, through a session bound t
 2. Every operation with an id in its path, called with **B's** ids: ``404``, and B's rows are
    unchanged afterwards. Operations with a request body take it from :data:`BODIES`; one with a
    body that has no entry fails the test, so it is added here when it is added to the API.
-3. The one operation that takes an agency id in its body (``PUT /me/active-agency``) refuses B's.
+3. The one operation that takes an agency id in its body (``PUT /me/active-agency``) refuses B's,
+   and the ones that take a client id (``POST /campaigns``, ``PATCH /campaigns/{id}``) refuse B's
+   client (E2-06).
 """
 
 from __future__ import annotations
@@ -23,9 +25,10 @@ from httpx import AsyncClient, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.hiring.models import Application, Campaign
+from app.modules.hiring.models import Application, Campaign, Client
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
+from app.platform.tenancy import DEFAULT_CLIENT_ID
 from app.v2 import v2_app
 from tests.factories import make_campaign, make_candidate
 from tests.identity.conftest import PASSWORD, Users, csrf
@@ -46,6 +49,7 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/campaigns/{campaign_id}/uploads"): {
         "files": [("files", ("cv.pdf", PDF, "application/pdf"))]
     },
+    ("PATCH", "/clients/{client_id}"): {"json": {"name": "from A", "status": "archived"}},
     # No id in the path (agency-wide or the caller's own); listed so the coverage check knows
     # them. PUT /me/active-agency is checked with B's id separately.
     ("POST", "/campaigns"): {"json": {"title": "A's campaign", "role": "Engineer"}},
@@ -55,6 +59,7 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/me/password"): {"json": {"current_password": PASSWORD, "new_password": "x" * 16}},
     ("PUT", "/me/active-agency"): {"json": {"agency_id": "{agency_id}"}},
     ("PATCH", "/agency"): {"json": {"name": "Agency A"}},
+    ("POST", "/clients"): {"json": {"name": "A's new client"}},
 }
 # Opened as a stream: the 404 for B's id is checked; A's own stream would not end.
 STREAMS = {"/campaigns/{campaign_id}/events"}
@@ -138,6 +143,7 @@ async def test_no_response_shows_another_agencys_ids(
         "campaign_id": str(mine.campaign_id),
         "application_id": str(mine.id),
         "person_id": str(mine.person_id),
+        "client_id": str(DEFAULT_CLIENT_ID),
     }
     forbidden = {
         str(value)
@@ -172,6 +178,7 @@ async def test_every_operation_with_another_agencys_ids_is_not_found(
         "campaign_id": str(theirs.campaign_id),
         "application_id": str(theirs.id),
         "person_id": str(theirs.person_id),
+        "client_id": str(other_agency.client_id),
     }
     before = await _b_counts(other_agency)
 
@@ -191,7 +198,9 @@ async def test_every_operation_with_another_agencys_ids_is_not_found(
     title = await other_agency.db.scalar(
         select(Campaign.title).where(Campaign.id == ids["campaign_id"])
     )
+    client = await other_agency.db.scalar(select(Client).where(Client.id == ids["client_id"]))
     assert (notes, title) == (None, "B's campaign")
+    assert client is not None and (client.name, client.status) == ("Other client", "active")
 
 
 async def test_another_agency_cannot_be_made_active(
@@ -206,6 +215,22 @@ async def test_another_agency_cannot_be_made_active(
     assert str(other_agency.agency_id) not in str(me)
 
 
+async def test_another_agencys_client_cannot_be_given_to_a_campaign(
+    users: Users, db_session: AsyncSession, other_agency: OtherAgency
+) -> None:
+    client = await _signed_in_as_a(users)
+    mine = await make_campaign(db_session)
+    theirs = str(other_agency.client_id)
+    created = await _call(
+        client, "POST", f"{V2}/campaigns", json={"title": "T", "role": "R", "client_id": theirs}
+    )
+    moved = await _call(client, "PATCH", f"{V2}/campaigns/{mine.id}", json={"client_id": theirs})
+    for resp in (created, moved):
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["errors"] == [{"loc": ["body", "client_id"], "msg": "Unknown client"}]
+    assert (await db_session.scalar(select(func.count()).select_from(Campaign))) == 1
+
+
 def test_the_sweep_knows_every_path_parameter() -> None:
     names = {match for _, path, _ in _operations() for match in re.findall(r"\{(\w+)\}", path)}
-    assert names == {"campaign_id", "application_id", "person_id"}
+    assert names == {"campaign_id", "application_id", "person_id", "client_id"}

@@ -604,6 +604,10 @@
         }),
         'Campaign': dict({
           'properties': dict({
+            'client': dict({
+              '$ref': '#/components/schemas/ClientRef',
+              'description': 'The client the campaign is run for.',
+            }),
             'counts': dict({
               '$ref': '#/components/schemas/CampaignCounts',
             }),
@@ -665,6 +669,7 @@
             'description',
             'required_skills',
             'status',
+            'client',
             'created_at',
             'updated_at',
             'last_activity_at',
@@ -720,6 +725,19 @@
         'CampaignCreate': dict({
           'additionalProperties': False,
           'properties': dict({
+            'client_id': dict({
+              'anyOf': list([
+                dict({
+                  'format': 'uuid',
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'null',
+                }),
+              ]),
+              'description': "The client the campaign is run for: an active client you have access to (422 otherwise). Omitted or null: your default client, the agency's oldest active client you have access to.",
+              'title': 'Client Id',
+            }),
             'description': dict({
               'anyOf': list([
                 dict({
@@ -911,9 +929,15 @@
           'additionalProperties': False,
           'description': '''
             Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others
-            may be omitted but not ``null``.
+            may be omitted but not ``null``. ``client_id`` moves the campaign to another active client
+            you have access to (422 otherwise).
           ''',
           'properties': dict({
+            'client_id': dict({
+              'format': 'uuid',
+              'title': 'Client Id',
+              'type': 'string',
+            }),
             'description': dict({
               'anyOf': list([
                 dict({
@@ -981,6 +1005,112 @@
           'title': 'CategoryCounts',
           'type': 'object',
         }),
+        'Client': dict({
+          'description': "One of the agency's customers; every campaign is run for one client (EPIC-02 §3.1).",
+          'properties': dict({
+            'created_at': dict({
+              'format': 'date-time',
+              'title': 'Created At',
+              'type': 'string',
+            }),
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'name': dict({
+              'description': 'Unique in the agency (ignoring case).',
+              'title': 'Name',
+              'type': 'string',
+            }),
+            'status': dict({
+              '$ref': '#/components/schemas/ClientStatus',
+            }),
+            'updated_at': dict({
+              'format': 'date-time',
+              'title': 'Updated At',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'name',
+            'status',
+            'created_at',
+            'updated_at',
+          ]),
+          'title': 'Client',
+          'type': 'object',
+        }),
+        'ClientCreate': dict({
+          'additionalProperties': False,
+          'properties': dict({
+            'name': dict({
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Name',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'name',
+          ]),
+          'title': 'ClientCreate',
+          'type': 'object',
+        }),
+        'ClientPage': dict({
+          'properties': dict({
+            'items': dict({
+              'items': dict({
+                '$ref': '#/components/schemas/Client',
+              }),
+              'title': 'Items',
+              'type': 'array',
+            }),
+            'page': dict({
+              'description': "This page's number, from 1.",
+              'title': 'Page',
+              'type': 'integer',
+            }),
+            'page_size': dict({
+              'description': 'The requested page size.',
+              'title': 'Page Size',
+              'type': 'integer',
+            }),
+            'total': dict({
+              'description': 'Items matching the filters, across all pages.',
+              'title': 'Total',
+              'type': 'integer',
+            }),
+          }),
+          'required': list([
+            'items',
+            'total',
+            'page',
+            'page_size',
+          ]),
+          'title': 'ClientPage',
+          'type': 'object',
+        }),
+        'ClientRef': dict({
+          'properties': dict({
+            'id': dict({
+              'format': 'uuid',
+              'title': 'Id',
+              'type': 'string',
+            }),
+            'name': dict({
+              'title': 'Name',
+              'type': 'string',
+            }),
+          }),
+          'required': list([
+            'id',
+            'name',
+          ]),
+          'title': 'ClientRef',
+          'type': 'object',
+        }),
         'ClientScope': dict({
           'description': 'The clients the user may see in the active agency: all of them, or the listed ones.',
           'properties': dict({
@@ -1003,6 +1133,35 @@
             'client_ids',
           ]),
           'title': 'ClientScope',
+          'type': 'object',
+        }),
+        'ClientStatus': dict({
+          'description': '``archived`` clients are kept (campaigns refer to them) but hidden from pickers.',
+          'enum': list([
+            'active',
+            'archived',
+          ]),
+          'title': 'ClientStatus',
+          'type': 'string',
+        }),
+        'ClientUpdate': dict({
+          'additionalProperties': False,
+          'description': '''
+            Only the fields sent are changed: rename, archive (``status: archived``) or restore
+            (``active``). Neither may be ``null``.
+          ''',
+          'properties': dict({
+            'name': dict({
+              'maxLength': 200,
+              'minLength': 1,
+              'title': 'Name',
+              'type': 'string',
+            }),
+            'status': dict({
+              '$ref': '#/components/schemas/ClientStatus',
+            }),
+          }),
+          'title': 'ClientUpdate',
           'type': 'object',
         }),
         'ConflictRole': dict({
@@ -1287,6 +1446,14 @@
               'title': 'Memberships',
               'type': 'array',
             }),
+            'permissions': dict({
+              'description': 'What the role may do in the active agency (the permission matrix), in a fixed order; empty without an active agency. For showing only what the user can do: the API checks every request anyway.',
+              'items': dict({
+                '$ref': '#/components/schemas/Permission',
+              }),
+              'title': 'Permissions',
+              'type': 'array',
+            }),
             'role': dict({
               'anyOf': list([
                 dict({
@@ -1307,6 +1474,7 @@
             'memberships',
             'active_agency',
             'role',
+            'permissions',
             'client_scope',
             'csrf_token',
           ]),
@@ -1416,6 +1584,26 @@
           ]),
           'title': 'PasswordChange',
           'type': 'object',
+        }),
+        'Permission': dict({
+          'description': "What a role may do in its agency (spec §5.2). The values are the spec's names.",
+          'enum': list([
+            'workspace:read',
+            'campaign:write',
+            'campaign:delete',
+            'resume:upload',
+            'application:review',
+            'application:delete',
+            'application:export',
+            'client:read',
+            'client:manage',
+            'team:read',
+            'team:manage',
+            'team:manage_privileged',
+            'agency:manage',
+          ]),
+          'title': 'Permission',
+          'type': 'string',
         }),
         'Person': dict({
           'properties': dict({
@@ -2625,9 +2813,12 @@
           'tags': list([
             'agency',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
         'patch': dict({
-          'description': 'Rename the active agency (owners only).',
+          'description': 'Rename the active agency (``agency:manage``: owners).',
           'operationId': 'updateAgency',
           'requestBody': dict({
             'content': dict({
@@ -2692,6 +2883,9 @@
           'summary': 'Update Agency',
           'tags': list([
             'agency',
+          ]),
+          'x-permissions': list([
+            'agency:manage',
           ]),
         }),
       }),
@@ -2767,6 +2961,9 @@
           'summary': 'Delete Application',
           'tags': list([
             'applications',
+          ]),
+          'x-permissions': list([
+            'application:delete',
           ]),
         }),
         'get': dict({
@@ -2844,6 +3041,9 @@
           'summary': 'Get Application',
           'tags': list([
             'applications',
+          ]),
+          'x-permissions': list([
+            'workspace:read',
           ]),
         }),
         'patch': dict({
@@ -2934,6 +3134,9 @@
           'summary': 'Update Application',
           'tags': list([
             'applications',
+          ]),
+          'x-permissions': list([
+            'application:review',
           ]),
         }),
       }),
@@ -3089,7 +3292,7 @@
       }),
       '/campaigns': dict({
         'get': dict({
-          'description': 'Campaigns, newest first, with their counts.',
+          'description': 'Campaigns of the clients you have access to, newest first, with their counts.',
           'operationId': 'listCampaigns',
           'parameters': list([
             dict({
@@ -3130,6 +3333,29 @@
                 ]),
                 'description': 'Contained in the title or the role.',
                 'title': 'Q',
+              }),
+            }),
+            dict({
+              'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+              'in': 'query',
+              'name': 'client_id',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'items': dict({
+                      'format': 'uuid',
+                      'type': 'string',
+                    }),
+                    'maxItems': 100,
+                    'type': 'array',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+                'title': 'Client Id',
               }),
             }),
             dict({
@@ -3212,9 +3438,15 @@
           'tags': list([
             'campaigns',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
         'post': dict({
-          'description': 'Create a campaign (status ``active`` unless given).',
+          'description': '''
+            Create a campaign (status ``active`` unless given) for the client ``client_id`` names, or
+            your default client. 422 for a client that is unknown, archived or not one of yours.
+          ''',
           'operationId': 'createCampaign',
           'requestBody': dict({
             'content': dict({
@@ -3279,6 +3511,9 @@
           'summary': 'Create Campaign',
           'tags': list([
             'campaigns',
+          ]),
+          'x-permissions': list([
+            'campaign:write',
           ]),
         }),
       }),
@@ -3363,6 +3598,9 @@
           'tags': list([
             'campaigns',
           ]),
+          'x-permissions': list([
+            'campaign:write',
+          ]),
         }),
       }),
       '/campaigns/{campaign_id}': dict({
@@ -3437,6 +3675,9 @@
           'summary': 'Delete Campaign',
           'tags': list([
             'campaigns',
+          ]),
+          'x-permissions': list([
+            'campaign:delete',
           ]),
         }),
         'get': dict({
@@ -3515,9 +3756,15 @@
           'tags': list([
             'campaigns',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
         'patch': dict({
-          'description': 'Change the fields sent (title, role, description, required skills, status).',
+          'description': '''
+            Change the fields sent (title, role, description, required skills, status, client).
+            A new client must be an active client you have access to (422 otherwise).
+          ''',
           'operationId': 'updateCampaign',
           'parameters': list([
             dict({
@@ -3604,6 +3851,9 @@
           'summary': 'Update Campaign',
           'tags': list([
             'campaigns',
+          ]),
+          'x-permissions': list([
+            'campaign:write',
           ]),
         }),
       }),
@@ -3858,14 +4108,17 @@
           'tags': list([
             'applications',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
       }),
       '/campaigns/{campaign_id}/applications/bulk': dict({
         'post': dict({
           'description': '''
             Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them
-            (with their resumes). Ids that are not this campaign's applications are reported in
-            ``not_found``; the others are acted on.
+            (with their resumes; the ``delete`` action also needs ``application:delete``). Ids that are
+            not this campaign's applications are reported in ``not_found``; the others are acted on.
           ''',
           'operationId': 'bulkApplicationAction',
           'parameters': list([
@@ -3953,6 +4206,9 @@
           'summary': 'Bulk Application Action',
           'tags': list([
             'applications',
+          ]),
+          'x-permissions': list([
+            'application:review',
           ]),
         }),
       }),
@@ -4203,6 +4459,9 @@
           'tags': list([
             'applications',
           ]),
+          'x-permissions': list([
+            'application:export',
+          ]),
         }),
       }),
       '/campaigns/{campaign_id}/events': dict({
@@ -4282,6 +4541,9 @@
           'summary': 'Stream Campaign Events',
           'tags': list([
             'uploads',
+          ]),
+          'x-permissions': list([
+            'workspace:read',
           ]),
         }),
       }),
@@ -4411,6 +4673,9 @@
           'tags': list([
             'uploads',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
       }),
       '/campaigns/{campaign_id}/resumes/retry-failed': dict({
@@ -4496,6 +4761,9 @@
           'tags': list([
             'uploads',
           ]),
+          'x-permissions': list([
+            'resume:upload',
+          ]),
         }),
       }),
       '/campaigns/{campaign_id}/stats': dict({
@@ -4578,6 +4846,9 @@
           'summary': 'Get Campaign Stats',
           'tags': list([
             'campaigns',
+          ]),
+          'x-permissions': list([
+            'workspace:read',
           ]),
         }),
       }),
@@ -4687,12 +4958,443 @@
           'tags': list([
             'uploads',
           ]),
+          'x-permissions': list([
+            'resume:upload',
+          ]),
+        }),
+      }),
+      '/clients': dict({
+        'get': dict({
+          'description': "The agency's clients you have access to, by name (ignoring case).",
+          'operationId': 'listClients',
+          'parameters': list([
+            dict({
+              'description': 'Only clients in any of these statuses.',
+              'in': 'query',
+              'name': 'status',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'items': dict({
+                      '$ref': '#/components/schemas/ClientStatus',
+                    }),
+                    'type': 'array',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Only clients in any of these statuses.',
+                'title': 'Status',
+              }),
+            }),
+            dict({
+              'description': 'Contained in the name.',
+              'in': 'query',
+              'name': 'q',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'maxLength': 200,
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Contained in the name.',
+                'title': 'Q',
+              }),
+            }),
+            dict({
+              'description': 'Page number, from 1.',
+              'in': 'query',
+              'name': 'page',
+              'required': False,
+              'schema': dict({
+                'default': 1,
+                'description': 'Page number, from 1.',
+                'minimum': 1,
+                'title': 'Page',
+                'type': 'integer',
+              }),
+            }),
+            dict({
+              'description': 'Items per page.',
+              'in': 'query',
+              'name': 'page_size',
+              'required': False,
+              'schema': dict({
+                'default': 20,
+                'description': 'Items per page.',
+                'maximum': 100,
+                'minimum': 1,
+                'title': 'Page Size',
+                'type': 'integer',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/ClientPage',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'List Clients',
+          'tags': list([
+            'clients',
+          ]),
+          'x-permissions': list([
+            'client:read',
+          ]),
+        }),
+        'post': dict({
+          'description': '''
+            Add an active client. 409 when the agency already has a client with this name (ignoring
+            case, archived ones included).
+          ''',
+          'operationId': 'createClient',
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/ClientCreate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '201': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Client',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Create Client',
+          'tags': list([
+            'clients',
+          ]),
+          'x-permissions': list([
+            'client:manage',
+          ]),
+        }),
+      }),
+      '/clients/{client_id}': dict({
+        'get': dict({
+          'description': 'One client (404 unless it is one you have access to).',
+          'operationId': 'getClient',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'client_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Client Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Client',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Get Client',
+          'tags': list([
+            'clients',
+          ]),
+          'x-permissions': list([
+            'client:read',
+          ]),
+        }),
+        'patch': dict({
+          'description': '''
+            Rename the client, archive it (``status: archived``: hidden from pickers, its campaigns
+            keep it) or restore it. 409 for a name another client of the agency has.
+          ''',
+          'operationId': 'updateClient',
+          'parameters': list([
+            dict({
+              'in': 'path',
+              'name': 'client_id',
+              'required': True,
+              'schema': dict({
+                'format': 'uuid',
+                'title': 'Client Id',
+                'type': 'string',
+              }),
+            }),
+          ]),
+          'requestBody': dict({
+            'content': dict({
+              'application/json': dict({
+                'schema': dict({
+                  '$ref': '#/components/schemas/ClientUpdate',
+                }),
+              }),
+            }),
+            'required': True,
+          }),
+          'responses': dict({
+            '200': dict({
+              'content': dict({
+                'application/json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Client',
+                  }),
+                }),
+              }),
+              'description': 'Successful Response',
+            }),
+            '401': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unauthorized',
+            }),
+            '403': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Forbidden',
+            }),
+            '404': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Not Found',
+            }),
+            '409': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Conflict',
+            }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
+          }),
+          'security': list([
+            dict({
+              'cookieAuth': list([
+              ]),
+              'csrfToken': list([
+              ]),
+            }),
+          ]),
+          'summary': 'Update Client',
+          'tags': list([
+            'clients',
+          ]),
+          'x-permissions': list([
+            'client:manage',
+          ]),
         }),
       }),
       '/home': dict({
         'get': dict({
-          'description': 'The Home screen in one call.',
+          'description': 'The Home screen in one call (the campaigns of the clients you have access to).',
           'operationId': 'getHome',
+          'parameters': list([
+            dict({
+              'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+              'in': 'query',
+              'name': 'client_id',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'items': dict({
+                      'format': 'uuid',
+                      'type': 'string',
+                    }),
+                    'maxItems': 100,
+                    'type': 'array',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+                'title': 'Client Id',
+              }),
+            }),
+          ]),
           'responses': dict({
             '200': dict({
               'content': dict({
@@ -4724,6 +5426,16 @@
               }),
               'description': 'Forbidden',
             }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
           }),
           'security': list([
             dict({
@@ -4734,6 +5446,9 @@
           'summary': 'Get Home',
           'tags': list([
             'dashboard',
+          ]),
+          'x-permissions': list([
+            'workspace:read',
           ]),
         }),
       }),
@@ -5112,11 +5827,17 @@
           'tags': list([
             'people',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
       }),
       '/people/{person_id}': dict({
         'get': dict({
-          'description': "The Person's profile, identifiers and identity conflicts, with all their applications.",
+          'description': '''
+            The Person's profile, identifiers and identity conflicts, with their applications (to
+            campaigns of the clients you have access to).
+          ''',
           'operationId': 'getPerson',
           'parameters': list([
             dict({
@@ -5192,15 +5913,43 @@
           'tags': list([
             'people',
           ]),
+          'x-permissions': list([
+            'workspace:read',
+          ]),
         }),
       }),
       '/stats': dict({
         'get': dict({
           'description': '''
-            Counts across all campaigns: campaigns by status, resumes by status, applications by
-            category and stage, and people.
+            Counts across the campaigns of the clients you have access to: campaigns by status,
+            resumes by status, applications by category and stage; and the agency's people.
           ''',
           'operationId': 'getStats',
+          'parameters': list([
+            dict({
+              'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+              'in': 'query',
+              'name': 'client_id',
+              'required': False,
+              'schema': dict({
+                'anyOf': list([
+                  dict({
+                    'items': dict({
+                      'format': 'uuid',
+                      'type': 'string',
+                    }),
+                    'maxItems': 100,
+                    'type': 'array',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Only campaigns of any of these clients (within the clients you have access to).',
+                'title': 'Client Id',
+              }),
+            }),
+          ]),
           'responses': dict({
             '200': dict({
               'content': dict({
@@ -5232,6 +5981,16 @@
               }),
               'description': 'Forbidden',
             }),
+            '422': dict({
+              'content': dict({
+                'application/problem+json': dict({
+                  'schema': dict({
+                    '$ref': '#/components/schemas/Problem',
+                  }),
+                }),
+              }),
+              'description': 'Unprocessable Entity',
+            }),
           }),
           'security': list([
             dict({
@@ -5242,6 +6001,9 @@
           'summary': 'Get Stats',
           'tags': list([
             'dashboard',
+          ]),
+          'x-permissions': list([
+            'workspace:read',
           ]),
         }),
       }),
@@ -5283,6 +6045,10 @@
       dict({
         'description': 'The active agency.',
         'name': 'agency',
+      }),
+      dict({
+        'description': "The agency's clients, whom campaigns are run for.",
+        'name': 'clients',
       }),
     ]),
   })

@@ -75,26 +75,49 @@ def test_the_document_declares_the_security_of_each_operation() -> None:
             assert "403" in op["responses"], (method, path)
 
 
-def test_a_route_without_a_session_or_public_marker_is_refused() -> None:
-    from app.modules.identity.dependencies import current_principal, public
-    from app.v2 import _check_authentication
-
+def _app_with(*dependencies: Any) -> FastAPI:
     router = APIRouter()
 
     @router.get("/open", operation_id="open")
     async def open_route() -> None: ...
 
     app = FastAPI()
-    app.include_router(router)
-    with pytest.raises(RuntimeError, match="requires no session and is not marked public"):
-        _check_authentication(app)
+    app.include_router(router, dependencies=[Depends(d) for d in dependencies])
+    return app
 
-    ok = FastAPI()
-    ok.include_router(router, dependencies=[Depends(current_principal)])
-    _check_authentication(ok)
-    marked = FastAPI()
-    marked.include_router(router, dependencies=[Depends(public)])
-    _check_authentication(marked)
+
+def test_a_route_without_a_declared_access_is_refused() -> None:
+    """Deny by default (spec §5.4, E2-06): a v2 route declares a permission, or is explicitly
+    for any signed-in member or public; a session alone is not a declaration."""
+    from app.modules.identity.dependencies import (
+        Permission,
+        any_member,
+        current_principal,
+        current_session,
+        public,
+        require_permission,
+    )
+    from app.v2 import _check_authentication
+
+    refused = {
+        "nothing": (),
+        "a session alone": (current_principal,),
+        "any_member without a session": (any_member,),
+        "two kinds": (public, require_permission(Permission.workspace_read)),
+        "both markers": (public, any_member, current_session),
+    }
+    for case, dependencies in refused.items():
+        with pytest.raises(RuntimeError, match="declares"):
+            _check_authentication(_app_with(*dependencies))
+            pytest.fail(case)
+
+    for dependencies in (
+        (require_permission(Permission.workspace_read),),
+        (require_permission(Permission.workspace_read), require_permission(Permission.team_read)),
+        (any_member, current_session),
+        (public,),
+    ):
+        _check_authentication(_app_with(*dependencies))
 
 
 # ── AUTH_REQUIRED=false ───────────────────────────────────────

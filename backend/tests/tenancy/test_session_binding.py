@@ -92,10 +92,31 @@ async def test_a_scope_of_another_agency_is_refused(db_session: AsyncSession) ->
         await hiring_service.campaign_exists(db_session, AccessScope(B), uuid.uuid4())
 
 
-async def test_a_client_scoped_access_is_refused_until_e2_06(db_session: AsyncSession) -> None:
-    narrowed = AccessScope(DEFAULT_AGENCY_ID, client_ids=frozenset({uuid.uuid4()}))
-    with pytest.raises(NotImplementedError):
-        await hiring_service.campaign_exists(db_session, narrowed, uuid.uuid4())
+async def test_a_client_scoped_access_sees_only_its_clients(db_session: AsyncSession) -> None:
+    """Client scoping (E2-06) filters instead of refusing: a campaign of a client outside the
+    scope does not exist for it. The /api/v1 use cases (every client, default agency) refuse a
+    client-limited scope rather than widen it."""
+    from tests.factories import make_campaign
+
+    campaign = await make_campaign(db_session)  # the default client, "General"
+    other_client = AccessScope(DEFAULT_AGENCY_ID, client_ids=frozenset({uuid.uuid4()}))
+    general = AccessScope(DEFAULT_AGENCY_ID, client_ids=frozenset({campaign.client_id}))
+    assert not await hiring_service.campaign_exists(db_session, other_client, campaign.id)
+    assert await hiring_service.campaign_exists(db_session, general, campaign.id)
+    with pytest.raises(ValueError, match="/api/v1"):
+        await hiring_service.get_campaign(db_session, general, campaign.id)
+
+
+def test_a_scope_narrows_never_widens() -> None:
+    x, y, z = (uuid.uuid4() for _ in range(3))
+    every = AccessScope(A)
+    some = AccessScope(A, frozenset({x, y}))
+    assert every.restricted_to(None) is every
+    assert every.restricted_to([x]) == AccessScope(A, frozenset({x}))
+    assert some.restricted_to([y, z]) == AccessScope(A, frozenset({y}))
+    assert some.restricted_to([z]) == AccessScope(A, frozenset())
+    assert some.restricted_to([]) == AccessScope(A, frozenset())
+    assert every.allows(z) and some.allows(x) and not some.allows(z)
 
 
 # ── The setting, per transaction ──────────────────────────────

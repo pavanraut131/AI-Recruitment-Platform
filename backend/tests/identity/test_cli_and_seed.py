@@ -7,7 +7,7 @@ import io
 
 import pytest
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from app.devtools import seed_users
 from app.modules.identity import cli, passwords, service
@@ -199,3 +199,25 @@ async def test_seed_users_refused_outside_development(
     monkeypatch.setattr(settings, "APP_ENV", "staging")
     with pytest.raises(seed_users.SeedUsersRefused):
         await seed_users.seed_users(db_session)
+
+
+async def test_the_seeded_agencies_have_a_client(
+    db_session: AsyncSession, db_connection: AsyncConnection
+) -> None:
+    """E2-06: an agency without any client gets "General" (``hiring.ensure_first_client``, what
+    ``seed_users.run`` does for each seeded agency); one that has a client keeps what it has."""
+    from app.modules.hiring import service as hiring
+    from app.modules.hiring.models import Client
+    from app.platform.tenancy import bind
+
+    seeded = await seed_users.seed_users(db_session)
+    northbank = next(u.agency_id for u in seeded if u.agency_name == seed_users.SECOND_AGENCY_NAME)
+    async with AsyncSession(
+        bind=db_connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+    ) as db:
+        bind(db, northbank)
+        assert await hiring.ensure_first_client(db) is True
+        assert await hiring.ensure_first_client(db) is False  # idempotent
+        names = (await db.scalars(select(Client.name))).all()
+        assert names == ["General"]
+    assert await hiring.ensure_first_client(db_session) is False  # the default agency's General

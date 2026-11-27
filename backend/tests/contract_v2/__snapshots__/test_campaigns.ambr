@@ -196,6 +196,10 @@
 # name: test_create_campaign
   dict({
     'body': dict({
+      'client': dict({
+        'id': '<default-client>',
+        'name': 'General',
+      }),
       'counts': dict({
         'applications': 0,
         'failed': 0,
@@ -221,6 +225,84 @@
       'content-type': 'application/json',
     }),
     'status_code': 201,
+  })
+# ---
+# name: test_create_campaign_for_a_client
+  dict({
+    'body': dict({
+      'client': dict({
+        'id': '<uuid:1>',
+        'name': 'Acme',
+      }),
+      'counts': dict({
+        'applications': 0,
+        'failed': 0,
+        'in_progress': 0,
+        'new_resumes_24h': 0,
+        'resumes': 0,
+        'strong_matches': 0,
+      }),
+      'created_at': '<datetime>',
+      'description': None,
+      'id': '<uuid:2>',
+      'last_activity_at': '<datetime>',
+      'required_skills': list([
+      ]),
+      'role': 'Dev',
+      'status': 'active',
+      'title': 'For Acme',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 201,
+  })
+# ---
+# name: test_create_campaign_for_an_unusable_client[archived]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'client_id',
+          ]),
+          'msg': 'This client is archived',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_campaign_for_an_unusable_client[unknown]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'client_id',
+          ]),
+          'msg': 'Unknown client',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
   })
 # ---
 # name: test_create_campaign_invalid[empty-object]
@@ -417,6 +499,10 @@
 # name: test_create_campaign_minimal
   dict({
     'body': dict({
+      'client': dict({
+        'id': '<default-client>',
+        'name': 'General',
+      }),
       'counts': dict({
         'applications': 0,
         'failed': 0,
@@ -445,6 +531,10 @@
 # name: test_get_campaign
   dict({
     'body': dict({
+      'client': dict({
+        'id': '<default-client>',
+        'name': 'General',
+      }),
       'counts': dict({
         'applications': 2,
         'failed': 2,
@@ -475,6 +565,10 @@
 # name: test_get_campaign_without_activity
   dict({
     'body': dict({
+      'client': dict({
+        'id': '<default-client>',
+        'name': 'General',
+      }),
       'counts': dict({
         'applications': 0,
         'failed': 0,
@@ -531,6 +625,10 @@
     'body': dict({
       'items': list([
         dict({
+          'client': dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
           'counts': dict({
             'applications': 0,
             'failed': 0,
@@ -554,6 +652,10 @@
           'updated_at': '<datetime>',
         }),
         dict({
+          'client': dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
           'counts': dict({
             'applications': 2,
             'failed': 2,
@@ -576,6 +678,10 @@
           'updated_at': '<datetime>',
         }),
         dict({
+          'client': dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
           'counts': dict({
             'applications': 0,
             'failed': 0,
@@ -607,6 +713,28 @@
       'content-type': 'application/json',
     }),
     'status_code': 200,
+  })
+# ---
+# name: test_list_campaigns_by_client
+  dict({
+    'acme': list([
+      tuple(
+        "Acme's",
+        'Acme',
+      ),
+    ]),
+    'acme-and-globex': list([
+      tuple(
+        "Globex's",
+        'Globex',
+      ),
+      tuple(
+        "Acme's",
+        'Acme',
+      ),
+    ]),
+    'unknown-client': list([
+    ]),
   })
 # ---
 # name: test_list_campaigns_filters[page-2]
@@ -660,6 +788,30 @@
       'Old closed',
     ]),
     'total': 2,
+  })
+# ---
+# name: test_list_campaigns_invalid_query[client-id-not-a-uuid]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'client_id',
+            0,
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: found `m` at 2',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
   })
 # ---
 # name: test_list_campaigns_invalid_query[page-not-a-number]
@@ -777,6 +929,106 @@
     }),
     'status_code': 422,
   })
+# ---
+# name: test_move_a_campaign_to_another_client
+  list([
+    dict({
+      'body': dict({
+        'client': dict({
+          'id': '<uuid:1>',
+          'name': 'Acme',
+        }),
+        'counts': dict({
+          'applications': 0,
+          'failed': 0,
+          'in_progress': 0,
+          'new_resumes_24h': 0,
+          'resumes': 0,
+          'strong_matches': 0,
+        }),
+        'created_at': '<datetime>',
+        'description': 'Build and run the Python services behind our recruiting product.',
+        'id': '<uuid:2>',
+        'last_activity_at': '<datetime>',
+        'required_skills': list([
+          'Python',
+          'FastAPI',
+          'PostgreSQL',
+        ]),
+        'role': 'Backend Engineer',
+        'status': 'active',
+        'title': 'Backend Engineer - Q1 Hiring',
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'client_id',
+            ]),
+            'msg': 'This client is archived',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'client_id',
+            ]),
+            'msg': 'Unknown client',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+    dict({
+      'body': dict({
+        'detail': '1 invalid field',
+        'errors': list([
+          dict({
+            'loc': list([
+              'body',
+              'client_id',
+            ]),
+            'msg': 'UUID input should be a string, bytes or UUID object',
+          }),
+        ]),
+        'status': 422,
+        'title': 'Unprocessable Entity',
+        'type': 'about:blank',
+      }),
+      'headers': dict({
+        'content-type': 'application/problem+json',
+      }),
+      'status_code': 422,
+    }),
+  ])
 # ---
 # name: test_parse_jd
   dict({
@@ -929,6 +1181,10 @@
 # name: test_update_campaign
   dict({
     'body': dict({
+      'client': dict({
+        'id': '<default-client>',
+        'name': 'General',
+      }),
       'counts': dict({
         'applications': 0,
         'failed': 0,

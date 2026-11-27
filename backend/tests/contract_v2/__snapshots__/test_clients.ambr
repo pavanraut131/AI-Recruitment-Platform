@@ -1,0 +1,558 @@
+# serializer version: 1
+# name: test_create_client
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'id': '<uuid:1>',
+      'name': 'Northwind Traders',
+      'status': 'active',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 201,
+  })
+# ---
+# name: test_create_client_invalid[blank-name]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'name',
+          ]),
+          'msg': 'String should have at least 1 character',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_client_invalid[empty-object]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'name',
+          ]),
+          'msg': 'Field required',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_client_invalid[name-too-long]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'name',
+          ]),
+          'msg': 'String should have at most 200 characters',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_client_invalid[null-name]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'name',
+          ]),
+          'msg': 'Input should be a valid string',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_client_invalid[unknown-field]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'status',
+          ]),
+          'msg': 'Extra inputs are not permitted',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_create_client_with_a_name_in_use[an-archived-clients-name]
+  dict({
+    'body': dict({
+      'detail': 'A client with this name already exists',
+      'status': 409,
+      'title': 'Conflict',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 409,
+  })
+# ---
+# name: test_create_client_with_a_name_in_use[same-name-other-case]
+  dict({
+    'body': dict({
+      'detail': 'A client with this name already exists',
+      'status': 409,
+      'title': 'Conflict',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 409,
+  })
+# ---
+# name: test_get_client
+  dict({
+    'body': dict({
+      'created_at': '<datetime>',
+      'id': '<default-client>',
+      'name': 'General',
+      'status': 'active',
+      'updated_at': '<datetime>',
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_get_client_not_found_or_invalid[invalid]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'path',
+            'client_id',
+          ]),
+          'msg': 'Input should be a valid UUID, invalid character: found `n` at 0',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_get_client_not_found_or_invalid[unknown]
+  dict({
+    'body': dict({
+      'detail': 'Client not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_list_clients
+  dict({
+    'body': dict({
+      'items': list([
+        dict({
+          'created_at': '<datetime>',
+          'id': '<uuid:1>',
+          'name': 'Acme',
+          'status': 'active',
+          'updated_at': '<datetime>',
+        }),
+        dict({
+          'created_at': '<datetime>',
+          'id': '<uuid:2>',
+          'name': 'beta labs',
+          'status': 'active',
+          'updated_at': '<datetime>',
+        }),
+        dict({
+          'created_at': '<datetime>',
+          'id': '<default-client>',
+          'name': 'General',
+          'status': 'active',
+          'updated_at': '<datetime>',
+        }),
+        dict({
+          'created_at': '<datetime>',
+          'id': '<uuid:3>',
+          'name': 'Zeta',
+          'status': 'archived',
+          'updated_at': '<datetime>',
+        }),
+      ]),
+      'page': 1,
+      'page_size': 20,
+      'total': 4,
+    }),
+    'headers': dict({
+      'content-type': 'application/json',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_list_clients_filters[active]
+  dict({
+    'names': list([
+      'Acme',
+      'beta labs',
+      'General',
+    ]),
+    'page': 1,
+    'page_size': 20,
+    'total': 3,
+  })
+# ---
+# name: test_list_clients_filters[page-2]
+  dict({
+    'names': list([
+      'General',
+      'Zeta',
+    ]),
+    'page': 2,
+    'page_size': 2,
+    'total': 4,
+  })
+# ---
+# name: test_list_clients_filters[q-ignores-case]
+  dict({
+    'names': list([
+      'Acme',
+      'beta labs',
+      'General',
+      'Zeta',
+    ]),
+    'page': 1,
+    'page_size': 20,
+    'total': 4,
+  })
+# ---
+# name: test_list_clients_filters[q-wildcard-literal]
+  dict({
+    'names': list([
+    ]),
+    'page': 1,
+    'page_size': 20,
+    'total': 0,
+  })
+# ---
+# name: test_list_clients_filters[status-any-of]
+  dict({
+    'names': list([
+      'Acme',
+      'beta labs',
+      'General',
+      'Zeta',
+    ]),
+    'page': 1,
+    'page_size': 20,
+    'total': 4,
+  })
+# ---
+# name: test_list_clients_invalid_query[page-size-over-100]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'page_size',
+          ]),
+          'msg': 'Input should be less than or equal to 100',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_clients_invalid_query[q-too-long]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'q',
+          ]),
+          'msg': 'String should have at most 200 characters',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_list_clients_invalid_query[unknown-status]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'query',
+            'status',
+            0,
+          ]),
+          'msg': "Input should be 'active' or 'archived'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_rename_a_client_to_a_name_in_use
+  dict({
+    'body': dict({
+      'detail': 'A client with this name already exists',
+      'status': 409,
+      'title': 'Conflict',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 409,
+  })
+# ---
+# name: test_rename_archive_and_restore_a_client
+  list([
+    dict({
+      'body': dict({
+        'created_at': '<datetime>',
+        'id': '<uuid:1>',
+        'name': 'Acme Holdings',
+        'status': 'active',
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    dict({
+      'body': dict({
+        'created_at': '<datetime>',
+        'id': '<uuid:1>',
+        'name': 'Acme Holdings',
+        'status': 'archived',
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    dict({
+      'body': dict({
+        'created_at': '<datetime>',
+        'id': '<uuid:1>',
+        'name': 'Acme Holdings',
+        'status': 'archived',
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    dict({
+      'body': dict({
+        'created_at': '<datetime>',
+        'id': '<uuid:1>',
+        'name': 'acme holdings',
+        'status': 'active',
+        'updated_at': '<datetime>',
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  ])
+# ---
+# name: test_update_client_not_found_or_invalid[null-name]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'name',
+          ]),
+          'msg': 'Input should be a valid string',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_client_not_found_or_invalid[null-status]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'status',
+          ]),
+          'msg': "Input should be 'active' or 'archived'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_client_not_found_or_invalid[unknown-client]
+  dict({
+    'body': dict({
+      'detail': 'Client not found',
+      'status': 404,
+      'title': 'Not Found',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 404,
+  })
+# ---
+# name: test_update_client_not_found_or_invalid[unknown-field]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'agency_id',
+          ]),
+          'msg': 'Extra inputs are not permitted',
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
+# name: test_update_client_not_found_or_invalid[unknown-status]
+  dict({
+    'body': dict({
+      'detail': '1 invalid field',
+      'errors': list([
+        dict({
+          'loc': list([
+            'body',
+            'status',
+          ]),
+          'msg': "Input should be 'active' or 'archived'",
+        }),
+      ]),
+      'status': 422,
+      'title': 'Unprocessable Entity',
+      'type': 'about:blank',
+    }),
+    'headers': dict({
+      'content-type': 'application/problem+json',
+    }),
+    'status_code': 422,
+  })
+# ---
