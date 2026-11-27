@@ -16,7 +16,15 @@ from pydantic import ValidationError
 from app.platform.config import Settings, settings
 from tests.identity.conftest import V2, Users, problem
 
-PUBLIC = {("get", "/auth/csrf"), ("post", "/auth/login")}
+PUBLIC = {
+    ("get", "/auth/csrf"),
+    ("post", "/auth/login"),
+    # E2-07: by emailed token or address; accepting also works with a session.
+    ("post", "/auth/password-reset"),
+    ("post", "/auth/password-reset/confirm"),
+    ("post", "/auth/invitations/preview"),
+    ("post", "/auth/invitations/accept"),
+}
 UNKNOWN = "00000000-0000-4000-8000-00000000dead"
 
 
@@ -123,7 +131,9 @@ async def test_auth_required_false_acts_as_the_default_owner_without_a_cookie(
 
 # ── Settings ──────────────────────────────────────────────────
 def _settings(**values: Any) -> Settings:
-    return Settings(**{"AI_PROVIDER": "fake", "SECRET_KEY": "s" * 64, **values})
+    return Settings(
+        **{"AI_PROVIDER": "fake", "SECRET_KEY": "s" * 64, "EMAIL_BACKEND": "smtp", **values}
+    )
 
 
 @pytest.mark.parametrize("env", ["production", "staging", "Production "])
@@ -135,6 +145,9 @@ def test_development_only_settings_are_refused_in_deployments(env: str) -> None:
     for weak in ("change_me", "change_me_in_production_use_openssl_rand_hex_32", "short-key"):
         with pytest.raises(ValidationError, match="SECRET_KEY must be at least 32 bytes"):
             _settings(APP_ENV=env, SECRET_KEY=weak)
+    # E2-07: the console email backend logs the links it would send (tokens included).
+    with pytest.raises(ValidationError, match="EMAIL_BACKEND=console is allowed only"):
+        _settings(APP_ENV=env, EMAIL_BACKEND="console")
     good = _settings(APP_ENV=env)
     assert good.AUTH_REQUIRED and good.session_cookie_secure
 
@@ -142,7 +155,11 @@ def test_development_only_settings_are_refused_in_deployments(env: str) -> None:
 @pytest.mark.parametrize("env", ["development", "test"])
 def test_development_accepts_them(env: str) -> None:
     dev = _settings(
-        APP_ENV=env, AUTH_REQUIRED=False, SESSION_COOKIE_SECURE=False, SECRET_KEY="change_me"
+        APP_ENV=env,
+        AUTH_REQUIRED=False,
+        SESSION_COOKIE_SECURE=False,
+        SECRET_KEY="change_me",
+        EMAIL_BACKEND="console",
     )
     assert not dev.AUTH_REQUIRED and not dev.session_cookie_secure
     # Unset, cookies are Secure only outside development and test.
