@@ -90,6 +90,11 @@ Goal and acceptance criteria: [spec §12, E2-07](../specs/EPIC-02-identity-tenan
 
 [Spec §12, E2-10](../specs/EPIC-02-identity-tenancy.md#e2-10--frontend-tenancy-and-team); design §9. The sidebar header slot D1 left for the agency switcher is where it goes.
 
+**Notes** (details in the spec's notes):
+- **Frontend only.** The sidebar header is the agency and client switcher; campaigns show and take a client; `/settings` has Profile, Team, Clients and Agency; every screen hides what the role can't do (`usePermissions()`), and a page a role can't use shows a no-access state.
+- **For E2-11:** `e2e/team.spec.ts` covers an invitation through Settings → Team for a recruiter limited to one client, the agency switcher (the invitee joins a second agency) and a viewer's read-only screens, so the roles and isolation suite can build on it. In Vitest, `meAs(role)` (`src/test/auth.ts`) gives a signed-in `Me` with each role's permissions, and the shared renders cache an owner by default.
+- **After pulling:** nothing to install. Restart `next dev` (new routes under `/settings`). The client choice is remembered per agency in the browser's `localStorage`.
+
 ---
 
 ### E2-11 · E2E and security pass
