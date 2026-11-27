@@ -1,9 +1,10 @@
 """After the contract (E0-20): People + Applications on the seed, with real commits.
 
-The legacy ``candidates`` table is gone; the candidate endpoints serve applications and the
-resumes' extraction snapshots (spec §7), and a campaign delete is composed in ``app.api``. These
-tests prove it on the seed (``app.devtools.seed``, which runs the pipeline's matching and
-scoring services) with every request committing for real.
+The legacy ``candidates`` table is gone; ``/api/v2`` serves applications and the resumes'
+extraction snapshots (spec §7), and a campaign delete is composed in ``app.api.v2``. These tests
+prove it on the seed (``app.devtools.seed``, which runs the pipeline's matching and scoring
+services) with every request committing for real. (Until E2-12 they went through the ``/api/v1``
+candidate endpoints.)
 
 The module gets its own throwaway database at ``head``; the HTTP API runs against it through an
 async engine of its own (``get_db`` overridden), exactly as in production.
@@ -11,15 +12,16 @@ async engine of its own (``get_db`` overridden), exactly as in production.
 Covered:
 
 - **The seed is consistent:** ``verify_people_applications --manifest`` passes, and each
-  campaign's list (all pages), filters and CSV export show one row per application, built from
-  the application and its current resume's snapshot.
+  campaign's application list (all pages), filters, detail and CSV export show one row per
+  application, built from the application and its current resume's snapshot.
 - **Campaign delete:** the campaign, its applications, its resumes and their stored PDFs are
   gone, nothing else is, ``verify_people_applications`` stays green and
   ``app.devtools.storage_orphans`` finds no orphan. A PDF whose delete fails stays as an orphan
   that the check reports; the request still succeeds.
 - **An upload after the contract** is processed and verified like any other.
-- **The list query's plan** on ~1,200 applications (a campaign with 100): index scans, printed
-  with ``EXPLAIN ANALYZE`` (run with ``-s`` to see them).
+- **The list query's plan** on ~1,200 applications (a campaign with 100): index scans, as the
+  application role under row-level security, printed with ``EXPLAIN ANALYZE`` (run with ``-s``
+  to see them).
 """
 
 from __future__ import annotations
@@ -50,12 +52,14 @@ from app.modules.ai.fake import FakeAIService
 from app.modules.ai.schemas import ExtractionResult, ScoringResult
 from app.modules.hiring import service as hiring_service
 from app.modules.hiring.models import Application, Campaign
-from app.modules.hiring.schemas import CandidateDetail
+from app.modules.hiring.schemas_v2 import Application as ApplicationResource
+from app.modules.identity.dependencies import current_principal
+from app.modules.identity.schemas import Principal, Role
 from app.modules.ingestion import tasks, verify_people_applications
 from app.modules.ingestion.models import Resume
 from app.modules.talent import service as talent_service
 from app.modules.talent.models import Person, PersonIdentifier
-from app.platform.tenancy import bind
+from app.platform.tenancy import AccessScope, bind
 from tests import postgres
 from tests.default_agency import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID
 from tests.fakes import InMemoryStorage
@@ -63,7 +67,7 @@ from tests.fakes import InMemoryStorage
 # The task message's agency (EPIC-02 §6.3); one without it is tests/tenancy's.
 DEFAULT_AGENCY = {"agency_id": str(DEFAULT_AGENCY_ID)}
 
-API = "/api/v1"
+API = "/api/v2"
 REGION = "IN"
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
@@ -80,7 +84,7 @@ def empty_tables(engine: Engine) -> None:
         conn.execute(
             text(
                 "TRUNCATE campaigns, resumes, people, person_identifiers, identity_conflicts, "
-                "person_resumes, applications, legacy_candidate_map CASCADE"
+                "person_resumes, applications CASCADE"
             )
         )
 
@@ -115,10 +119,23 @@ async def async_engine(engine: Engine) -> AsyncIterator[AsyncEngine]:
         await eng.dispose()
 
 
+# Who the requests act as: an owner of the default agency (every permission, every client).
+OWNER = Principal(
+    agency_id=DEFAULT_AGENCY_ID,
+    role=Role.owner,
+    scope=AccessScope(DEFAULT_AGENCY_ID),
+    user_id=None,
+    membership_id=None,
+    session=None,
+)
+
+
 @pytest_asyncio.fixture
 async def api(app: FastAPI, async_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
-    """The HTTP API on the throwaway database; each request's session commits for real."""
+    """The HTTP API on the throwaway database, as :data:`OWNER`; each request's session commits
+    for real."""
     from app.platform.database import get_db
+    from app.v2 import v2_app
 
     factory = async_sessionmaker(async_engine, expire_on_commit=False)
 
@@ -126,12 +143,14 @@ async def api(app: FastAPI, async_engine: AsyncEngine) -> AsyncIterator[AsyncCli
         async with factory() as session:
             yield session
 
-    app.dependency_overrides[get_db] = override_get_db
+    v2_app.dependency_overrides[get_db] = override_get_db
+    v2_app.dependency_overrides[current_principal] = lambda: OWNER
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
     finally:
-        app.dependency_overrides.pop(get_db, None)
+        v2_app.dependency_overrides.pop(get_db, None)
+        v2_app.dependency_overrides.pop(current_principal, None)
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -218,8 +237,12 @@ def make_application(
         return application.id
 
 
-def expected_rows(sessions: sessionmaker[Session], campaign_id: uuid.UUID) -> dict[str, Any]:
-    """Each application of the campaign as the read path must show it (spec §7.1)."""
+Row = tuple[Application, dict[str, Any] | None]
+
+
+def expected_rows(sessions: sessionmaker[Session], campaign_id: uuid.UUID) -> dict[str, Row]:
+    """Each application of the campaign with its current resume's extraction snapshot: what the
+    API must show (spec §7.1)."""
     with sessions() as db:
         applications = db.scalars(
             select(Application).where(Application.campaign_id == campaign_id)
@@ -233,10 +256,11 @@ def expected_rows(sessions: sessionmaker[Session], campaign_id: uuid.UUID) -> di
             .tuples()
             .all()
         )
-        return {
-            str(a.id): hiring_service.candidate_detail(a, snapshots[a.resume_id])
-            for a in applications
-        }
+        return {str(a.id): (a, snapshots[a.resume_id]) for a in applications}
+
+
+def resource(row: Row) -> ApplicationResource:
+    return hiring_service.application_resource(*row)
 
 
 async def all_pages(api: AsyncClient, campaign_id: uuid.UUID | str) -> list[dict[str, Any]]:
@@ -244,11 +268,12 @@ async def all_pages(api: AsyncClient, campaign_id: uuid.UUID | str) -> list[dict
     page = 1
     while True:
         resp = await api.get(
-            f"{API}/campaigns/{campaign_id}/candidates", params={"page": page, "page_size": 100}
+            f"{API}/campaigns/{campaign_id}/applications",
+            params={"page": page, "page_size": 100},
         )
         assert resp.status_code == 200
-        rows += resp.json()
-        if len(resp.json()) < 100:
+        rows += resp.json()["items"]
+        if len(resp.json()["items"]) < 100:
             return rows
         page += 1
 
@@ -279,17 +304,15 @@ async def test_the_seed_verifies_and_every_campaign_lists_its_applications(
         scores = [r["score"] for r in rows]
         assert scores == sorted(scores, reverse=True)  # every seeded application is scored
         for row in rows:
-            detail = expected[row["id"]]
-            assert row["name"] == detail.name and row["email"] == detail.email
-            assert (await api.get(f"{API}/candidates/{row['id']}")).json() == detail.model_dump(
-                mode="json"
-            )
+            shown = resource(expected[row["id"]]).model_dump(mode="json")
+            assert row == shown
+            assert (await api.get(f"{API}/applications/{row['id']}")).json() == shown
 
-        resp = await api.get(f"{API}/campaigns/{campaign_id}/candidates/export")
+        resp = await api.get(f"{API}/campaigns/{campaign_id}/applications/export")
         lines = resp.text.split("\r\n")
         assert lines[0] == ",".join(hiring_service.CSV_FIELDS)
         assert len(lines) == len(rows) + 2  # header, one per application, trailing ""
-        expected_lines = hiring_service.render_candidates_csv(expected.values()).split("\r\n")
+        expected_lines = hiring_service.render_applications_csv(expected.values()).split("\r\n")
         assert sorted(lines[1:-1]) == sorted(expected_lines[1:-1])
 
 
@@ -298,8 +321,9 @@ async def test_the_list_filters_on_the_seed(
 ) -> None:
     manifest = seed_db(sessions)
     campaign_id = uuid.UUID(manifest["campaign_ids"][0])
-    rows: dict[str, CandidateDetail] = expected_rows(sessions, campaign_id)
+    rows = {i: resource(row) for i, row in expected_rows(sessions, campaign_id).items()}
     some = next(iter(rows.values()))
+    name = some.person.name or "x"
     probes: list[tuple[dict[str, Any], Any]] = [
         (
             {"skill": some.skills[0][1:3]},
@@ -310,10 +334,10 @@ async def test_the_list_filters_on_the_seed(
             lambda c: c.years_of_experience is not None and c.years_of_experience >= 4,
         ),
         (
-            {"search": (some.name or "x")[:3].upper()},
+            {"q": name[:3].upper()},
             lambda c: (
-                (some.name or "x")[:3].lower() in (c.name or "").lower()
-                or (some.name or "x")[:3].lower() in (c.email or "").lower()
+                name[:3].lower() in (c.person.name or "").lower()
+                or name[:3].lower() in (c.person.email or "").lower()
             ),
         ),
         (
@@ -323,9 +347,9 @@ async def test_the_list_filters_on_the_seed(
     ]
     for params, keep in probes:
         resp = await api.get(
-            f"{API}/campaigns/{campaign_id}/candidates", params={**params, "page_size": 100}
+            f"{API}/campaigns/{campaign_id}/applications", params={**params, "page_size": 100}
         )
-        got = {r["id"] for r in resp.json()}
+        got = {r["id"] for r in resp.json()["items"]}
         assert got == {i for i, c in rows.items() if keep(c)}, params
 
 
@@ -403,7 +427,7 @@ async def test_a_failed_pdf_delete_still_deletes_the_campaign_and_leaves_a_repor
     assert run_storage_check(sessions) == 0
 
 
-async def test_deleting_a_candidate_removes_its_pdfs_after_the_commit(
+async def test_deleting_an_application_removes_its_pdfs_after_the_commit(
     sessions: sessionmaker[Session], api: AsyncClient, fake_storage: InMemoryStorage
 ) -> None:
     campaign = make_campaign(sessions)
@@ -422,7 +446,7 @@ async def test_deleting_a_candidate_removes_its_pdfs_after_the_commit(
     store_pdfs(sessions, fake_storage)
     assert len(fake_storage.objects) == 3
 
-    assert (await api.delete(f"{API}/candidates/{first}")).status_code == 204
+    assert (await api.delete(f"{API}/applications/{first}")).status_code == 204
 
     with sessions() as db:
         (kept_path,) = db.scalars(select(Resume.storage_path))
@@ -457,15 +481,24 @@ async def test_an_upload_after_the_contract_is_processed_and_verified(
         db.commit()
         rid = resume.id
 
-    resp = await api.get(f"{API}/resumes/{rid}/candidate")
-    assert (resp.status_code, resp.json()) == (404, {"detail": "Candidate not yet processed"})
+    async def application_of_the_resume() -> Any:
+        resumes = (await api.get(f"{API}/campaigns/{campaign}/resumes")).json()["items"]
+        assert [r["id"] for r in resumes] == [str(rid)]
+        return resumes[0]["application_id"]
+
+    assert await application_of_the_resume() is None  # not processed yet: no application
 
     result = tasks.process_candidate_ai.apply(args=(str(rid),), kwargs=DEFAULT_AGENCY)
     assert result.successful(), result.result
 
-    body = (await api.get(f"{API}/resumes/{rid}/candidate")).json()
-    assert (body["name"], body["email"]) == ("Meera Iyer", "meera.iyer@example.com")
-    assert [r["id"] for r in await all_pages(api, campaign)] == [body["id"]]
+    application_id = await application_of_the_resume()
+    body = (await api.get(f"{API}/applications/{application_id}")).json()
+    assert (body["person"]["name"], body["person"]["email"], body["resume_id"]) == (
+        "Meera Iyer",
+        "meera.iyer@example.com",
+        str(rid),
+    )
+    assert [r["id"] for r in await all_pages(api, campaign)] == [application_id]
     report = verify(sessions)
     assert report.ok, report.render()
     assert report.counts["applications"] == 1
@@ -496,16 +529,19 @@ async def test_the_list_queries_use_the_indexes(
         statements.append((statement, parameters))
 
     for params, expected in (
-        ({}, 2),
-        ({"search": "applicant 4", "min_score": 10}, 4),
+        # The campaign, the count, the page, the page's extractions.
+        ({}, 4),
+        # The campaign, the matching (id, resume) pairs, ingestion's snapshot filter, the page,
+        # the page's extractions.
+        ({"q": "applicant 4", "min_score": 10}, 5),
     ):
         statements.clear()
         event.listen(async_engine.sync_engine, "before_cursor_execute", record)
         try:
-            resp = await api.get(f"{API}/campaigns/{campaign}/candidates", params=params)
+            resp = await api.get(f"{API}/campaigns/{campaign}/applications", params=params)
         finally:
             event.remove(async_engine.sync_engine, "before_cursor_execute", record)
-        assert resp.status_code == 200 and resp.json()
+        assert resp.status_code == 200 and resp.json()["items"]
         # Every transaction of the request's (bound) session starts with the tenant setting
         # (E2-03): not a read of the list.
         reads = [
@@ -531,7 +567,7 @@ async def test_the_list_queries_use_the_indexes(
                         f"EXPLAIN (ANALYZE, BUFFERS) {statement}", *parameters
                     )
                     plans.append("\n".join(r[0] for r in rows))
-        print(f"\n### GET /campaigns/{{id}}/candidates {params or '(no filters)'}")
+        print(f"\n### GET /campaigns/{{id}}/applications {params or '(no filters)'}")
         for (statement, _), plan in zip(reads, plans, strict=True):
             print(f"\n{statement}\n--\n{plan}")
         # The page of applications: by campaign (the unique index's leading column).
@@ -718,7 +754,7 @@ def test_verify_cli_exit_codes_and_report(
     assert main(["--manifest", str(path)], session_factory=sessions) == 0
     out = capsys.readouterr().out
     assert "PASS expected.people" in out and out.rstrip().endswith("PASSED")
-    assert "legacy_candidate_map rows" in out
+    assert "applications" in out
 
     wrong = json.loads(json.dumps(seeded))
     wrong["expected"]["applications"] -= 1

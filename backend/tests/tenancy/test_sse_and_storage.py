@@ -57,9 +57,8 @@ def _publish_once_connected(
     return on_event
 
 
-@pytest.mark.parametrize("path", ["/api/v2/campaigns/{id}/events", "/api/v1/campaigns/{id}/stream"])
 async def test_a_stream_gets_only_its_agencys_events_for_the_campaign(
-    app: FastAPI, client: AsyncClient, db_session: AsyncSession, path: str
+    app: FastAPI, client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """The same campaign id published under another agency (ids are never reused, but the
     channels do not rely on it) never reaches the default agency's stream."""
@@ -83,7 +82,7 @@ async def test_a_stream_gets_only_its_agencys_events_for_the_campaign(
     ]
     result = await read_sse(
         app,
-        path.format(id=campaign.id),
+        f"/api/v2/campaigns/{campaign.id}/events",
         count=2,
         on_event=_publish_once_connected(publishers),
     )
@@ -95,8 +94,8 @@ async def test_a_stream_gets_only_its_agencys_events_for_the_campaign(
 async def test_another_agencys_campaign_stream_is_not_found(
     client: AsyncClient, other_agency: OtherAgency
 ) -> None:
-    """v2 only: v1's stream answers 200 for any campaign id (B7, frozen until E2-12); it then
-    subscribes to the default agency's channel of that id, which no task of B publishes on."""
+    """Under row-level security the campaign does not exist for another agency's request, so
+    its stream is a 404 (as an unknown campaign's, B7)."""
     theirs = await make_campaign(other_agency.db, client_id=other_agency.client_id)
     resp = await client.get(f"/api/v2/campaigns/{theirs.id}/events")
     assert resp.status_code == 404

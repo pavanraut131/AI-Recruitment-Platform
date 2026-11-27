@@ -94,8 +94,7 @@ async def test_a_scope_of_another_agency_is_refused(db_session: AsyncSession) ->
 
 async def test_a_client_scoped_access_sees_only_its_clients(db_session: AsyncSession) -> None:
     """Client scoping (E2-06) filters instead of refusing: a campaign of a client outside the
-    scope does not exist for it. The /api/v1 use cases (every client, default agency) refuse a
-    client-limited scope rather than widen it."""
+    scope does not exist for it."""
     from tests.factories import make_campaign
 
     campaign = await make_campaign(db_session)  # the default client, "General"
@@ -103,8 +102,6 @@ async def test_a_client_scoped_access_sees_only_its_clients(db_session: AsyncSes
     general = AccessScope(DEFAULT_AGENCY_ID, client_ids=frozenset({campaign.client_id}))
     assert not await hiring_service.campaign_exists(db_session, other_client, campaign.id)
     assert await hiring_service.campaign_exists(db_session, general, campaign.id)
-    with pytest.raises(ValueError, match="/api/v1"):
-        await hiring_service.get_campaign(db_session, general, campaign.id)
 
 
 def test_a_scope_narrows_never_widens() -> None:
@@ -205,21 +202,30 @@ def test_the_agency_does_not_leak_between_sync_checkouts(
 
 
 # ── HTTP dependencies ─────────────────────────────────────────
-async def test_v1_requests_are_bound_to_the_default_agency_and_log_it(
+async def test_a_request_is_bound_to_its_principals_agency_and_logs_it(
     one_connection_engine: AsyncEngine,
 ) -> None:
-    """Until E2-12 every v1 request runs for the default agency. (v2 binds the principal's
-    agency since E2-05: tests/identity/test_principal.py.)"""
+    """``tenant_db`` binds the request's session to the principal's agency and names it in the
+    request's log lines (spec §6.6). (``app.platform.request_tenant`` did it for v1 and v2 until
+    E2-12.)"""
     import structlog
 
-    from app.platform import request_tenant
+    from app.modules.identity.dependencies import tenant_db
+    from app.modules.identity.schemas import Principal, Role
 
+    principal = Principal(
+        agency_id=B,
+        role=Role.recruiter,
+        scope=AccessScope(B),
+        user_id=None,
+        membership_id=None,
+        session=None,
+    )
     try:
         async with AsyncSession(one_connection_engine) as session:
             structlog.contextvars.clear_contextvars()
-            assert await request_tenant.default_agency_db(session) is session
-            assert agency_id_of(session) == DEFAULT_AGENCY_ID
-            assert structlog.contextvars.get_contextvars() == {"agency_id": str(DEFAULT_AGENCY_ID)}
-        assert request_tenant.default_agency_scope() == AccessScope(DEFAULT_AGENCY_ID)
+            assert await tenant_db(session, principal) is session
+            assert agency_id_of(session) == B
+            assert structlog.contextvars.get_contextvars() == {"agency_id": str(B)}
     finally:
         structlog.contextvars.clear_contextvars()

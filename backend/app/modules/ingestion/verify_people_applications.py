@@ -26,7 +26,7 @@ Checks
       inferred phone does not count as usable).
     * ``people_have_resumes``: every Person was resolved from at least one resume.
     * ``applications_have_extractions``: every application's current resume has an extraction
-      snapshot (``resumes.extracted``), which the candidate endpoints show as the candidate's
+      snapshot (``resumes.extracted``), which the application resources show as the person's
       name, contacts and profile (spec §7.1).
     * ``tenancy_complete`` (EPIC-02 spec §7.3): no row of a tenant table (``campaigns``,
       ``applications``, ``people``, ``person_identifiers``, ``identity_conflicts``,
@@ -43,9 +43,8 @@ Checks
       the comparison counts only rows in those campaigns, so uploads to other campaigns during
       a rehearsal don't change it; the integrity checks always cover everything.
 
-``legacy_candidate_map`` rows are counted, not checked: the foreign key to ``applications``
-keeps them pointing at an existing application, and their ``candidate_id`` refers to nothing
-since ``candidates`` was dropped (a historical id map).
+Until E2-12 the report also counted the rows of ``legacy_candidate_map`` (the E0 backfill's
+historical id map), dropped with ``/api/v1``.
 
 Cross-module reads go through each module's service (``hiring.service``, ``talent.service``,
 ``identity.service``); ingestion reads its own ``resumes``.
@@ -132,7 +131,6 @@ def verify(
     report = Report()
 
     applications = {a.id: a for a in hiring_service.application_refs(db)}
-    legacy_map = hiring_service.legacy_candidate_map(db)
     resumes = {row.id: row for row in repository.resume_refs_sync(db)}
     people = talent_service.person_ids(db)
     resolutions = talent_service.resolutions(db)
@@ -148,7 +146,6 @@ def verify(
         "identity conflicts": talent_counts.identity_conflicts,
         "resolved resumes (person_resumes)": talent_counts.resolved_resumes,
         "applications": len(applications),
-        "legacy_candidate_map rows": len(legacy_map),
     }
 
     check = Check("applications_have_people")

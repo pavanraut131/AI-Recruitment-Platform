@@ -1,6 +1,6 @@
 """ingestion data access: every query against the ``resumes`` table.
 
-Private to the ingestion module. The async functions serve the HTTP endpoints (the request's
+Private to the ingestion module. The async functions serve the HTTP use cases (the request's
 ``AsyncSession``); the ``*_sync`` ones serve the Celery tasks, the verification command and the
 storage check, which use a synchronous ``Session``. Only functions named ``commit`` commit; the
 caller decides where a unit of work ends.
@@ -67,21 +67,6 @@ def add(db: AsyncSession, resume: Resume) -> None:
     db.add(resume)
 
 
-async def list_for_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
-    """The campaign's resumes, newest upload first."""
-    result = await db.execute(
-        select(Resume)
-        .where(Resume.campaign_id == campaign_id, _resumes_of(db))
-        .order_by(Resume.uploaded_at.desc())
-    )
-    return result.scalars().all()
-
-
-async def get(db: AsyncSession, resume_id: uuid.UUID) -> Resume | None:
-    result = await db.execute(select(Resume).where(Resume.id == resume_id, _resumes_of(db)))
-    return result.scalar_one_or_none()
-
-
 async def failed_in_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
     """The campaign's ``failed`` and ``quota_exceeded`` resumes (unordered)."""
     result = await db.execute(
@@ -92,15 +77,6 @@ async def failed_in_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Sequen
         )
     )
     return result.scalars().all()
-
-
-async def status_counts(db: AsyncSession, campaign_id: uuid.UUID | None = None) -> dict[str, int]:
-    """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
-    query = select(Resume.status, func.count(Resume.id)).where(_resumes_of(db))
-    if campaign_id is not None:
-        query = query.where(Resume.campaign_id == campaign_id)
-    result = await db.execute(query.group_by(Resume.status))
-    return {status: count for status, count in result.tuples()}
 
 
 async def extractions(
@@ -177,17 +153,6 @@ async def matching_extractions(
         clauses.append(Resume.extracted["years_of_experience"].as_float() >= min_experience)
     result = await db.execute(select(Resume.id).where(and_(*clauses)))
     return list(result.scalars())
-
-
-async def owner(
-    db: AsyncSession, resume_id: uuid.UUID
-) -> tuple[uuid.UUID, uuid.UUID | None] | None:
-    """``(campaign_id, person_id)`` of the resume, or ``None`` if it does not exist."""
-    result = await db.execute(
-        select(Resume.campaign_id, Resume.person_id).where(Resume.id == resume_id, _resumes_of(db))
-    )
-    row = result.one_or_none()
-    return (row.campaign_id, row.person_id) if row is not None else None
 
 
 async def delete_of_people(

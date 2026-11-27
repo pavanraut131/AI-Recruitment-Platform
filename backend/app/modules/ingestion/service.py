@@ -1,13 +1,13 @@
 """ingestion service: the public interface of the ingestion module.
 
 Uploading resumes (validate, de-duplicate, store in object storage, queue extraction), listing
-them, retrying failed ones, and the resume data other parts of the app need: status counts for
-the stats endpoints, the extraction snapshots the candidate endpoints show (E0-19), and
-deleting the resumes of deleted applications and campaigns with their stored PDFs (E0-20:
-first the rows, in the caller's transaction, then the PDFs once it has committed; see
-:func:`delete_stored_files`). The router in
-``router.py`` only translates HTTP to these calls; ``app.api`` composes these functions with
-``app.modules.hiring.service`` for the endpoints that span both modules.
+them, retrying failed ones, the progress stream, and the resume data other parts of the app need:
+the resume tallies of the campaigns and stats, the extraction snapshots the applications show
+(E0-19), and deleting the resumes of deleted applications and campaigns with their stored PDFs
+(E0-20: first the rows, in the caller's transaction, then the PDFs once it has committed; see
+:func:`delete_stored_files`). The router in ``router_v2.py`` only translates HTTP to these
+calls; ``app.api.v2`` composes these functions with ``app.modules.hiring.service`` for the
+endpoints that span both modules.
 
 Ingestion may call the ``hiring``, ``talent`` and ``ai`` services (never their internals); no
 module may call ingestion (it is the top layer). Errors are :class:`IngestionError` subclasses
@@ -19,11 +19,10 @@ list or fetch a campaign's data take the caller's ``AccessScope`` and have hirin
 uploads, a campaign's resumes, retries and the progress stream go through the campaign
 (``hiring.service.campaign_exists``: 404 outside the scope), so they follow its client (spec
 §5.3, E2-06); the lists across campaigns (Home's resumes in progress, the stats' tally) keep to
-the campaigns hiring says the scope covers (``campaign_ids_in_scope``). The ``/api/v1`` use
-cases take only a scope of every client (``check_legacy_scope``). The agency travels on: every queued task
-carries it (``tasks.enqueue_*``), the progress stream subscribes to the agency's channel of the
-campaign (``events.campaign_channel``), and a new upload is stored under the agency's prefix
-(:func:`resume_storage_key`).
+the campaigns hiring says the scope covers (``campaign_ids_in_scope``). The agency travels on:
+every queued task carries it (``tasks.enqueue_*``), the progress stream subscribes to the
+agency's channel of the campaign (``events.campaign_channel``), and a new upload is stored under
+the agency's prefix (:func:`resume_storage_key`).
 """
 
 import asyncio
@@ -42,7 +41,6 @@ from app.modules.hiring import service as hiring_service
 from app.modules.ingestion import events, repository, tasks
 from app.modules.ingestion import schemas_v2 as v2
 from app.modules.ingestion.models import Resume
-from app.modules.ingestion.schemas import UploadBatchResponse
 from app.platform import storage
 from app.platform.config import settings
 from app.platform.tenancy import AccessScope, agency_id_of
@@ -105,28 +103,6 @@ def _rejection(content: bytes) -> str | None:
     return None
 
 
-async def upload_resumes(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, files: Sequence[UploadedFile]
-) -> UploadBatchResponse:
-    """Accept a batch of PDFs for a campaign and queue each accepted one for extraction.
-
-    Per file: only ``.pdf`` names, at most ``MAX_FILE_SIZE_MB``, ``%PDF`` magic bytes, and not
-    a duplicate (same SHA-256 in this campaign) of a resume that is done or still in progress;
-    a duplicate of a failed or quota-exceeded resume is accepted again as a new row. Rejected
-    files are reported, not raised.
-    """
-    accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files)
-    return UploadBatchResponse(
-        batch_id=str(uuid.uuid4()),
-        campaign_id=campaign_id,
-        total_files=len(files),
-        accepted_files=len(accepted_ids),
-        rejected_files=rejected,
-        resume_ids=accepted_ids,
-        message=f"Processing {len(accepted_ids)} resumes asynchronously",
-    )
-
-
 async def _accept_uploads(
     db: AsyncSession,
     scope: AccessScope,
@@ -134,9 +110,16 @@ async def _accept_uploads(
     files: Sequence[UploadedFile],
     uploaded_by: uuid.UUID | None = None,
 ) -> tuple[list[uuid.UUID], list[dict[str, str]]]:
-    """The upload itself (see :func:`upload_resumes`): stores and queues the accepted files,
-    recording who uploaded them (``None``: unknown, v1 and the development fallback); returns
-    their resume ids and the rejected files with the reason."""
+    """Accept a batch of PDFs for a campaign (404 outside the scope) and queue each accepted one
+    for extraction, recording who uploaded them (``None``: unknown, the development fallback);
+    returns their resume ids and the rejected files with the reason.
+
+    Per file: only ``.pdf`` names, at most ``MAX_FILE_SIZE_MB``, ``%PDF`` magic bytes, and not
+    a duplicate (same SHA-256 in this campaign) of a resume that is done or still in progress;
+    a duplicate of a failed or quota-exceeded resume is accepted again as a new row. Rejected
+    files are reported, not raised; more than ``MAX_FILES_PER_BATCH`` files is
+    :class:`InvalidInputError`.
+    """
     if not await hiring_service.campaign_exists(db, scope, campaign_id):
         raise NotFoundError("Campaign not found")
 
@@ -219,37 +202,15 @@ async def _accept_uploads(
     return accepted_ids, rejected
 
 
-# ── Resumes ───────────────────────────────────────────────────
-async def list_resumes(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
-) -> Sequence[Resume]:
-    """The campaign's resumes, newest first. An unknown campaign has none (not a 404)."""
-    hiring_service.check_legacy_scope(db, scope)
-    return await repository.list_for_campaign(db, campaign_id)
-
-
-async def get_resume(db: AsyncSession, scope: AccessScope, resume_id: uuid.UUID) -> Resume:
-    hiring_service.check_legacy_scope(db, scope)
-    resume = await repository.get(db, resume_id)
-    if not resume:
-        raise NotFoundError("Resume not found")
-    return resume
-
-
-async def retry_failed(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> int:
-    """Re-queue the campaign's ``failed`` and ``quota_exceeded`` resumes; returns how many.
+# ── Retries ───────────────────────────────────────────────────
+async def _retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
+    """Re-queue the campaign's ``failed`` and ``quota_exceeded`` resumes; returns them.
 
     Each resumes from the step it stopped at (spec §5.5): one that failed during AI analysis
     (``processing_step`` is an AI step, so its text is already stored) goes straight back to
     the AI task, which skips the steps already done; any other (failed text extraction, or
     processed before ``processing_step`` existed) starts again with text extraction.
     """
-    hiring_service.check_legacy_scope(db, scope)
-    return len(await _retry_failed(db, campaign_id))
-
-
-async def _retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Resume]:
-    """The retry itself (see :func:`retry_failed`); returns the resumes queued again."""
     resumes = await repository.failed_in_campaign(db, campaign_id)
     if not resumes:
         return []
@@ -271,15 +232,7 @@ async def _retry_failed(db: AsyncSession, campaign_id: uuid.UUID) -> Sequence[Re
     return resumes
 
 
-# ── For other use cases (composed in app.api) ─────────────────
-async def resume_status_counts(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID | None = None
-) -> dict[str, int]:
-    """Resume counts by status, for one campaign or (``campaign_id=None``) for all of them."""
-    hiring_service.check_legacy_scope(db, scope)
-    return await repository.status_counts(db, campaign_id)
-
-
+# ── For other use cases (composed in app.api.v2) ──────────────
 @dataclass(frozen=True)
 class StoredFiles:
     """The object-storage keys of deleted resumes: what :func:`delete_stored_files` removes once
@@ -365,27 +318,20 @@ class _ResumeProfiles:
     async def skill_lists(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, Any]:
         return await repository.skill_lists(self._db, resume_ids)
 
-    async def owner(self, resume_id: uuid.UUID) -> hiring_service.ResumeOwner | None:
-        found = await repository.owner(self._db, resume_id)
-        if found is None:
-            return None
-        campaign_id, person_id = found
-        return hiring_service.ResumeOwner(campaign_id=campaign_id, person_id=person_id)
-
     async def names(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str | None]:
         return await repository.names(self._db, resume_ids)
 
 
 def resume_profiles(db: AsyncSession) -> hiring_service.ResumeProfiles:
-    """The resumes' extraction snapshots, as the legacy candidate endpoints read them (E0-19):
-    the per-resume name, contacts and profile, the list's profile filters, and a resume's
-    campaign and Person. ``app.api`` passes it to ``hiring.service``."""
+    """The resumes' extraction snapshots, as the application use cases read them (E0-19): the
+    per-resume name, contacts and profile, the list's profile filters and name sort.
+    ``app.api.v2`` passes it to ``hiring.service``."""
     return _ResumeProfiles(db)
 
 
 # ══ /api/v2 (E1-02, EPIC-01 spec §6) ══════════════════════════
-# Unlike the legacy endpoints, an unknown campaign is a 404 (B7) and a batch with too many files
-# is reported as a validation error by the router (B10).
+# An unknown campaign is a 404 (B7) and a batch with too many files is reported as a validation
+# error by the router (B10).
 RECENT_UPLOADS = timedelta(hours=24)
 
 
@@ -452,8 +398,7 @@ async def upload_resumes_v2(
     files: Sequence[UploadedFile],
     uploaded_by: uuid.UUID | None = None,
 ) -> v2.UploadResult:
-    """:func:`upload_resumes` (404 for a campaign outside the scope), answering with the accepted
-    resumes themselves."""
+    """:func:`_accept_uploads`, answering with the accepted resumes themselves."""
     accepted_ids, rejected = await _accept_uploads(db, scope, campaign_id, files, uploaded_by)
     stored = {r.id: r for r in await repository.by_ids(db, accepted_ids)}
     accepted = [stored[rid] for rid in accepted_ids]
@@ -483,7 +428,7 @@ async def list_resumes_page(
 async def retry_failed_v2(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
 ) -> v2.RetryResult:
-    """:func:`retry_failed` (404 for an unknown campaign), answering with the resumes queued
+    """:func:`_retry_failed` (404 for an unknown campaign), answering with the resumes queued
     again, oldest upload first."""
     await _require_campaign(db, scope, campaign_id)
     resumes = await _retry_failed(db, campaign_id)

@@ -1,7 +1,8 @@
-"""Contract: v2's problem details for framework errors, and its OpenAPI document.
+"""Contract: v2's problem details for framework errors, its OpenAPI document, and the root
+application around it (the health checks; ``/api/v1`` answers 404 since E2-12).
 
 The document is the source of the generated TypeScript client (E1-03), so it is snapshotted as a
-whole, like v1's; the conventions the client relies on are also asserted directly.
+whole; the conventions the client relies on are also asserted directly.
 """
 
 from __future__ import annotations
@@ -12,9 +13,12 @@ from typing import Any
 import pytest
 from fastapi import APIRouter, FastAPI
 from httpx import AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from tests.contract_v2.data import V2
+from app.modules.hiring.models import Campaign
+from tests.contract_v2.data import UNKNOWN_ID, V2
 from tests.snapshot_utils import response_data
 
 CAMEL_CASE = re.compile(r"^[a-z]+(?:[A-Z][a-z0-9]*)*$")
@@ -63,17 +67,79 @@ async def test_unhandled_error_is_a_problem_without_internals(
     monkeypatch.setattr(talent, "count_people", boom)
     resp = await raw_client.get(f"{V2}/stats")
     assert response_data(resp) == snapshot
-    assert "secret" not in resp.text and "/api/v2" not in resp.text  # v1 echoes the URL (B10)
+    assert "secret" not in resp.text and "/api/v2" not in resp.text  # v1 echoed the URL (B10)
 
 
-async def test_v1_errors_keep_their_shape(client: AsyncClient) -> None:
-    # The problem handlers belong to the v2 app only (the characterization snapshots pin every
-    # v1 response; this is the quick, readable check).
-    v1 = await client.get("/api/v1/campaigns/not-a-uuid")
-    assert v1.headers["content-type"] == "application/json"
-    assert set(v1.json()) == {"detail"}
-    missing = await client.get("/api/v1/does-not-exist")
-    assert missing.json() == {"detail": "Not Found"}
+async def test_an_unhandled_error_is_logged_without_the_query_string(
+    raw_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The root application's handler logged it until /api/v1 was removed (E2-12).
+    from app.modules.talent import service as talent
+    from app.platform import problems
+
+    async def boom(*_: Any) -> int:
+        raise RuntimeError("database detail")
+
+    logged: list[tuple[str, dict[str, Any]]] = []
+
+    class Logger:
+        def error(self, event: str, **fields: Any) -> None:
+            logged.append((event, fields))
+
+    monkeypatch.setattr(talent, "count_people", boom)
+    monkeypatch.setattr(problems, "logger", Logger())
+    assert (await raw_client.get(f"{V2}/stats?client_id={UNKNOWN_ID}")).status_code == 500
+    assert logged == [
+        (
+            "unhandled_exception",
+            {"method": "GET", "path": "/api/v2/stats", "error": "database detail"},
+        )
+    ]
+
+
+# ── /api/v1 is gone (E2-12) ───────────────────────────────────
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/campaigns"),
+        ("POST", "/api/v1/campaigns"),
+        ("POST", "/api/v1/campaigns/parse-jd"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}"),
+        ("PUT", f"/api/v1/campaigns/{UNKNOWN_ID}"),
+        ("DELETE", f"/api/v1/campaigns/{UNKNOWN_ID}"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}/stats"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}/candidates"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}/candidates/export"),
+        ("PATCH", f"/api/v1/campaigns/{UNKNOWN_ID}/candidates/bulk-pipeline"),
+        ("DELETE", f"/api/v1/campaigns/{UNKNOWN_ID}/candidates/bulk"),
+        ("POST", f"/api/v1/campaigns/{UNKNOWN_ID}/upload"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}/resumes"),
+        ("POST", f"/api/v1/campaigns/{UNKNOWN_ID}/resumes/retry-failed"),
+        ("GET", f"/api/v1/campaigns/{UNKNOWN_ID}/stream"),
+        ("GET", f"/api/v1/candidates/{UNKNOWN_ID}"),
+        ("PUT", f"/api/v1/candidates/{UNKNOWN_ID}/category"),
+        ("PATCH", f"/api/v1/candidates/{UNKNOWN_ID}/notes"),
+        ("PATCH", f"/api/v1/candidates/{UNKNOWN_ID}/pipeline"),
+        ("DELETE", f"/api/v1/candidates/{UNKNOWN_ID}"),
+        ("GET", f"/api/v1/resumes/{UNKNOWN_ID}"),
+        ("GET", f"/api/v1/resumes/{UNKNOWN_ID}/candidate"),
+        ("GET", "/api/v1/stats"),
+        ("GET", "/api/v1/health"),
+    ],
+)
+async def test_every_former_v1_endpoint_is_not_found(
+    client: AsyncClient, db_session: AsyncSession, method: str, path: str
+) -> None:
+    """Each of v1's 23 operations (and the ``/api/v1/health`` its document listed, B10) answers
+    404 and writes nothing."""
+    resp = await client.request(method, path, json={"title": "T", "role": "R"})
+    assert (resp.status_code, resp.json()) == (404, {"detail": "Not Found"})
+    assert (await db_session.scalar(select(func.count()).select_from(Campaign))) == 0
+
+
+async def test_the_health_checks_stay(client: AsyncClient) -> None:
+    resp = await client.get("/health")
+    assert (resp.status_code, resp.json()["status"]) == (200, "ok")
 
 
 # ── The OpenAPI document ──────────────────────────────────────
@@ -92,9 +158,11 @@ async def test_openapi_document_is_the_offline_export(client: AsyncClient) -> No
     assert served["servers"] == [{"url": "/api/v2"}]
 
 
-async def test_v1_document_has_no_v2_operations(client: AsyncClient) -> None:
+async def test_the_root_document_lists_only_the_health_checks(client: AsyncClient) -> None:
+    # /api/v2 has its own document (a mounted app's routes are not in the parent's), and /api/v1
+    # is gone (E2-12).
     paths = (await client.get("/openapi.json")).json()["paths"]
-    assert paths and all(p.startswith("/api/v1/") or p.startswith("/health") for p in paths)
+    assert sorted(paths) == ["/health", "/health/ready"]
 
 
 def _operations(document: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:

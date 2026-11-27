@@ -61,7 +61,7 @@ dev = [
     "pytest==9.2.0",  # S3: 8.2.2 had PYSEC-2026-1845
     "pytest-asyncio==1.5.0",  # S3: 0.23 requires pytest<9
     "pytest-cov==7.1.0",
-    "syrupy==6.1.1",  # snapshot tests (tests/characterization)
+    "syrupy==6.1.1",  # snapshot tests (tests/contract_v2)
     "hypothesis==6.169.0",  # property-based tests (tests/unit)
     "fakeredis==2.39.0",  # in-memory Redis for the SSE stream and /health/ready
     # Real Postgres (pgvector/pgvector:pg16) in Docker for the test session
@@ -255,27 +255,6 @@ ignore_imports = [
 # The allowlist above matches nothing until the first cross-module import exists.
 unmatched_ignore_imports_alerting = "none"
 broken_contract_guidance = "Import another module only through its public interface: app.modules.<name>.service, or the schemas it exposes in app.modules.<name>.schemas (or schemas_v2). Never its models, repository, router, tasks or other internals."
-
-[[tool.importlinter.contracts]]
-id = "v2-independent-of-v1"
-name = "/api/v2 code does not import /api/v1 HTTP code"
-type = "forbidden"
-# The v2 application, its composed routers and the modules' v2 routers. v1 is removed after E2
-# (backlog); with this contract that removal is a deletion that cannot break v2.
-source_modules = [
-    "app.v2",
-    "app.api.v2",
-    "app.modules.hiring.router_v2",
-    "app.modules.identity.router_v2",
-    "app.modules.ingestion.router_v2",
-]
-forbidden_modules = [
-    "app.main",
-    "app.api.routes",
-    "app.modules.hiring.router",
-    "app.modules.ingestion.router",
-]
-broken_contract_guidance = "v2 HTTP code must not depend on v1 routers (app.api.routes, app.modules.<name>.router) or on app.main. Share behaviour through the module services instead."
 
 [[tool.importlinter.contracts]]
 id = "identity-dependencies-http-only"

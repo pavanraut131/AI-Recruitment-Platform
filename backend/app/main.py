@@ -1,13 +1,10 @@
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import routes as composed
-from app.modules.hiring import router as hiring
-from app.modules.ingestion import router as ingestion
 from app.platform import database
 from app.platform.config import settings
 from app.platform.csrf import HEADER as CSRF_HEADER
@@ -46,10 +43,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
-    # v1 is frozen: it has always parsed a JSON body sent without a Content-Type header.
-    # FastAPI >= 0.132 rejects that by default (422); /api/v2 (its own app) keeps the strict
-    # default.
-    strict_content_type=False,
 )
 
 # ── CORS ──────────────────────────────────────────────────────
@@ -65,20 +58,10 @@ app.add_middleware(
     expose_headers=["Retry-After"],
 )
 
-# ── Routers ───────────────────────────────────────────────────
-PREFIX = settings.API_V1_PREFIX
-# Module routers, plus the endpoints composed from several modules (app.api). No two routes
-# share a path and method, so the order does not change which endpoint answers a request.
-app.include_router(hiring.campaigns_router, prefix=PREFIX)
-app.include_router(composed.campaigns_router, prefix=PREFIX)
-app.include_router(hiring.parse_jd_router, prefix=PREFIX)
-app.include_router(ingestion.router, prefix=PREFIX)
-app.include_router(composed.candidates_router, prefix=PREFIX)
-app.include_router(composed.stats_router, prefix=PREFIX)
-
-# /api/v2: a sub-application with its own OpenAPI document (/api/v2/openapi.json) and RFC 9457
-# error handlers, so the v1 routes, errors and /openapi.json above stay exactly as they were
-# (see app/v2.py).
+# ── The API ───────────────────────────────────────────────────
+# /api/v2: a sub-application with its own OpenAPI document (/api/v2/openapi.json), its
+# authentication and its RFC 9457 error handlers (see app/v2.py). It is the only API: /api/v1
+# was removed in E2-12, so its paths answer 404 like any other unknown path.
 app.mount(settings.API_V2_PREFIX, v2_app)
 
 
@@ -114,14 +97,4 @@ async def readiness_check():
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={"status": "ready" if all_ok else "degraded", "checks": checks},
-    )
-
-
-# ── Global error handler ──────────────────────────────────────
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("unhandled_exception", path=str(request.url), error=str(exc))
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error", "path": str(request.url)},
     )

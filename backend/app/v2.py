@@ -1,11 +1,11 @@
 """The ``/api/v2`` application (EPIC-01 spec §6), mounted by ``app.main`` at ``/api/v2``.
 
-A FastAPI **sub-application** of its own, not routers on the root app, because:
+A FastAPI **sub-application** of its own, not routers on the root app (ADR 0008), because:
 
-- **v1 stays byte-identical.** Its errors keep FastAPI's ``{"detail": ...}`` shape and the root
-  ``/openapi.json`` keeps exactly the v1 operations (both pinned by the characterization
-  snapshots). The problem+json handlers (``app.platform.problems``) are installed on this app
-  only, and a mounted app's routes are not part of the parent's OpenAPI document.
+- **Its own errors.** The problem+json handlers (``app.platform.problems``) are installed on this
+  app only, and a mounted app's routes are not part of the parent's OpenAPI document. Until
+  E2-12 this kept the frozen ``/api/v1`` (on the root app) byte-identical; the root app now
+  serves only the health checks.
 - **Its own OpenAPI document**, ``/api/v2/openapi.json`` (and ``/api/v2/docs``): the source of
   the generated TypeScript client (E1-03), which can also export it without a server
   (``app.v2.v2_app.openapi()``). It holds only v2 operations, with stable operation ids, and
@@ -18,11 +18,10 @@ A FastAPI **sub-application** of its own, not routers on the root app, because:
   kind (deny by default, spec §5.4). The CSRF and security-header middlewares wrap this app
   only, and the document declares the ``cookieAuth`` and ``csrfToken`` security schemes, the
   401/403 problems of each protected operation and the permissions it needs
-  (``x-permissions``, :func:`_add_security`). v1 is removed rather than secured (E2-12).
+  (``x-permissions``, :func:`_add_security`). v1 was removed rather than secured (E2-12).
 
 It includes the module-owned v2 routers (endpoints that need one module) and the composed ones
-from ``app.api.v2`` (endpoints that span modules, ADR 0005). Nothing here may import v1 HTTP code
-(import-linter contract ``v2-independent-of-v1``), so removing v1 is a deletion.
+from ``app.api.v2`` (endpoints that span modules, ADR 0005).
 """
 
 from collections.abc import Callable

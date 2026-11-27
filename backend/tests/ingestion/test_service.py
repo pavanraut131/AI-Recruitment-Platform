@@ -1,7 +1,8 @@
 """``app.modules.ingestion.service`` against real Postgres (the ``db_session`` transaction).
 
-The HTTP behaviour is pinned by the characterization snapshots; these call the service directly,
-including the functions only ``app.api`` uses (status counts, deleting resumes and PDFs).
+The HTTP behaviour is pinned by the contract snapshots (``tests/contract_v2``); these call the
+service directly, including the functions only ``app.api.v2`` uses (tallies, deleting resumes and
+PDFs).
 """
 
 from __future__ import annotations
@@ -45,26 +46,26 @@ async def _count(db: AsyncSession) -> int:
     return (await db.execute(select(func.count()).select_from(Resume))).scalar_one()
 
 
-# ── Status counts ─────────────────────────────────────────────
-async def test_resume_status_counts_per_campaign_and_overall(db_session: AsyncSession) -> None:
+# ── Tallies ───────────────────────────────────────────────────
+async def test_resume_tally_per_campaign_and_overall(db_session: AsyncSession) -> None:
     campaign = await make_campaign(db_session)
     other = await make_campaign(db_session, title="Other")
     for status in ("done", "done", "failed", "pending"):
         await make_resume(db_session, campaign, status=status)
     await make_resume(db_session, other, status="quota_exceeded")
 
-    assert await service.resume_status_counts(db_session, SCOPE, campaign.id) == {
+    assert (await service.resume_tally(db_session, SCOPE, campaign.id)).by_status == {
         "done": 2,
         "failed": 1,
         "pending": 1,
     }
-    assert await service.resume_status_counts(db_session, SCOPE) == {
+    assert (await service.resume_tally(db_session, SCOPE)).by_status == {
         "done": 2,
         "failed": 1,
         "pending": 1,
         "quota_exceeded": 1,
     }
-    assert await service.resume_status_counts(db_session, SCOPE, uuid.uuid4()) == {}
+    assert (await service.resume_tally(db_session, SCOPE, uuid.uuid4())).by_status == {}
 
 
 # ── Delete (E0-20: rows in the caller's transaction, PDFs after its commit) ──
@@ -139,19 +140,19 @@ async def test_upload_stores_accepted_files_and_queues_extraction(
 ) -> None:
     campaign = await make_campaign(db_session)
 
-    result = await service.upload_resumes(
+    result = await service.upload_resumes_v2(
         db_session,
         SCOPE,
         campaign.id,
         [FakeUpload("cv.pdf", PDF), FakeUpload("notes.txt", PDF), FakeUpload("bad.pdf", b"x")],
     )
 
-    assert (result.total_files, result.accepted_files) == (3, 1)
-    assert result.rejected_files == [
-        {"filename": "notes.txt", "reason": "Only PDF files are accepted"},
-        {"filename": "bad.pdf", "reason": "Invalid PDF file"},
+    assert [(r.filename, r.reason) for r in result.rejected] == [
+        ("notes.txt", "Only PDF files are accepted"),
+        ("bad.pdf", "Invalid PDF file"),
     ]
-    [resume_id] = result.resume_ids
+    [accepted] = result.accepted
+    resume_id = accepted.id
     resume = await db_session.get(Resume, resume_id)
     assert resume is not None
     assert (resume.status, resume.file_hash) == ("pending", hashlib.sha256(PDF).hexdigest())
@@ -167,7 +168,9 @@ async def test_upload_stores_accepted_files_and_queues_extraction(
 
 async def test_upload_unknown_campaign(db_session: AsyncSession) -> None:
     with pytest.raises(service.NotFoundError, match="^Campaign not found$"):
-        await service.upload_resumes(db_session, SCOPE, uuid.uuid4(), [FakeUpload("cv.pdf", PDF)])
+        await service.upload_resumes_v2(
+            db_session, SCOPE, uuid.uuid4(), [FakeUpload("cv.pdf", PDF)]
+        )
 
 
 async def test_upload_too_many_files(db_session: AsyncSession) -> None:
@@ -175,7 +178,7 @@ async def test_upload_too_many_files(db_session: AsyncSession) -> None:
     files = [FakeUpload(f"{i}.pdf", PDF) for i in range(settings.MAX_FILES_PER_BATCH + 1)]
 
     with pytest.raises(service.InvalidInputError, match="files per upload batch"):
-        await service.upload_resumes(db_session, SCOPE, campaign.id, files)
+        await service.upload_resumes_v2(db_session, SCOPE, campaign.id, files)
 
     assert await _count(db_session) == 0
 
@@ -192,33 +195,30 @@ async def test_upload_duplicate_of_existing_resume(
         db_session, campaign, file_hash=hashlib.sha256(PDF).hexdigest(), status=existing_status
     )
 
-    result = await service.upload_resumes(
+    result = await service.upload_resumes_v2(
         db_session, SCOPE, campaign.id, [FakeUpload("cv.pdf", PDF)]
     )
 
-    assert result.accepted_files == int(accepted)
+    assert len(result.accepted) == int(accepted)
 
 
 async def test_upload_file_without_a_name_is_an_error(db_session: AsyncSession) -> None:
     campaign = await make_campaign(db_session)
 
     with pytest.raises(ValueError, match="no file name"):
-        await service.upload_resumes(db_session, SCOPE, campaign.id, [FakeUpload(None, PDF)])
+        await service.upload_resumes_v2(db_session, SCOPE, campaign.id, [FakeUpload(None, PDF)])
 
 
 # ── Resumes ───────────────────────────────────────────────────
-async def test_list_and_get_resumes(db_session: AsyncSession) -> None:
+async def test_list_resumes_newest_first(db_session: AsyncSession) -> None:
     campaign = await make_campaign(db_session)
     older = await make_resume(db_session, campaign, uploaded_at=at(0))
     newer = await make_resume(db_session, campaign, uploaded_at=at(1))
 
-    assert [r.id for r in await service.list_resumes(db_session, SCOPE, campaign.id)] == [
-        newer.id,
-        older.id,
-    ]
-    assert (await service.get_resume(db_session, SCOPE, older.id)).id == older.id
-    with pytest.raises(service.NotFoundError, match="^Resume not found$"):
-        await service.get_resume(db_session, SCOPE, uuid.uuid4())
+    page, total = await service.list_resumes_page(db_session, SCOPE, campaign.id, (), 0, 10)
+    assert ([r.id for r in page], total) == ([newer.id, older.id], 2)
+    with pytest.raises(service.NotFoundError, match="^Campaign not found$"):
+        await service.list_resumes_page(db_session, SCOPE, uuid.uuid4(), (), 0, 10)
 
 
 async def test_retry_failed_resets_and_requeues_failed_and_quota_exceeded(
@@ -229,7 +229,8 @@ async def test_retry_failed_resets_and_requeues_failed_and_quota_exceeded(
     quota = await make_resume(db_session, campaign, status="quota_exceeded", error_message="q")
     await make_resume(db_session, campaign, status="done")
 
-    assert await service.retry_failed(db_session, SCOPE, campaign.id) == 2
+    result = await service.retry_failed_v2(db_session, SCOPE, campaign.id)
+    assert sorted(result.retried) == sorted([failed.id, quota.id])
 
     for resume in (failed, quota):
         await db_session.refresh(resume)
@@ -237,7 +238,8 @@ async def test_retry_failed_resets_and_requeues_failed_and_quota_exceeded(
     assert sorted(c.args[0] for c in celery_calls.for_task(tasks.EXTRACT_TASK_NAME)) == sorted(
         [str(failed.id), str(quota.id)]
     )
-    assert await service.retry_failed(db_session, SCOPE, uuid.uuid4()) == 0
+    with pytest.raises(service.NotFoundError, match="^Campaign not found$"):
+        await service.retry_failed_v2(db_session, SCOPE, uuid.uuid4())
 
 
 @pytest.mark.parametrize(
@@ -265,7 +267,7 @@ async def test_retry_failed_resumes_from_the_failed_step(
         db_session, campaign, status="failed", processing_step=processing_step
     )
 
-    assert await service.retry_failed(db_session, SCOPE, campaign.id) == 1
+    assert (await service.retry_failed_v2(db_session, SCOPE, campaign.id)).retried == [resume.id]
 
     assert [(c.task, c.args, c.kwargs, c.options) for c in celery_calls.calls] == [
         (task, (str(resume.id),), AGENCY_KWARGS, {"queue": queue})

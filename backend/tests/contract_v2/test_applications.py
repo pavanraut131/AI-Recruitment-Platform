@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from syrupy.assertion import SnapshotAssertion
 
-from app.modules.hiring.models import Application, LegacyCandidateMap
+from app.modules.hiring.models import Application
 from app.modules.ingestion.models import Resume
 from tests.contract_v2.data import UNKNOWN_ID, V2, applicant, ranked_campaign
 from tests.factories import make_campaign, make_resume
@@ -103,7 +103,7 @@ async def test_list_applications_invalid_query(
 async def test_list_applications_unknown_campaign(
     client: AsyncClient, snapshot: SnapshotAssertion
 ) -> None:
-    # B7 (v1 answers 200 with an empty list).
+    # B7 (v1 answered 200 with an empty list).
     resp = await client.get(f"{V2}/campaigns/{UNKNOWN_ID}/applications")
     assert response_data(resp) == snapshot
 
@@ -171,17 +171,6 @@ async def test_get_application_without_extraction(
     await db_session.flush()
     resp = await client.get(f"{V2}/applications/{application.id}")
     assert response_data(resp) == snapshot
-
-
-async def test_legacy_candidate_ids_do_not_resolve_in_v2(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
-    application = await applicant(db_session, await make_campaign(db_session), 1)
-    merged_id = uuid.uuid4()
-    db_session.add(LegacyCandidateMap(candidate_id=merged_id, application_id=application.id))
-    await db_session.flush()
-    assert (await client.get(f"/api/v1/candidates/{merged_id}")).status_code == 200
-    assert (await client.get(f"{V2}/applications/{merged_id}")).status_code == 404
 
 
 @pytest.mark.parametrize(

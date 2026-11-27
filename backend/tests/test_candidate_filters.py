@@ -1,4 +1,7 @@
-"""Candidate list `skill` / `search` filters (B2), against real Postgres."""
+"""The application list's ``skill`` / ``q`` filters on the extraction snapshot (B2), against real
+Postgres: case-insensitive containment with LIKE wildcards taken literally. (Ported from the v1
+candidate list's ``skill`` / ``search`` in E2-12: the same matching, ``ingestion``'s
+``matching_extractions``.)"""
 
 from __future__ import annotations
 
@@ -10,7 +13,7 @@ from app.modules.hiring.models import Campaign
 from app.platform.sql import escape_like
 from tests.factories import at, make_campaign, make_candidate, make_resume
 
-API = "/api/v1"
+API = "/api/v2"
 
 
 @pytest.mark.parametrize(
@@ -57,9 +60,9 @@ async def _seed(db: AsyncSession) -> Campaign:
 
 
 async def _names(client: AsyncClient, campaign: Campaign, query: str) -> list[str]:
-    resp = await client.get(f"{API}/campaigns/{campaign.id}/candidates", params=query)
+    resp = await client.get(f"{API}/campaigns/{campaign.id}/applications", params=query)
     assert resp.status_code == 200, resp.text
-    return [c["name"] for c in resp.json()]
+    return [a["person"]["name"] for a in resp.json()["items"]]
 
 
 @pytest.mark.parametrize(
@@ -78,7 +81,7 @@ async def _names(client: AsyncClient, campaign: Campaign, query: str) -> list[st
         pytest.param("skill=python&category=moderate_match", ["Ben"], id="with-category"),
         pytest.param("skill=python&min_score=80", ["Ada"], id="with-min-score"),
         pytest.param("skill=plus&min_score=45&max_score=60", ["Cid"], id="with-score-range"),
-        pytest.param("skill=python&search=be", ["Ben"], id="with-search"),
+        pytest.param("skill=python&q=be", ["Ben"], id="with-q"),
         pytest.param("skill=python&page_size=1&page=2", ["Ben"], id="with-pagination"),
         pytest.param("", ["Ada", "Ben", "Cid", "Dee", "Eve", "Fay"], id="no-filter-keeps-empty"),
     ],
@@ -102,12 +105,12 @@ async def test_skill_filter_never_matches_empty_skills(
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
-        pytest.param("search=_", [], id="underscore-is-literal"),
-        pytest.param("search=%25", [], id="percent-is-literal"),
-        pytest.param("search=ADA", ["Ada"], id="case-insensitive"),
+        pytest.param("q=_", [], id="underscore-is-literal"),
+        pytest.param("q=%25", [], id="percent-is-literal"),
+        pytest.param("q=ADA", ["Ada"], id="case-insensitive"),
     ],
 )
-async def test_search_escapes_like_wildcards(
+async def test_q_escapes_like_wildcards(
     client: AsyncClient, db_session: AsyncSession, query: str, expected: list[str]
 ) -> None:
     campaign = await _seed(db_session)

@@ -54,7 +54,7 @@ async def test_boundary_like_upload_at_the_size_limit_parses_quickly(
     fake_storage: InMemoryStorage,
 ) -> None:
     campaign = await make_campaign(db_session)
-    url = f"/api/v1/campaigns/{campaign.id}/upload"
+    url = f"/api/v2/campaigns/{campaign.id}/uploads"
     warm_up = await client.post(
         url, files=[("files", ("warm_up.pdf", b"%PDF-1.4\n", "application/pdf"))]
     )
@@ -70,8 +70,8 @@ async def test_boundary_like_upload_at_the_size_limit_parses_quickly(
 
     assert resp.status_code == 202, resp.text
     body = resp.json()
-    assert body["rejected_files"] == []
-    assert body["accepted_files"] == 1
+    assert body["rejected"] == []
+    assert len(body["accepted"]) == 1
     [stored] = fake_storage.objects.values()
     assert stored.body == content
     assert len(celery_calls.calls) == 1

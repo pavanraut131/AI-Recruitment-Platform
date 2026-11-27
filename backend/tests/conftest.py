@@ -58,9 +58,9 @@ Fixtures
         :class:`tests.fakes.FakeGemini`. Replaces ``google.generativeai.GenerativeModel``, which
         ``app.modules.ai.gemini.GeminiAIService`` (the default ``AI_PROVIDER``) instantiates on
         every call. Calls raise until the test scripts a response with
-        ``fake_gemini.respond_with(...)``; no test can reach the Gemini API. The characterization
-        tests run through ``GeminiAIService`` on top of this fake, so the recorded Gemini calls
-        (model, prompt) stay pinned. Tests that don't care about Gemini specifics use the
+        ``fake_gemini.respond_with(...)``; no test can reach the Gemini API. The contract tests
+        run through ``GeminiAIService`` on top of this fake, so the recorded Gemini calls (model,
+        prompt) stay pinned. Tests that don't care about Gemini specifics use the
         ``fake_ai`` fixture (``AI_PROVIDER=fake``) instead.
 
     ``fake_ai`` (function)

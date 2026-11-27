@@ -29,7 +29,6 @@ from tests.fakes import CeleryRecorder, InMemoryStorage
 from tests.ingestion.test_service import PDF, FakeUpload
 from tests.tenancy.conftest import OtherAgency, SessionFor
 
-V1 = "/api/v1"
 V2 = "/api/v2"
 T0 = datetime(2026, 11, 24, 9, 0, tzinfo=UTC)
 
@@ -49,7 +48,7 @@ async def _ids(client: AsyncClient, path: str) -> set[str]:
     return {item["id"] for item in resp.json()["items"]}
 
 
-# ── The default agency (every request until E2-05) ────────────
+# ── Requests of the default agency's owner ────────────────────
 async def test_requests_never_see_another_agencys_rows(
     client: AsyncClient, db_session: AsyncSession, other_agency: OtherAgency
 ) -> None:
@@ -68,7 +67,7 @@ async def test_requests_never_see_another_agencys_rows(
     assert [c["id"] for c in home["active_campaigns"]] == [str(mine.campaign_id)]
     assert [m["id"] for m in home["recent_strong_matches"]] == [str(mine.id)]
 
-    # Their objects are not found, by any URL, in v2 and v1; nothing of theirs changes.
+    # Their objects are not found, by any URL; nothing of theirs changes.
     for path in (
         f"{V2}/campaigns/{theirs.campaign_id}",
         f"{V2}/campaigns/{theirs.campaign_id}/stats",
@@ -76,10 +75,6 @@ async def test_requests_never_see_another_agencys_rows(
         f"{V2}/campaigns/{theirs.campaign_id}/resumes",
         f"{V2}/applications/{theirs.id}",
         f"{V2}/people/{theirs.person_id}",
-        f"{V1}/campaigns/{theirs.campaign_id}",
-        f"{V1}/candidates/{theirs.id}",
-        f"{V1}/resumes/{theirs.resume_id}",
-        f"{V1}/resumes/{theirs.resume_id}/candidate",
     ):
         assert (await client.get(path)).status_code == 404, path
     assert (await client.delete(f"{V2}/applications/{theirs.id}")).status_code == 404
@@ -89,7 +84,6 @@ async def test_requests_never_see_another_agencys_rows(
         json={"action": "delete", "ids": [str(theirs.id)]},
     )
     assert resp.status_code == 404
-    assert (await client.get(f"{V1}/campaigns/{theirs.campaign_id}/candidates")).json() == []
     theirs_id = theirs.id
     other_agency.db.expire_all()
     assert await other_agency.db.get(Application, theirs_id) is not None
@@ -114,8 +108,8 @@ async def test_a_session_of_another_agency_reads_only_its_own_rows(
         )
     people, people_total = await talent_service.list_people(other, None, 0, 10)
     assert ([p.id for p in people], people_total) == ([theirs.person_id], 1)
-    counts = await ingestion_service.resume_status_counts(other, scope)
-    assert counts == {"done": 1}
+    tally = await ingestion_service.resume_tally(other, scope)
+    assert tally.by_status == {"done": 1}
 
 
 async def test_inserts_take_the_agency_of_the_session(

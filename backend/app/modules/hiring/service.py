@@ -1,75 +1,61 @@
 """hiring service: the public interface of the hiring module.
 
-Campaign CRUD and stats, the global stats, job description parsing, and the legacy candidate
-endpoints' use cases (list, export, detail, recruiter updates, deletes), served from
-``applications`` since the read switch (E0-19). The routers in ``router.py`` only translate HTTP
-to these calls; other modules (``ingestion``) and the composition layer (``app.api``) may import
-this module and ``app.modules.hiring.schemas``, never ``models`` or ``repository``
-(import-linter enforces it).
+Clients, campaigns and applications: the ``/api/v2`` use cases (EPIC-01 spec §6, EPIC-02 §8),
+which return the resources of ``schemas_v2``, job description parsing, and what the other modules
+need (the upload pipeline's campaign lookups and application upsert, the verification's reads).
+Other modules (``ingestion``) and the composition layer (``app.api.v2``) may import this module
+and ``schemas_v2``, never ``models`` or ``repository`` (import-linter enforces it).
 
-Business rules live here: the category / pipeline-stage vocabularies, the candidate filters
-shared by the list and the CSV export, the legacy response mapping and the stats aggregation.
-Job descriptions are parsed by the ``ai`` module. Errors are raised as :class:`HiringError`
-subclasses carrying the user-facing ``detail``; the routers map them to status codes.
+Business rules live here: the application filters (the ones on the extraction snapshot are
+evaluated by ingestion), the field sources of an application and its CSV row, the stats
+aggregation and the clients' rules. Job descriptions are parsed by the ``ai`` module. Errors are
+raised as :class:`HiringError` subclasses carrying the user-facing ``detail``; the routers map
+them to status codes.
 
-The ``/api/v2`` use cases (E1-02, EPIC-01 spec §6) are in the section "/api/v2 resources": they
-return the resources of ``schemas_v2`` and take ingestion's data through the same kind of ports
-(:class:`ResumeProfiles`, :class:`ResumeTallies`), passed in by ``app.api.v2``.
-
-The legacy candidate API after the switch (E0-19, spec §7)
----------------------------------------------------------
-The ``/candidates`` endpoints keep their paths and exact response shapes, but a "candidate" is
-now an **application**: one row per (campaign, person). A response is built by
-:func:`candidate_detail` / :func:`candidate_list_item` from two sources, field by field (the
-table is in spec §7):
+An application's fields (EPIC-00 spec §7)
+-----------------------------------------
+An application is one row per (campaign, Person). Its resource is built from two sources, field
+by field:
 
 - the **application** (hiring): ``id``, ``campaign_id``, ``resume_id``, the scoring and
   insights, ``category``, ``notes``, ``pipeline_stage``, ``created_at``, ``updated_at``;
 - the **extraction snapshot of the application's current resume** (``resumes.extracted``,
-  ingestion): name, contact details, URLs, skills, education, work experience,
-  certifications, projects and years of experience. These are per-resume facts, exactly what
-  the legacy candidate of that resume held. The Person's profile is deliberately not used: it
-  follows the person's newest resume across *all* campaigns, so it can differ from what this
-  application was scored on.
+  ingestion): name, contact details, URLs, skills and years of experience. These are
+  per-resume facts. The Person's profile is deliberately not used: it follows the person's newest
+  resume across *all* campaigns, so it can differ from what this application was scored on.
 
-Ids: an application id answers directly; the id of a legacy candidate that was merged into
-another application (``legacy_candidate_map``) answers with that application, and the response
-carries the **application's** id. Applications created after the switch get fresh ids and have
-no legacy candidate.
-
-Deletes remove the application and every resume of its person in its campaign (each was one
-legacy candidate of the row the recruiter sees), and the resumes' stored PDFs. The legacy
-``candidates`` table itself was dropped by the contract migration (E0-20).
+Deletes remove the application and every resume of its person in its campaign, and the resumes'
+stored PDFs. Until E2-12 the ``/api/v1`` candidate endpoints served the same applications in the
+pre-E0 "candidate" shape and also resolved the ids of legacy candidates merged by the E0
+backfill (``legacy_candidate_map``); both were removed with v1.
 
 Cross-module boundaries (E0-10)
 -------------------------------
 Hiring never reads or writes another module's tables. Where a use case needs another module,
 the data crosses this interface instead:
 
-1. **Stats** (``GET /campaigns/{id}``, ``GET /campaigns/{id}/stats``, ``GET /stats``) need
-   resume counts by status, which ingestion owns. :func:`campaign_stats` and
-   :func:`global_stats` take them as an argument; ``app.api`` asks ingestion for them and
-   composes the endpoint.
-2. **Resume extractions** (E0-19): every candidate endpoint, and the campaign stats' top skills,
-   read the resumes' extraction snapshots. They take a :class:`ResumeProfiles` (ingestion's
-   ``resume_profiles(db)``), which answers with the snapshots, the resumes matching the list's
-   name/email search, skill and experience filters, and a resume's campaign and person.
-3. **Deleting candidates** (``DELETE /candidates/{id}``, ``DELETE
-   /campaigns/{id}/candidates/bulk``) also deletes resumes. :func:`delete_candidate` and
-   :func:`bulk_delete_candidates` delete the applications (flush, don't commit) and return
-   what ingestion needs to delete their resumes; ``app.api`` has ingestion delete them and
-   commits both in one transaction, then has ingestion delete the stored PDFs.
+1. **Resume tallies** (the campaigns' counts, Insights, the stats): the use cases take them as
+   an argument or through a :class:`ResumeTallies` port (``ingestion.resume_tallies(db)``);
+   ``app.api.v2`` composes the endpoint.
+2. **Resume extractions** (E0-19): the application resources, the list's profile filters and
+   name sort, the export, and the Insights' top skills read the resumes' extraction snapshots
+   through a :class:`ResumeProfiles` port (ingestion's ``resume_profiles(db)``).
+3. **Deleting applications** (``DELETE /applications/{id}``, the bulk ``delete``) also deletes
+   resumes. :func:`delete_application_v2` and :func:`bulk_applications` delete the applications
+   (flush, don't commit) and return what ingestion needs to delete their resumes;
+   ``app.api.v2`` has ingestion delete them and commits both in one transaction, then has
+   ingestion delete the stored PDFs.
 4. **Deleting a campaign** (E0-20): :func:`delete_campaign` deletes the campaign and, by the
-   same-module foreign key, its applications (flush, don't commit); ``app.api`` has ingestion
+   same-module foreign key, its applications (flush, don't commit); ``app.api.v2`` has ingestion
    delete the campaign's resumes in the same transaction and their PDFs after the commit. No
-   foreign key links ``resumes`` to ``campaigns`` any more (ADR 0003).
+   foreign key links ``resumes`` to ``campaigns`` (ADR 0003).
 5. **The upload pipeline** (``app.modules.ingestion``) checks campaigns through
-   :func:`get_campaign_requirements` and writes applications through :func:`upsert_application`.
-   Its scoring input is the ``ai`` module's ``ScoringResult`` (``app.modules.ai.schemas``,
-   public): the pipeline passes on what the model returned, and hiring keeps no second copy of
-   that shape to keep in sync. The verification command
+   :func:`campaign_exists` / :func:`get_campaign_requirements` and writes applications through
+   :func:`upsert_application`. Its scoring input is the ``ai`` module's ``ScoringResult``
+   (``app.modules.ai.schemas``, public): the pipeline passes on what the model returned, and
+   hiring keeps no second copy of that shape to keep in sync. The verification command
    (``app.modules.ingestion.verify_people_applications``) reads applications through
-   :func:`application_refs` and :func:`legacy_candidate_map`.
+   :func:`application_refs`.
 
 Tenancy (EPIC-02)
 -----------------
@@ -90,10 +76,6 @@ only what the scope covers; a single campaign, application or client outside it 
 talent pool stays agency-wide (``talent``), but a Person's applications to campaigns outside the
 scope are left out (:func:`person_applications`, :func:`people_activity`). A request's
 ``client_id`` filter narrows the scope (``AccessScope.restricted_to``), never widens it.
-
-The ``/api/v1`` use cases serve the default agency's owner only (every client, until E2-12
-removes them); they refuse a client-limited scope (:func:`check_legacy_scope`) instead of
-filtering by it.
 
 Rows written before E2-01 get their agency from the tenancy backfill
 (``app.modules.ingestion.backfill_tenancy``, E2-02) through :func:`fill_tenancy_batch`; it and
@@ -121,24 +103,10 @@ from app.modules.ai.schemas import ScoringResult
 from app.modules.hiring import repository
 from app.modules.hiring import schemas_v2 as v2
 from app.modules.hiring.models import Application, Campaign, Client, ClientStatus
-from app.modules.hiring.schemas import (
-    CampaignCreate,
-    CampaignResponse,
-    CampaignStats,
-    CampaignUpdate,
-    CandidateDetail,
-    CandidateListItem,
-    GlobalStats,
-    JDParseRequest,
-    JDParseResponse,
-)
 from app.platform.sql import LIKE_ESCAPE, escape_like, uuid_array
-from app.platform.tenancy import DEFAULT_CLIENT_ID, AccessScope, agency_id_of, require_scope
+from app.platform.tenancy import AccessScope, agency_id_of, require_scope
 
 logger = structlog.get_logger()
-
-VALID_CATEGORIES = {"strong_match", "moderate_match", "weak_match", "rejected"}
-VALID_PIPELINE_STAGES = {"screened", "phone_call", "technical", "offer", "hired", "rejected_manual"}
 
 PROCESSING_STATUSES = ("pending", "extracting", "processing")
 TERMINAL_FAILED_STATUSES = ("failed", "quota_exceeded")
@@ -154,12 +122,13 @@ class HiringError(Exception):
 
 
 class NotFoundError(HiringError):
-    """The campaign, application, candidate or client does not exist, or is outside the
-    caller's scope (the same answer, spec §5.3)."""
+    """The campaign, application or client does not exist, or is outside the caller's scope (the
+    same answer, spec §5.3)."""
 
 
 class InvalidInputError(HiringError):
-    """The request names a category or pipeline stage outside the allowed vocabulary."""
+    """The request is invalid in a way its schema cannot check (e.g. clients that cannot be
+    granted)."""
 
 
 class InvalidFieldError(InvalidInputError):
@@ -184,15 +153,6 @@ def check_scope(db: AsyncSession, scope: AccessScope) -> None:
     """``scope`` must be of the session's agency (``TenantMismatch`` otherwise). The use case
     then keeps to the scope's clients (spec §5.3)."""
     require_scope(db, scope)
-
-
-def check_legacy_scope(db: AsyncSession, scope: AccessScope) -> None:
-    """For the ``/api/v1`` use cases, which serve the default agency's owner (every client)
-    until E2-12 removes them: :func:`check_scope`, and a client-limited scope is a programming
-    error (``ValueError``), never silently widened to every client."""
-    check_scope(db, scope)
-    if not scope.all_clients:
-        raise ValueError("the /api/v1 use cases take a scope of every client (default agency)")
 
 
 async def campaign_ids_in_scope(db: AsyncSession, scope: AccessScope) -> list[uuid.UUID] | None:
@@ -367,26 +327,6 @@ def _new_campaign(
     )
 
 
-async def create_campaign(
-    db: AsyncSession, scope: AccessScope, payload: CampaignCreate
-) -> Campaign:
-    """``/api/v1``: a campaign of the default agency, run for its default client "General" as
-    before E2-06 (v1 is frozen until E2-12)."""
-    check_legacy_scope(db, scope)
-    campaign = await repository.add_campaign(
-        db, _new_campaign(db, payload.model_dump(), DEFAULT_CLIENT_ID)
-    )
-    logger.info("campaign_created", id=str(campaign.id), title=campaign.title)
-    return campaign
-
-
-async def list_campaigns(
-    db: AsyncSession, scope: AccessScope, skip: int, limit: int
-) -> Sequence[Campaign]:
-    check_legacy_scope(db, scope)
-    return await repository.list_campaigns(db, skip, limit)
-
-
 async def _require_campaign(
     db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
 ) -> Campaign:
@@ -396,32 +336,11 @@ async def _require_campaign(
     return campaign
 
 
-async def get_campaign(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID
-) -> CampaignResponse:
-    """The campaign, without stats (``stats`` is ``None``; see :func:`campaign_stats`)."""
-    check_legacy_scope(db, scope)
-    campaign = await _require_campaign(db, scope, campaign_id)
-    return CampaignResponse.model_validate(campaign)
-
-
-async def update_campaign(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, payload: CampaignUpdate
-) -> Campaign:
-    """Apply the fields the client sent (unset fields are left alone)."""
-    check_legacy_scope(db, scope)
-    campaign = await _require_campaign(db, scope, campaign_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(campaign, field, value)
-    await repository.commit_and_refresh(db, campaign)
-    return campaign
-
-
 async def delete_campaign(db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID) -> None:
     """Delete the campaign and its applications (``applications.campaign_id ON DELETE
-    CASCADE``; their ``legacy_candidate_map`` rows go with them).
+    CASCADE``).
 
-    Flushes but does not commit: the caller (``app.api``) has ingestion delete the campaign's
+    Flushes but does not commit: the caller (``app.api.v2``) has ingestion delete the campaign's
     resumes in the same transaction and commits. Raises :class:`NotFoundError` for an unknown
     campaign or one outside the scope.
     """
@@ -431,147 +350,12 @@ async def delete_campaign(db: AsyncSession, scope: AccessScope, campaign_id: uui
     logger.info("campaign_deleted", id=str(campaign_id))
 
 
-# ── Stats ─────────────────────────────────────────────────────
-async def campaign_stats(
-    db: AsyncSession,
-    scope: AccessScope,
-    campaign_id: uuid.UUID,
-    resume_counts: Mapping[str, int],
-    profiles: "ResumeProfiles",
-) -> CampaignStats:
-    """Stats for one campaign, given its resume counts by status and its resumes' extractions
-    (both from ingestion).
-
-    The category counts and average scores are over the campaign's applications; the top skills
-    over the skills extracted from each application's current resume (what the legacy candidate
-    of that resume held), taken oldest application first so equal counts keep a stable order.
-    An unknown campaign id yields all-zero stats, not a 404.
-    """
-    check_legacy_scope(db, scope)
-    category_rows = await repository.application_category_stats(db, campaign_id)
-    resume_ids = await repository.campaign_resume_ids(db, campaign_id)
-    skills = await profiles.skill_lists(resume_ids) if resume_ids else {}
-    return build_campaign_stats(
-        resume_counts, category_rows, (skills.get(rid) for rid in resume_ids)
-    )
-
-
-def build_campaign_stats(
-    resume_counts: Mapping[str, int],
-    category_rows: Iterable[tuple[str | None, int, float | None]],
-    skill_lists: Iterable[list[str] | None],
-) -> CampaignStats:
-    """Aggregate a campaign's resume counts by status, application ``(category, count, average
-    score)`` rows and the applications' skill lists into :class:`CampaignStats`."""
-    cat_map: dict[str | None, int] = {}
-    avg_scores: list[float] = []
-    for category, count, avg in category_rows:
-        cat_map[category] = count
-        if avg:
-            avg_scores.append(avg)
-
-    # Top skills distribution
-    skill_counts: dict[str, int] = {}
-    for skills in skill_lists:
-        for skill in skills or []:
-            skill_counts[skill] = skill_counts.get(skill, 0) + 1
-
-    # Most frequent first; ties keep first-seen order (a reverse sort is still stable).
-    ranked = sorted(skill_counts.items(), key=lambda item: item[1], reverse=True)[:10]
-    top_skills: list[dict[str, Any]] = [{"skill": k, "count": v} for k, v in ranked]
-
-    total = sum(resume_counts.values())
-    quota_exceeded = resume_counts.get("quota_exceeded", 0)
-    return CampaignStats(
-        total_resumes=total,
-        total_processed=resume_counts.get("done", 0),
-        total_failed=resume_counts.get("failed", 0),
-        total_pending=resume_counts.get("pending", 0)
-        + resume_counts.get("extracting", 0)
-        + resume_counts.get("processing", 0),
-        total_quota_exceeded=quota_exceeded,
-        avg_score=round(sum(avg_scores) / len(avg_scores), 2) if avg_scores else None,
-        strong_match=cat_map.get("strong_match", 0),
-        moderate_match=cat_map.get("moderate_match", 0),
-        weak_match=cat_map.get("weak_match", 0),
-        rejected=cat_map.get("rejected", 0),
-        top_skills=top_skills,
-    )
-
-
-async def global_stats(
-    db: AsyncSession, scope: AccessScope, resume_counts: Mapping[str, int]
-) -> GlobalStats:
-    """Aggregate counts across all campaigns, given the resume counts by status (from
-    ingestion): single-table queries, no joins. ``total_candidates`` counts applications."""
-    check_legacy_scope(db, scope)
-    campaign_counts = await repository.campaign_status_counts(db, scope)
-    total_candidates = await repository.count_applications(db)
-    return build_global_stats(campaign_counts, resume_counts, total_candidates)
-
-
-def build_global_stats(
-    campaign_counts: Mapping[str, int],
-    resume_counts: Mapping[str, int],
-    total_candidates: int,
-) -> GlobalStats:
-    """Aggregate campaign and resume counts by status into :class:`GlobalStats`."""
-    return GlobalStats(
-        total_campaigns=sum(campaign_counts.values()),
-        active_campaigns=campaign_counts.get("active", 0),
-        closed_campaigns=campaign_counts.get("closed", 0),
-        archived_campaigns=campaign_counts.get("archived", 0),
-        total_resumes=sum(resume_counts.values()),
-        total_processed=resume_counts.get("done", 0),
-        total_processing=sum(resume_counts.get(s, 0) for s in PROCESSING_STATUSES),
-        total_failed=sum(resume_counts.get(s, 0) for s in TERMINAL_FAILED_STATUSES),
-        total_candidates=total_candidates,
-    )
-
-
-# ── Job description parsing ───────────────────────────────────
-async def parse_job_description(payload: JDParseRequest) -> JDParseResponse:
-    """Extract role title, seniority and skills from a job description with the AI service."""
-    try:
-        result = await ai_service.get_ai_service().parse_job_description(payload.job_description)
-        return JDParseResponse(
-            role_title=result.role_title, seniority=result.seniority, skills=result.skills
-        )
-    except ai_service.AIConfigurationError as e:
-        raise JDParseError(str(e)) from e
-    except Exception as e:
-        logger.error("jd_parse_failed", error=str(e))
-        raise JDParseError("Failed to parse job description") from e
-
-
-# ── Candidate filters (shared by the list and the CSV export) ──
-@dataclass(frozen=True)
-class CandidateFilters:
-    """The candidate list filters. ``None`` (or an empty string) means "don't filter"."""
-
-    campaign_id: uuid.UUID
-    skill: str | None = None
-    category: str | None = None
-    min_score: float | None = None
-    max_score: float | None = None
-    min_experience: float | None = None
-    search: str | None = None
-    pipeline_stage: str | None = None
-
-    def profile(self) -> "ProfileFilters":
-        """The filters on the resume's extracted profile, which ingestion evaluates."""
-        return ProfileFilters(
-            search=self.search or None,
-            skill=self.skill or None,
-            min_experience=self.min_experience,
-        )
-
-
+# ── The filters on the extraction snapshot ────────────────────
 @dataclass(frozen=True)
 class ProfileFilters:
-    """The list filters that read a resume's extraction snapshot (``resumes.extracted``), with
-    the legacy semantics (B2): ``search`` is contained in the name or the email, ``skill`` in
-    any one skill, both case-insensitively and with LIKE wildcards taken literally;
+    """The list filters that read a resume's extraction snapshot (``resumes.extracted``), which
+    ingestion evaluates (B2): ``search`` is contained in the name or the email, ``skill`` in any
+    one skill, both case-insensitively and with LIKE wildcards taken literally;
     ``min_experience`` is inclusive and never matches an unknown experience."""
 
     search: str | None = None
@@ -581,21 +365,6 @@ class ProfileFilters:
     @property
     def active(self) -> bool:
         return bool(self.search) or bool(self.skill) or self.min_experience is not None
-
-
-def build_application_filters(filters: CandidateFilters) -> list[ColumnElement[bool]]:
-    """The SQL ``WHERE`` clauses (to be AND-ed) on ``applications`` for ``filters`` (the profile
-    filters are not among them: see :meth:`CandidateFilters.profile`)."""
-    clauses: list[ColumnElement[bool]] = [Application.campaign_id == filters.campaign_id]
-    if filters.category:
-        clauses.append(Application.category == filters.category)
-    if filters.min_score is not None:
-        clauses.append(Application.score >= filters.min_score)
-    if filters.max_score is not None:
-        clauses.append(Application.score <= filters.max_score)
-    if filters.pipeline_stage:
-        clauses.append(Application.pipeline_stage == filters.pipeline_stage)
-    return clauses
 
 
 # ── Resume extractions (ingestion's data, E0-19) ──────────────
@@ -609,7 +378,7 @@ class ResumeOwner:
 
 
 class ResumeProfiles(Protocol):
-    """What the candidate endpoints need from ingestion's ``resumes`` (``app.api`` passes
+    """What the application use cases need from ingestion's ``resumes`` (``app.api.v2`` passes
     ``ingestion.service.resume_profiles(db)``). Unknown resume ids are left out of every answer."""
 
     async def extractions(
@@ -628,19 +397,15 @@ class ResumeProfiles(Protocol):
         """The extracted ``skills`` of each resume."""
         ...
 
-    async def owner(self, resume_id: uuid.UUID) -> ResumeOwner | None:
-        """The resume's campaign and Person, or ``None`` if it does not exist."""
-        ...
-
     async def names(self, resume_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str | None]:
         """The extracted ``name`` of each resume (the v2 list's ``sort=name``)."""
         ...
 
 
-# ── The legacy response, field by field (spec §7) ─────────────
-# From the extraction snapshot of the application's current resume: what the legacy candidate
-# of that resume held (the pre-switch pipeline copied the same ``ExtractionResult`` onto it).
-# A missing snapshot reads like the legacy placeholder row: no values, empty lists.
+# ── An application's fields from its resume's extraction (EPIC-00 spec §7) ──
+# From the extraction snapshot of the application's current resume (the pre-E0-19 pipeline
+# copied the same ``ExtractionResult`` onto the legacy candidate). A missing snapshot reads as no
+# values and empty lists.
 _SNAPSHOT_VALUES = ("name", "email", "phone", "github_url", "linkedin_url")
 _SNAPSHOT_LISTS = ("skills", "education", "work_experience", "certifications", "projects")
 
@@ -652,54 +417,9 @@ def _profile(extracted: Mapping[str, Any] | None) -> dict[str, Any]:
         value = snapshot.get(name)
         profile[name] = value if value is not None else []
     years = snapshot.get("years_of_experience")
-    # A float column on the legacy row; JSON may hold it as an integer.
+    # A float in the resources; JSON may hold it as an integer.
     profile["years_of_experience"] = float(years) if years is not None else None
     return profile
-
-
-def candidate_detail(
-    application: Application, extracted: Mapping[str, Any] | None
-) -> CandidateDetail:
-    """The legacy ``CandidateDetail`` of an application, given its resume's extraction."""
-    return CandidateDetail(
-        id=application.id,
-        resume_id=application.resume_id,
-        campaign_id=application.campaign_id,
-        **_profile(extracted),
-        summary=application.summary,
-        strengths=application.strengths,
-        weaknesses=application.weaknesses,
-        missing_skills=application.missing_skills,
-        recommendation=application.recommendation,
-        score=application.score,
-        category=application.category,
-        notes=application.notes,
-        pipeline_stage=application.pipeline_stage,
-        score_breakdown=application.score_breakdown,
-        created_at=application.created_at,
-        updated_at=application.updated_at,
-    )
-
-
-def candidate_list_item(
-    application: Application, extracted: Mapping[str, Any] | None
-) -> CandidateListItem:
-    """The legacy ``CandidateListItem`` of an application, given its resume's extraction."""
-    profile = _profile(extracted)
-    return CandidateListItem(
-        id=application.id,
-        resume_id=application.resume_id,
-        campaign_id=application.campaign_id,
-        name=profile["name"],
-        email=profile["email"],
-        skills=profile["skills"],
-        years_of_experience=profile["years_of_experience"],
-        score=application.score,
-        category=application.category,
-        summary=application.summary,
-        pipeline_stage=application.pipeline_stage,
-        created_at=application.created_at,
-    )
 
 
 async def _snapshots(
@@ -711,55 +431,8 @@ async def _snapshots(
     return await profiles.extractions([a.resume_id for a in applications])
 
 
-async def _detail(profiles: ResumeProfiles, application: Application) -> CandidateDetail:
-    snapshots = await _snapshots(profiles, [application])
-    return candidate_detail(application, snapshots.get(application.resume_id))
-
-
-# ── Candidates ────────────────────────────────────────────────
-async def _find_applications(
-    db: AsyncSession,
-    filters: CandidateFilters,
-    profiles: ResumeProfiles,
-    *,
-    offset: int | None = None,
-    limit: int | None = None,
-) -> Sequence[Application]:
-    """The applications matching ``filters``, best score first (unscored last).
-
-    The application filters run in hiring's query. The profile filters (search, skill,
-    experience) read ingestion's extractions: first the resume ids of the applications that
-    pass the application filters, then ingestion keeps those whose extraction matches, then the
-    page is read restricted to them. Without profile filters that is one query.
-    """
-    clauses = build_application_filters(filters)
-    profile_filters = filters.profile()
-    if profile_filters.active:
-        resume_ids = await repository.application_resume_ids(db, clauses)
-        matched = await profiles.matching(resume_ids, profile_filters) if resume_ids else ()
-        if not matched:
-            return []
-        clauses.append(Application.resume_id == any_(uuid_array(matched)))
-    return await repository.list_applications(db, clauses, offset=offset, limit=limit)
-
-
-async def list_candidates(
-    db: AsyncSession,
-    scope: AccessScope,
-    filters: CandidateFilters,
-    page: int,
-    page_size: int,
-    profiles: ResumeProfiles,
-) -> list[CandidateListItem]:
-    """One page of matching candidates (applications), best score first (unscored last)."""
-    check_legacy_scope(db, scope)
-    applications = await _find_applications(
-        db, filters, profiles, offset=(page - 1) * page_size, limit=page_size
-    )
-    snapshots = await _snapshots(profiles, applications)
-    return [candidate_list_item(a, snapshots.get(a.resume_id)) for a in applications]
-
-
+# ── The CSV export ────────────────────────────────────────────
+# The columns of the pre-E1 export, which v2's keeps (EPIC-01 spec §6).
 CSV_FIELDS = [
     "Name",
     "Email",
@@ -777,180 +450,38 @@ CSV_FIELDS = [
 ]
 
 
-async def export_candidates_csv(
-    db: AsyncSession, scope: AccessScope, filters: CandidateFilters, profiles: ResumeProfiles
-) -> str:
-    """All matching candidates (no paging) as a CSV document, best score first."""
-    check_legacy_scope(db, scope)
-    applications = await _find_applications(db, filters, profiles)
-    snapshots = await _snapshots(profiles, applications)
-    return render_candidates_csv(
-        candidate_detail(a, snapshots.get(a.resume_id)) for a in applications
-    )
-
-
 def _join(values: Sequence[Any] | None) -> str:
     return " | ".join(str(v) for v in (values or []))
 
 
-def render_candidates_csv(candidates: Iterable[CandidateDetail]) -> str:
+def render_applications_csv(
+    rows: Iterable[tuple[Application, Mapping[str, Any] | None]],
+) -> str:
+    """Each ``(application, its current resume's extraction)`` as one CSV line."""
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=CSV_FIELDS)
     writer.writeheader()
-    for c in candidates:
+    for application, extracted in rows:
+        profile = _profile(extracted)
+        years = profile["years_of_experience"]
         writer.writerow(
             {
-                "Name": c.name or "",
-                "Email": c.email or "",
-                "Phone": c.phone or "",
-                "Score": f"{c.score:.0f}" if c.score is not None else "",
-                "Category": c.category or "",
-                "Pipeline Stage": c.pipeline_stage or "",
-                "Years Experience": f"{c.years_of_experience:.1f}"
-                if c.years_of_experience is not None
-                else "",
-                "Skills": _join(c.skills),
-                "Missing Skills": _join(c.missing_skills),
-                "Strengths": _join(c.strengths),
-                "Recommendation": c.recommendation or "",
-                "LinkedIn URL": c.linkedin_url or "",
-                "GitHub URL": c.github_url or "",
+                "Name": profile["name"] or "",
+                "Email": profile["email"] or "",
+                "Phone": profile["phone"] or "",
+                "Score": f"{application.score:.0f}" if application.score is not None else "",
+                "Category": application.category or "",
+                "Pipeline Stage": application.pipeline_stage or "",
+                "Years Experience": f"{years:.1f}" if years is not None else "",
+                "Skills": _join(profile["skills"]),
+                "Missing Skills": _join(application.missing_skills),
+                "Strengths": _join(application.strengths),
+                "Recommendation": application.recommendation or "",
+                "LinkedIn URL": profile["linkedin_url"] or "",
+                "GitHub URL": profile["github_url"] or "",
             }
         )
     return output.getvalue()
-
-
-async def _require_application(
-    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID
-) -> Application:
-    """The application ``candidate_id`` names: its own id, or a merged legacy candidate's id
-    redirected by ``legacy_candidate_map``."""
-    application = await repository.get_application(db, scope, candidate_id)
-    if not application:
-        raise NotFoundError("Candidate not found")
-    return application
-
-
-async def get_candidate(
-    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID, profiles: ResumeProfiles
-) -> CandidateDetail:
-    """The candidate (application) with this id, or the application a merged legacy candidate
-    with this id was redirected to; the response carries the application's id."""
-    check_legacy_scope(db, scope)
-    return await _detail(profiles, await _require_application(db, scope, candidate_id))
-
-
-async def get_candidate_by_resume(
-    db: AsyncSession, scope: AccessScope, resume_id: uuid.UUID, profiles: ResumeProfiles
-) -> CandidateDetail:
-    """The application a resume belongs to: the one it is the current resume of, else (an
-    older resume of a merged application) the application of its Person in its campaign.
-    404 while the resume is not processed yet (no application)."""
-    check_legacy_scope(db, scope)
-    application = await repository.get_application_by_resume(db, resume_id)
-    if application is None:
-        owner = await profiles.owner(resume_id)
-        if owner is not None and owner.person_id is not None:
-            application = await repository.get_application_of_person(
-                db, owner.campaign_id, owner.person_id
-            )
-    if application is None:
-        raise NotFoundError("Candidate not yet processed")
-    return await _detail(profiles, application)
-
-
-def _check_category(category: str) -> None:
-    if category not in VALID_CATEGORIES:
-        raise InvalidInputError(
-            f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}",
-        )
-
-
-def _check_pipeline_stage(stage: str) -> None:
-    if stage not in VALID_PIPELINE_STAGES:
-        raise InvalidInputError(
-            f"Invalid stage. Must be one of: {', '.join(sorted(VALID_PIPELINE_STAGES))}",
-        )
-
-
-async def update_candidate_category(
-    db: AsyncSession,
-    scope: AccessScope,
-    candidate_id: uuid.UUID,
-    category: str,
-    profiles: ResumeProfiles,
-) -> CandidateDetail:
-    """Recruiter override of the AI category. The value is checked before the lookup."""
-    check_legacy_scope(db, scope)
-    _check_category(category)
-    application = await _require_application(db, scope, candidate_id)
-    application.category = category
-    await repository.commit_and_refresh(db, application)
-    logger.info(
-        "category_overridden",
-        candidate_id=str(candidate_id),
-        application_id=str(application.id),
-        category=category,
-    )
-    return await _detail(profiles, application)
-
-
-async def update_candidate_notes(
-    db: AsyncSession,
-    scope: AccessScope,
-    candidate_id: uuid.UUID,
-    notes: str,
-    profiles: ResumeProfiles,
-) -> CandidateDetail:
-    check_legacy_scope(db, scope)
-    application = await _require_application(db, scope, candidate_id)
-    application.notes = notes
-    await repository.commit_and_refresh(db, application)
-    logger.info("notes_updated", candidate_id=str(candidate_id), application_id=str(application.id))
-    return await _detail(profiles, application)
-
-
-async def update_candidate_pipeline(
-    db: AsyncSession,
-    scope: AccessScope,
-    candidate_id: uuid.UUID,
-    stage: str,
-    profiles: ResumeProfiles,
-) -> CandidateDetail:
-    """Move one candidate to a pipeline stage. The stage is checked before the lookup."""
-    check_legacy_scope(db, scope)
-    _check_pipeline_stage(stage)
-    application = await _require_application(db, scope, candidate_id)
-    application.pipeline_stage = stage
-    await repository.commit_and_refresh(db, application)
-    logger.info(
-        "pipeline_updated",
-        candidate_id=str(candidate_id),
-        application_id=str(application.id),
-        stage=stage,
-    )
-    return await _detail(profiles, application)
-
-
-async def bulk_update_pipeline(
-    db: AsyncSession,
-    scope: AccessScope,
-    campaign_id: uuid.UUID,
-    candidate_ids: Sequence[uuid.UUID],
-    stage: str,
-) -> int:
-    """Move the campaign's candidates (applications) that ``candidate_ids`` name to ``stage``;
-    returns how many applications."""
-    check_legacy_scope(db, scope)
-    _check_pipeline_stage(stage)
-    applications = await repository.applications_in_campaign(
-        db, campaign_id, candidate_ids, for_update=True
-    )
-    for application in applications:
-        application.pipeline_stage = stage
-    await repository.commit(db)
-    logger.info("bulk_pipeline_updated", count=len(applications), stage=stage)
-    return len(applications)
 
 
 @dataclass(frozen=True)
@@ -962,36 +493,6 @@ class DeletedApplication:
     campaign_id: uuid.UUID
     person_id: uuid.UUID
     resume_id: uuid.UUID
-
-
-async def bulk_delete_candidates(
-    db: AsyncSession, scope: AccessScope, campaign_id: uuid.UUID, candidate_ids: Sequence[uuid.UUID]
-) -> list[DeletedApplication]:
-    """Delete the campaign's candidates (applications) that ``candidate_ids`` name (others are
-    ignored).
-
-    Flushes but does not commit: the caller deletes their resumes in the same transaction and
-    commits.
-    """
-    check_legacy_scope(db, scope)
-    applications = await repository.applications_in_campaign(
-        db, campaign_id, candidate_ids, for_update=True
-    )
-    deleted = await _delete_applications(db, applications)
-    logger.info("bulk_candidates_deleted", count=len(deleted))
-    return deleted
-
-
-async def delete_candidate(
-    db: AsyncSession, scope: AccessScope, candidate_id: uuid.UUID
-) -> DeletedApplication:
-    """Delete one candidate (application). Flushes but does not commit: the caller deletes its
-    resumes in the same transaction and commits."""
-    check_legacy_scope(db, scope)
-    application = await _require_application(db, scope, candidate_id)
-    (deleted,) = await _delete_applications(db, [application])
-    logger.info("candidate_deleted", candidate_id=str(candidate_id), application_id=str(deleted.id))
-    return deleted
 
 
 async def _delete_applications(
@@ -1010,13 +511,10 @@ async def _delete_applications(
 
 
 # ══ /api/v2 resources (E1-02, EPIC-01 spec §6) ════════════════
-# The v2 use cases return the resources of ``schemas_v2``. They share the rules above (filters on
-# the extraction snapshot, field sources, deletes) and differ from the legacy ones where v2
-# fixes a recorded bug: unknown campaigns are a 404 (B7), the export applies every list filter
-# (B8), ``avg_score`` is the mean over the scored applications (B9), and invalid values are
-# rejected by the request schema (422) before they get here (B5, B10). Ids are application ids
-# only: v2 does not resolve merged legacy candidate ids (``legacy_candidate_map``), which only
-# the v1 compatibility layer needs.
+# The v2 use cases return the resources of ``schemas_v2``. They fixed the bugs the pre-E1 API
+# recorded: unknown campaigns are a 404 (B7), the export applies every list filter (B8),
+# ``avg_score`` is the mean over the scored applications (B9), and invalid values are rejected by
+# the request schema (422) before they get here (B5, B10).
 STRONG_MATCH = v2.ApplicationCategory.strong_match.value
 REJECTED_STAGE = v2.PipelineStage.rejected_manual.value
 TOP_SKILLS = 10
@@ -1033,7 +531,7 @@ class ResumeTally:
 
 
 class ResumeTallies(Protocol):
-    """The resume tallies of several campaigns (``app.api`` passes
+    """The resume tallies of several campaigns (``app.api.v2`` passes
     ``ingestion.service.resume_tallies(db)``)."""
 
     async def by_campaign(
@@ -1295,8 +793,8 @@ def application_counts(
 
 
 def mean_score(category_rows: Iterable[tuple[str | None, int, int, float | None]]) -> float | None:
-    """The mean over every scored application, to 2 decimals (the v1 ``avg_score`` is a mean of
-    per-category means that also drops a 0 mean: B9)."""
+    """The mean over every scored application, to 2 decimals (the pre-E1 ``avg_score`` was a mean
+    of per-category means that also dropped a 0 mean: B9)."""
     scored = 0
     total = 0.0
     for _, _, n_scored, score_sum in category_rows:
@@ -1344,10 +842,17 @@ async def workspace_stats(
 
 
 async def parse_job_description_v2(payload: v2.JobDescription) -> v2.ParsedJobDescription:
-    parsed = await parse_job_description(JDParseRequest(job_description=payload.job_description))
-    return v2.ParsedJobDescription(
-        role_title=parsed.role_title, seniority=parsed.seniority, skills=parsed.skills
-    )
+    """Extract role title, seniority and skills from a job description with the AI service."""
+    try:
+        result = await ai_service.get_ai_service().parse_job_description(payload.job_description)
+        return v2.ParsedJobDescription(
+            role_title=result.role_title, seniority=result.seniority, skills=result.skills
+        )
+    except ai_service.AIConfigurationError as e:
+        raise JDParseError(str(e)) from e
+    except Exception as e:
+        logger.error("jd_parse_failed", error=str(e))
+        raise JDParseError("Failed to parse job description") from e
 
 
 # ── v2: applications ──────────────────────────────────────────
@@ -1355,9 +860,8 @@ async def parse_job_description_v2(payload: v2.JobDescription) -> v2.ParsedJobDe
 class ApplicationQuery:
     """The application list (and export) filters of one campaign. Empty means "don't filter";
     ``categories`` / ``stages`` match any of their values; ``q``, ``skill`` and
-    ``min_experience`` read the extraction snapshot, as the legacy ``search`` / ``skill`` /
-    ``min_experience`` do (:class:`ProfileFilters`); ``ids`` restricts to these applications
-    (the export of a selection)."""
+    ``min_experience`` read the extraction snapshot (:class:`ProfileFilters`); ``ids`` restricts
+    to these applications (the export of a selection)."""
 
     campaign_id: uuid.UUID
     q: str | None = None
@@ -1514,14 +1018,12 @@ async def export_applications_csv(
     db: AsyncSession, scope: AccessScope, query: ApplicationQuery, profiles: ResumeProfiles
 ) -> str:
     """Every matching application (no paging) as CSV, in the query's order, with the columns
-    of the legacy export (:data:`CSV_FIELDS`). 404 for an unknown campaign."""
+    of :data:`CSV_FIELDS`. 404 for an unknown campaign."""
     check_scope(db, scope)
     await _require_campaign(db, scope, query.campaign_id)
     applications, _ = await _application_page(db, query, profiles, offset=None, limit=None)
     snapshots = await _snapshots(profiles, applications)
-    return render_candidates_csv(
-        candidate_detail(a, snapshots.get(a.resume_id)) for a in applications
-    )
+    return render_applications_csv((a, snapshots.get(a.resume_id)) for a in applications)
 
 
 async def _require_application_v2(
@@ -1867,9 +1369,3 @@ def fill_tenancy_batch(
 def count_tenancy_gaps(db: Session, table: str) -> int:
     """Rows of ``table`` still without an agency (campaigns: or without a client)."""
     return repository.count_tenancy_gaps_sync(db, table)
-
-
-def legacy_candidate_map(db: Session) -> dict[uuid.UUID, uuid.UUID]:
-    """Every ``legacy_candidate_map`` row, ``candidate_id -> application_id`` (the historical id
-    map of merged legacy candidates, spec §7)."""
-    return repository.legacy_map_rows_sync(db)

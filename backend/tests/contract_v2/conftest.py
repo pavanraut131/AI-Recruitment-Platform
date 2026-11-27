@@ -1,8 +1,8 @@
 """Fixtures for the ``/api/v2`` contract tests. See README.md in this folder.
 
-Same snapshot pattern as the v1 characterization tests: syrupy Amber snapshots through the same
-masking serializer (``tests.snapshot_utils``), and the same database, fakes and
-``client`` (``tests/conftest.py``; it overrides ``get_db`` in the mounted v2 app too).
+Syrupy Amber snapshots through the masking serializer (``tests.snapshot_utils``), and the shared
+database, fakes and ``client`` (``tests/conftest.py``; it overrides ``get_db`` in the mounted v2
+app too).
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 All templates are ``str.format`` templates: literal braces are escaped as ``{{ }}``, and values
 substituted into them (resume text, a job description) are not re-interpreted, so braces inside
 them are safe. The exact text is part of the recorded behaviour: the parse-jd prompt is pinned
-by ``tests/characterization`` (``test_parse_jd_prompt``).
+by ``tests/test_parse_jd.py`` (``test_the_parse_jd_prompt_is_pinned``).
 """
 
 import json

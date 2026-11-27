@@ -1,142 +1,128 @@
-"""Unit tests for the pure parts of ``app.modules.hiring.service`` and the router's error mapping.
+"""Unit tests for the pure parts of ``app.modules.hiring.service``, without a database.
 
-The endpoints themselves are pinned by the characterization snapshots; these cover the business
-rules that E0-09 pulled out of the routers, without a database.
+The endpoints themselves are pinned by the contract snapshots (``tests/contract_v2``); these
+cover the business rules: which filters read the extraction snapshot, the mean score (B9), the
+top skills and the CSV row of an application. (Until E2-12 they covered the v1 stats builders,
+the v1 candidate filters and the v1 router's error mapping, removed with v1.)
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
+from datetime import UTC, datetime
 
-import pytest
-from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 
-from app.modules.hiring import router, service
+from app.modules.hiring import service
+from app.modules.hiring.models import Application
+from app.modules.hiring.schemas_v2 import SkillCount
 
 
-def test_build_campaign_stats_aggregates_counts_scores_and_skills() -> None:
-    stats = service.build_campaign_stats(
-        {
-            "done": 3,
-            "failed": 1,
-            "pending": 1,
-            "extracting": 1,
-            "processing": 2,
-            "quota_exceeded": 1,
-        },
-        [("strong_match", 2, 90.0), ("rejected", 1, 10.0), (None, 4, None)],
-        [["Go", "Python"], ["Python"], None, []],
-    )
-
-    assert stats.total_resumes == 9
-    assert stats.total_processed == 3
-    assert stats.total_failed == 1
-    assert stats.total_pending == 4
-    assert stats.total_quota_exceeded == 1
-    assert stats.avg_score == 50.0  # mean of the per-category averages, as before
-    assert (stats.strong_match, stats.moderate_match, stats.weak_match, stats.rejected) == (
-        2,
-        0,
-        0,
-        1,
-    )
-    assert stats.top_skills == [{"skill": "Python", "count": 2}, {"skill": "Go", "count": 1}]
-
-
-def test_build_campaign_stats_empty_and_zero_average() -> None:
-    # A per-category average of 0.0 is falsy and has always been left out of avg_score.
-    stats = service.build_campaign_stats({}, [("rejected", 1, 0.0)], [])
-    assert stats.total_resumes == 0
-    assert stats.avg_score is None
-    assert stats.top_skills == []
-
-
-def test_build_campaign_stats_top_skills_are_capped_and_ties_keep_first_seen_order() -> None:
-    skills = [f"s{i:02}" for i in range(12)]
-    stats = service.build_campaign_stats({}, [], [skills, ["s11"]])
-    assert stats.top_skills[0] == {"skill": "s11", "count": 2}
-    assert [s["skill"] for s in stats.top_skills[1:]] == skills[:9]
-
-
-def test_build_global_stats() -> None:
-    stats = service.build_global_stats(
-        {"active": 2, "closed": 1, "paused": 1},
-        {"pending": 1, "extracting": 1, "processing": 1, "done": 4, "failed": 2},
-        7,
-    )
-    assert stats.model_dump() == {
-        "total_campaigns": 4,
-        "active_campaigns": 2,
-        "closed_campaigns": 1,
-        "archived_campaigns": 0,
-        "total_resumes": 9,
-        "total_processed": 4,
-        "total_processing": 3,
-        "total_failed": 2,
-        "total_candidates": 7,
-    }
-
-
-def _sql(filters: service.CandidateFilters) -> list[str]:
+# ── The application filters ───────────────────────────────────
+def _sql(query: service.ApplicationQuery) -> list[str]:
     dialect = postgresql.dialect()
-    return [str(c.compile(dialect=dialect)) for c in service.build_application_filters(filters)]
+    return [str(c.compile(dialect=dialect)) for c in service._application_clauses(query)]
 
 
-def test_candidate_filters_default_to_the_campaign_only() -> None:
-    filters = service.CandidateFilters(campaign_id=uuid.uuid4())
-    assert _sql(filters) == ["applications.campaign_id = %(campaign_id_1)s::UUID"]
-    assert not filters.profile().active
+def test_application_filters_default_to_the_campaign_only() -> None:
+    query = service.ApplicationQuery(campaign_id=uuid.uuid4())
+    assert _sql(query) == ["applications.campaign_id = %(campaign_id_1)s::UUID"]
+    assert not query.profile().active
 
 
-def test_candidate_filters_split_into_application_and_profile_filters() -> None:
-    filters = service.CandidateFilters(
+def test_application_filters_split_into_application_and_profile_filters() -> None:
+    query = service.ApplicationQuery(
         campaign_id=uuid.uuid4(),
-        skill="py",
-        category="strong_match",
+        q="ada",
+        categories=["strong_match"],
+        stages=["offer"],
         min_score=1,
         max_score=2,
+        skill="py",
         min_experience=3,
-        search="ada",
-        pipeline_stage="offer",
+        ids=[uuid.uuid4()],
     )
-    # On applications: campaign, category, score range, pipeline stage.
-    clauses = _sql(filters)
-    assert len(clauses) == 5
+    # On applications: campaign, categories, stages, score range, ids.
+    clauses = _sql(query)
+    assert len(clauses) == 6
     assert all(c.startswith("applications.") for c in clauses)
-    # On the resume's extraction snapshot (ingestion): search, skill, experience.
-    assert filters.profile() == service.ProfileFilters(search="ada", skill="py", min_experience=3)
-    assert filters.profile().active
+    # On the resume's extraction snapshot (ingestion): q, skill, experience.
+    assert query.profile() == service.ProfileFilters(search="ada", skill="py", min_experience=3)
+    assert query.profile().active
 
 
-def test_empty_string_filters_are_ignored() -> None:
-    filters = service.CandidateFilters(
-        campaign_id=uuid.uuid4(), skill="", category="", search="", pipeline_stage=""
-    )
-    assert len(service.build_application_filters(filters)) == 1
-    assert filters.profile() == service.ProfileFilters()
-    assert not filters.profile().active
+def test_empty_string_profile_filters_are_ignored() -> None:
+    query = service.ApplicationQuery(campaign_id=uuid.uuid4(), q="", skill="")
+    assert query.profile() == service.ProfileFilters()
+    assert not query.profile().active
 
 
 def test_zero_min_experience_is_a_profile_filter() -> None:
-    filters = service.CandidateFilters(campaign_id=uuid.uuid4(), min_experience=0)
-    assert filters.profile().active
+    query = service.ApplicationQuery(campaign_id=uuid.uuid4(), min_experience=0)
+    assert query.profile().active
 
 
-@pytest.mark.parametrize(
-    ("error", "status_code"),
-    [
-        (service.NotFoundError("Candidate not found"), 404),
-        (service.InvalidInputError("Invalid stage. Must be one of: x"), 400),
-        (service.JDParseError("Failed to parse job description"), 500),
-    ],
-)
-def test_router_maps_service_errors_to_http(error: service.HiringError, status_code: int) -> None:
-    with pytest.raises(HTTPException) as excinfo, router._http_errors():
-        raise error
-    assert excinfo.value.status_code == status_code
-    assert excinfo.value.detail == error.detail
+# ── Stats ─────────────────────────────────────────────────────
+def test_the_mean_score_is_over_every_scored_application() -> None:
+    # (category, applications, scored, sum of scores): a 0 mean counts (B9).
+    rows = [("strong_match", 2, 2, 180.0), ("rejected", 1, 1, 0.0), (None, 4, 0, None)]
+    assert service.mean_score(rows) == 60.0
+    assert service.mean_score([(None, 3, 0, None)]) is None
 
 
-def test_every_service_error_has_a_status_code() -> None:
-    assert set(router._STATUS_CODES) == set(service.HiringError.__subclasses__())
+def test_top_skills_are_capped_flag_required_ones_and_keep_first_seen_order_on_ties() -> None:
+    skills = [f"s{i:02}" for i in range(12)]
+    top = service.top_skills([skills, ["s11"], None, []], required=["S03"])
+    assert top[0] == SkillCount(skill="s11", count=2, required=False)
+    assert [s.skill for s in top[1:]] == skills[:9]
+    assert [s.skill for s in top if s.required] == ["s03"]
+
+
+# ── The CSV export ────────────────────────────────────────────
+def test_an_applications_csv_row_takes_per_resume_facts_from_its_snapshot() -> None:
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    application = Application(
+        id=uuid.uuid4(),
+        campaign_id=uuid.uuid4(),
+        person_id=uuid.uuid4(),
+        resume_id=uuid.uuid4(),
+        score=87.5,
+        category="strong_match",
+        pipeline_stage="offer",
+        strengths=["Python", "APIs"],
+        weaknesses=[],
+        missing_skills=["Go"],
+        recommendation="Proceed",
+        created_at=at,
+        updated_at=at,
+    )
+    extracted = {
+        "name": "Ada",
+        "email": "ada@example.com",
+        "skills": ["Python", "SQL"],
+        "years_of_experience": 4,
+        "linkedin_url": "https://linkedin.example/ada",
+    }
+    text = service.render_applications_csv([(application, extracted), (application, None)])
+
+    rows = list(csv.DictReader(io.StringIO(text)))
+    assert list(rows[0]) == service.CSV_FIELDS
+    assert rows[0] == {
+        "Name": "Ada",
+        "Email": "ada@example.com",
+        "Phone": "",
+        "Score": "88",
+        "Category": "strong_match",
+        "Pipeline Stage": "offer",
+        "Years Experience": "4.0",
+        "Skills": "Python | SQL",
+        "Missing Skills": "Go",
+        "Strengths": "Python | APIs",
+        "Recommendation": "Proceed",
+        "LinkedIn URL": "https://linkedin.example/ada",
+        "GitHub URL": "",
+    }
+    # Without a snapshot: no per-resume facts, the application's own fields still there.
+    assert (rows[1]["Name"], rows[1]["Skills"], rows[1]["Score"]) == ("", "", "88")
