@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react"
+import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Schema } from "@/lib/api/client"
@@ -7,7 +7,7 @@ import { deferred, json, problem, renderWithProviders, toApiCall, type ApiCall }
 
 import { Home } from "./home"
 import { HOME_POLL_MS, homeQuery } from "./queries"
-import { greeting, summarySentence } from "./summary"
+import { homeFacts } from "./summary"
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -155,20 +155,17 @@ describe("Home", () => {
     expect(screen.getAllByRole("link", { name: "New campaign" })[0].getAttribute("href")).toBe("/campaigns/new")
   })
 
-  it("greets by the time of day and sums the day up in one sentence", async () => {
+  it("shows its title and the day's numbers as one row, then the date", async () => {
     installHomeApi({ home: () => json(HOME) })
     renderHome()
 
-    expect(await screen.findByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)$/ })).toBeTruthy()
-    // 5 + 0 new resumes over the two campaigns Home lists (both of the 2 open ones).
-    expect(
-      await screen.findByText(
-        (_, element) =>
-          element?.tagName === "P" &&
-          element.textContent ===
-            "7 candidates are waiting for a first look across 2 open campaigns, and 5 resumes came in over the last day.",
-      ),
-    ).toBeTruthy()
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeTruthy()
+    // 5 + 0 new resumes over the two campaigns Home lists (both of the 2 open ones); the date comes last.
+    const today = await screen.findByRole("list", { name: "Today" })
+    const items = () => within(today).getAllByRole("listitem").map((item) => item.textContent)
+    await waitFor(() => expect(items()).toHaveLength(4))
+    expect(items().slice(0, 3)).toEqual(["7 waiting for a first look", "2 open campaigns", "5 new resumes today"])
+    expect(items()[3]).toMatch(/^[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+$/)
   })
 
   it("lists open campaigns as rows with the counts the API gives, linking to each workspace", async () => {
@@ -265,7 +262,7 @@ describe("Home", () => {
 
     const campaigns = await screen.findByRole("region", { name: "Open campaigns" })
     expect(within(campaigns).getByText(/No open campaigns/)).toBeTruthy()
-    expect(screen.getByText("No campaigns are open.")).toBeTruthy()
+    expect(screen.getByText("No campaigns are open")).toBeTruthy()
     expect(screen.queryByText("Create your first campaign")).toBeNull()
   })
 
@@ -293,44 +290,42 @@ describe("Home", () => {
   })
 })
 
-describe("summarySentence", () => {
+describe("homeFacts", () => {
   const home = (newToday: number[]): HomeData => ({
     ...EMPTY_HOME,
     active_campaigns: newToday.map((n, index) =>
       makeCampaign({ id: `c${index}`, counts: { ...makeCampaign().counts, new_resumes_24h: n } }),
     ),
   })
-  const text = (parts: ReturnType<typeof summarySentence>) => (parts ? parts.lead + parts.rest : null)
+  const text = (facts: ReturnType<typeof homeFacts>) =>
+    facts ? facts.map((fact) => (fact.count === null ? fact.label : `${fact.count.toLocaleString("en-GB")} ${fact.label}`)) : null
 
   it("leads with the candidates waiting for a first look", () => {
-    expect(text(summarySentence(home([0, 0]), stats({ active: 2, unreviewed: 1 })))).toBe(
-      "1 candidate is waiting for a first look across 2 open campaigns.",
-    )
-    expect(text(summarySentence(home([2, 1]), stats({ active: 2, unreviewed: 1200 })))).toBe(
-      "1,200 candidates are waiting for a first look across 2 open campaigns, and 3 resumes came in over the last day.",
-    )
+    expect(text(homeFacts(home([0, 0]), stats({ active: 2, unreviewed: 1 })))).toEqual([
+      "1 waiting for a first look",
+      "2 open campaigns",
+    ])
+    expect(text(homeFacts(home([2, 1]), stats({ active: 1, unreviewed: 1200 })))).toEqual([
+      "1,200 waiting for a first look",
+      "1 open campaign",
+      "3 new resumes today",
+    ])
   })
 
   it("leaves out the new resumes when Home does not list every open campaign", () => {
-    expect(text(summarySentence(home([4]), stats({ total: 12, active: 11, unreviewed: 3 })))).toBe(
-      "3 candidates are waiting for a first look across 11 open campaigns.",
-    )
+    expect(text(homeFacts(home([4]), stats({ total: 12, active: 11, unreviewed: 3 })))).toEqual([
+      "3 waiting for a first look",
+      "11 open campaigns",
+    ])
   })
 
   it("covers a clear desk, no open campaigns and a first run", () => {
-    expect(text(summarySentence(home([0]), stats({ active: 1, unreviewed: 0 })))).toBe(
-      "Every candidate has had a first look across 1 open campaign.",
-    )
-    expect(summarySentence(EMPTY_HOME, stats({ total: 3, active: 0 }))?.lead).toBe("No campaigns are open.")
-    expect(summarySentence(EMPTY_HOME, stats({ total: 0, active: 0 }))).toBeNull()
-  })
-})
-
-describe("greeting", () => {
-  it("follows the hour", () => {
-    expect(greeting(6)).toBe("Good morning")
-    expect(greeting(12)).toBe("Good afternoon")
-    expect(greeting(18)).toBe("Good evening")
+    expect(text(homeFacts(home([0]), stats({ active: 1, unreviewed: 0 })))).toEqual([
+      "Everyone has had a first look",
+      "1 open campaign",
+    ])
+    expect(text(homeFacts(EMPTY_HOME, stats({ total: 3, active: 0 })))).toEqual(["No campaigns are open"])
+    expect(homeFacts(EMPTY_HOME, stats({ total: 0, active: 0 }))).toBeNull()
   })
 })
 
