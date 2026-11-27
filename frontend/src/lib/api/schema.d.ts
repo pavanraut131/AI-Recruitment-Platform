@@ -162,6 +162,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/oidc/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete Oidc Login
+         * @description Where Google or Microsoft send the browser back (not called by the frontend). Checks
+         *     `state` against the flow's cookie, exchanges `code`, validates the ID token, finds the
+         *     account (a linked identity, the invitation, or an existing account with the address the
+         *     provider verified), then redirects: signed in to `next`, or to the login page with an
+         *     `error` (`OidcLoginError`). Any session cookie the browser sent is revoked; the flow's
+         *     cookie is deleted either way. 404 for a provider that is not configured.
+         */
+        get: operations["completeOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Oidc Login
+         * @description Start signing in with Google or Microsoft (OpenID Connect, authorization code + PKCE).
+         *     Sets a short-lived, encrypted cookie for the flow (10 minutes); navigate the browser to
+         *     `authorization_url`. The provider sends it back to `completeOidcLogin`. With
+         *     `invitation_token`, signing in also accepts that invitation. 404 for a provider that is not
+         *     configured (see `listAuthProviders`); 410 when the invitation is no longer valid; 429 with
+         *     Retry-After when throttled; 502 when the provider cannot be reached.
+         */
+        post: operations["startOidcLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/password-reset": {
         parameters: {
             query?: never;
@@ -202,6 +252,27 @@ export interface paths {
          *     does not meet the policy (the link still works).
          */
         post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Auth Providers
+         * @description The sign-in providers this deployment offers, for "Continue with Google / Microsoft"
+         *     buttons. Only configured ones are listed; the others' endpoints answer 404.
+         */
+        get: operations["listAuthProviders"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -976,6 +1047,26 @@ export interface components {
             /** Notes */
             notes?: string | null;
             pipeline_stage?: components["schemas"]["PipelineStage"] | null;
+        };
+        /**
+         * AuthProvider
+         * @description A sign-in provider this deployment offers.
+         */
+        AuthProvider: {
+            id: components["schemas"]["OidcProvider"];
+            /**
+             * Name
+             * @description For the button: "Continue with {name}".
+             */
+            name: string;
+        };
+        /** AuthProviders */
+        AuthProviders: {
+            /**
+             * Providers
+             * @description The configured providers (Google first); empty when none is configured.
+             */
+            providers: components["schemas"]["AuthProvider"][];
         };
         /** Body_uploadResumes */
         Body_uploadResumes: {
@@ -1763,6 +1854,42 @@ export interface components {
         Membership: {
             agency: components["schemas"]["AgencyRef"];
             role: components["schemas"]["Role"];
+        };
+        /**
+         * OidcLoginError
+         * @description Why a Google or Microsoft sign-in signed nobody in: the `error` of the callback's redirect
+         *     to `{FRONTEND_URL}/login?error=…&provider=…` (E2-08). The login page words each one; none
+         *     says more than the person who signed in at the provider may know.
+         * @enum {string}
+         */
+        OidcLoginError: "no_account" | "no_access" | "email_not_verified" | "invitation_invalid" | "invitation_mismatch" | "account_exists" | "already_member" | "cancelled" | "expired" | "oidc_failed" | "rate_limited";
+        /**
+         * OidcProvider
+         * @description A sign-in provider (OpenID Connect, spec §4.3; E2-08). Offered only when configured.
+         * @enum {string}
+         */
+        OidcProvider: "google" | "microsoft";
+        /** OidcStart */
+        OidcStart: {
+            /**
+             * Authorization Url
+             * @description Navigate the browser (top level) here. The provider sends it back to completeOidcLogin, which redirects to the frontend.
+             */
+            authorization_url: string;
+        };
+        /** OidcStartRequest */
+        OidcStartRequest: {
+            /**
+             * Invitation Token
+             * @description To accept an invitation: the token from its link (#token=...). The identity is then linked to the invited account (created if new) and the invitation accepted.
+             */
+            invitation_token?: string | null;
+            /**
+             * Next
+             * @description Where to land after signing in: a frontend path starting with a single "/" (anything else becomes "/").
+             * @default /
+             */
+            next: string;
         };
         /** ParsedJobDescription */
         ParsedJobDescription: {
@@ -2882,6 +3009,128 @@ export interface operations {
             };
         };
     };
+    completeOidcLogin: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path: {
+                provider: components["schemas"]["OidcProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the frontend: `FRONTEND_URL` + `next`, signed in (new session and CSRF cookies), or `FRONTEND_URL/login?error={OidcLoginError}&provider={provider}`. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    startOidcLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["OidcProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OidcStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OidcStart"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     requestPasswordReset: {
         parameters: {
             query?: never;
@@ -2987,6 +3236,26 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAuthProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
                 };
             };
         };

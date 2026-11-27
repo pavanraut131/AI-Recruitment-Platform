@@ -49,6 +49,10 @@ dependencies = [
     "phonenumbers==9.0.41",
     # Password hashing (Argon2id, EPIC-02 §4.2)
     "argon2-cffi==25.1.0",
+    # Sign in with Google and Microsoft (OIDC, EPIC-02 §4.3): Authlib for the authorization code
+    # + PKCE exchange, joserfc for the ID token (JWKS, signature and claims) and the state cookie
+    "authlib==1.9.10",
+    "joserfc==1.8.0",
 ]
 
 [dependency-groups]
@@ -305,6 +309,12 @@ warn_required_dynamic_aliases = true
 # incremental runs with a warm cache.)
 [[tool.mypy.overrides]]
 module = ["fitz", "google", "google.generativeai"]
+ignore_missing_imports = true
+
+# Authlib ships no type information (typeshed's types-Authlib trails its releases); it is used
+# in one place, app.modules.identity.oidc, behind typed functions.
+[[tool.mypy.overrides]]
+module = ["authlib", "authlib.*"]
 ignore_missing_imports = true
 
 # STRICT: the modular-monolith code (spec EPIC-00 §3) is held to `mypy --strict` from the start.

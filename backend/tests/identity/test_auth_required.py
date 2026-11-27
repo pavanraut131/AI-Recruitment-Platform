@@ -19,6 +19,10 @@ from tests.identity.conftest import V2, Users, problem
 PUBLIC = {
     ("get", "/auth/csrf"),
     ("post", "/auth/login"),
+    # E2-08: signing in with Google or Microsoft.
+    ("get", "/auth/providers"),
+    ("post", "/auth/oidc/{provider}/start"),
+    ("get", "/auth/oidc/{provider}/callback"),
     # E2-07: by emailed token or address; accepting also works with a session.
     ("post", "/auth/password-reset"),
     ("post", "/auth/password-reset/confirm"),
@@ -211,3 +215,14 @@ def test_secure_cookies_get_the_host_prefix(monkeypatch: pytest.MonkeyPatch) -> 
     assert csrf_cookie.startswith("__Host-hf_csrf=csrf;")
     assert "Secure" in csrf_cookie and "SameSite=strict" in csrf_cookie
     assert "HttpOnly" not in csrf_cookie
+
+    # E2-08: the sign-in flow's cookie (spec §4.3): host-only, Secure, HttpOnly, Lax (the
+    # provider's redirect back is a top-level cross-site GET), 10 minutes.
+    assert auth_cookies.oidc_cookie_name() == "__Host-hf_oidc"
+    response = Response()
+    auth_cookies.set_oidc_cookie(response, "sealed", timedelta(minutes=10))
+    [flow] = response.headers.getlist("set-cookie")
+    assert flow.startswith("__Host-hf_oidc=sealed;")
+    for attribute in ("HttpOnly", "Max-Age=600", "Path=/", "SameSite=lax", "Secure"):
+        assert attribute in flow
+    assert "Domain" not in flow

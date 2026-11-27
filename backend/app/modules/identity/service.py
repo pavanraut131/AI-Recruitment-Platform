@@ -53,12 +53,20 @@ Operator commands (``app.modules.identity.cli``) and the development seed use
 - The team use cases take the request's session bound to the principal's agency (the composed
   ``/team`` endpoints, ``app.api.v2.team``, also check client ids through hiring there) and
   filter every query by ``principal.agency_id`` themselves: identity's tables are global.
+
+**Sign in with Google and Microsoft (E2-08, spec §4.3).** :func:`start_oidc_login` and
+:func:`complete_oidc_login` run the OpenID Connect flow; the protocol (state cookie, PKCE, the
+code exchange and the ID-token checks) is ``app.modules.identity.oidc``. An identity is found by
+``(provider, issuer, subject)`` in ``oidc_accounts`` and linked to a user only through an
+invitation token or an address the provider vouches for (:func:`_oidc_sign_in`), never an
+unverified email. Every failure is an :class:`OidcFailed` (the login page's ``error``), audited.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import hashlib
+import hmac
 import ipaddress
 import re
 import secrets
@@ -72,7 +80,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.identity import emails, passwords, repository, tasks
+from app.modules.identity import emails, oidc, passwords, repository, tasks
 from app.modules.identity.models import (
     Agency,
     AgencyStatus,
@@ -80,6 +88,7 @@ from app.modules.identity.models import (
     Invitation,
     Membership,
     MembershipStatus,
+    OidcAccount,
     PasswordResetToken,
     User,
     UserSession,
@@ -98,6 +107,8 @@ from app.modules.identity.schemas import (
     ClientAccess,
     InvitationStatus,
     MemberStatus,
+    OidcLoginError,
+    OidcProvider,
     Principal,
     Role,
     SignedIn,
@@ -1150,7 +1161,14 @@ async def _usable_invitation(
 ) -> tuple[Invitation, Agency]:
     """The open, unexpired invitation of an active agency this token belongs to; :class:`TokenGone`
     (410) for anything else."""
-    invitation = await repository.invitation_by_token(db, hash_token(token), lock=lock)
+    return await _usable_invitation_by_hash(db, hash_token(token), now, lock=lock)
+
+
+async def _usable_invitation_by_hash(
+    db: AsyncSession, token_hash: bytes, now: datetime, *, lock: bool
+) -> tuple[Invitation, Agency]:
+    """:func:`_usable_invitation` by the token's SHA-256 (what an OIDC flow carries, E2-08)."""
+    invitation = await repository.invitation_by_token(db, token_hash, lock=lock)
     if (
         invitation is None
         or invitation.accepted_at is not None
@@ -1216,6 +1234,37 @@ async def _new_invitee(
     return user
 
 
+async def _join_agency(
+    db: AsyncSession, invitation: Invitation, user: User, now: datetime
+) -> Membership:
+    """Accept ``invitation`` for ``user`` (who proved the invited inbox): the membership with the
+    invitation's role and client access is created, or a deactivated one reactivated with them
+    (:class:`ConflictError` for an active one); the invitation is marked accepted and the email
+    verified. Shared by password sign-up / signed-in acceptance and the OIDC flow (E2-08)."""
+    membership = await repository.get_membership(db, invitation.agency_id, user.id)
+    if membership is not None and membership.status == MembershipStatus.active.value:
+        raise ConflictError("You are already a member of this agency")
+    if membership is None:
+        membership = Membership(agency_id=invitation.agency_id, user_id=user.id)
+        db.add(membership)
+    membership.role = invitation.role
+    membership.all_clients = invitation.all_clients
+    membership.status = MembershipStatus.active.value
+    membership.deactivated_at = None
+    membership.invited_by_user_id = invitation.invited_by_user_id
+    membership.last_active_at = now
+    await db.flush()
+    await repository.set_membership_clients(
+        db, membership.id, [] if invitation.all_clients else list(invitation.client_ids)
+    )
+
+    invitation.accepted_at = now
+    invitation.accepted_by_user_id = user.id
+    if user.email_verified_at is None:
+        user.email_verified_at = now
+    return membership
+
+
 async def accept_invitation(
     db: AsyncSession,
     store: RateLimitStore,
@@ -1256,27 +1305,7 @@ async def accept_invitation(
     else:
         user, created = await _new_invitee(db, invitation.email, display_name, password, now), True
 
-    membership = await repository.get_membership(db, invitation.agency_id, user.id)
-    if membership is not None and membership.status == MembershipStatus.active.value:
-        raise ConflictError("You are already a member of this agency")
-    if membership is None:
-        membership = Membership(agency_id=invitation.agency_id, user_id=user.id)
-        db.add(membership)
-    membership.role = invitation.role
-    membership.all_clients = invitation.all_clients
-    membership.status = MembershipStatus.active.value
-    membership.deactivated_at = None
-    membership.invited_by_user_id = invitation.invited_by_user_id
-    membership.last_active_at = now
-    await db.flush()
-    await repository.set_membership_clients(
-        db, membership.id, [] if invitation.all_clients else list(invitation.client_ids)
-    )
-
-    invitation.accepted_at = now
-    invitation.accepted_by_user_id = user.id
-    if user.email_verified_at is None:
-        user.email_verified_at = now
+    await _join_agency(db, invitation, user, now)
     user.last_login_at = now
     if carried_token:
         await repository.revoke_session(db, hash_token(carried_token), now)
@@ -1391,6 +1420,374 @@ async def confirm_password_reset(
     notice = emails.password_changed(to=user.email, display_name=user.display_name)
     await db.commit()
     tasks.enqueue_email(notice)
+
+
+# ── Sign in with Google and Microsoft (E2-08) ─────────────────
+OIDC_STATE_TTL: Final = oidc.STATE_TTL
+PROVIDER_UNAVAILABLE: Final = "{} sign-in is unavailable right now. Try again in a few minutes."
+
+
+class ProviderUnavailable(Exception):
+    """The provider's discovery document cannot be fetched (502)."""
+
+    def __init__(self, provider_name: str) -> None:
+        self.detail = PROVIDER_UNAVAILABLE.format(provider_name)
+        super().__init__(self.detail)
+
+
+@dataclass(frozen=True, slots=True)
+class OidcStarted:
+    """Where to send the browser, and the value of the ``__Host-hf_oidc`` cookie to set."""
+
+    authorization_url: str
+    sealed_flow: str
+
+
+@dataclass(frozen=True, slots=True)
+class OidcSignedIn:
+    """Signed in: the new session's cookie value and the frontend path to land on."""
+
+    token: str
+    next: str
+
+
+@dataclass(frozen=True, slots=True)
+class OidcFailed:
+    """Nobody signed in, and why (the login page's ``error``)."""
+
+    error: OidcLoginError
+
+
+def oidc_limit(step: str) -> Limit:
+    """Starts (``step="start"``) or callbacks (``"callback"``) of the OIDC flow per client IP."""
+    return Limit(
+        f"oidc_{step}_ip", settings.OIDC_MAX_ATTEMPTS_PER_IP, settings.OIDC_RATE_LIMIT_WINDOW
+    )
+
+
+def oidc_providers() -> list[tuple[OidcProvider, str]]:
+    """``(provider, display name)`` of each configured provider, Google first."""
+    return [(config.provider, config.name) for config in oidc.configured_providers()]
+
+
+def _oidc_config(provider: OidcProvider) -> oidc.ProviderConfig:
+    config = oidc.provider_config(provider)
+    if config is None:  # hidden: as if it did not exist
+        raise NotFoundError("Not Found")
+    return config
+
+
+async def start_oidc_login(
+    db: AsyncSession,
+    store: RateLimitStore,
+    provider: OidcProvider,
+    *,
+    next_path: str | None,
+    invitation_token: str | None,
+    client: ClientInfo,
+) -> OidcStarted:
+    """Start signing in with ``provider`` (spec §4.3 steps 1-2): a new ``state``, ``nonce`` and
+    PKCE verifier, sealed with ``next`` (a frontend path; anything else becomes ``/``) and the
+    invitation token's hash into the cookie value, and the provider's authorization URL.
+
+    :class:`NotFoundError` for a provider that is not configured, :class:`RateLimited` over
+    ``OIDC_MAX_ATTEMPTS_PER_IP``, :class:`TokenGone` for an invitation that can no longer be
+    accepted (checked again on the way back), :class:`ProviderUnavailable` when the provider's
+    discovery document cannot be fetched. Writes nothing (except a rate-limit event)."""
+    config = _oidc_config(provider)
+    await _count_or_refuse(db, store, oidc_limit("start"), client.ip or "unknown", client)
+    invitation_hash = None
+    if invitation_token is not None:
+        invitation_hash = hash_token(invitation_token)
+        await _usable_invitation_by_hash(db, invitation_hash, utcnow(), lock=False)
+    flow = oidc.new_flow(provider, next_path, invitation_hash)
+    try:
+        url = await oidc.authorization_url(config, flow)
+    except oidc.OidcError as exc:
+        raise ProviderUnavailable(config.name) from exc
+    return OidcStarted(authorization_url=url, sealed_flow=oidc.seal(flow))
+
+
+def _one_word(value: str) -> str:
+    """A provider's ``error`` parameter, safe to keep in an audit event."""
+    return re.sub(r"[^a-z0-9_.-]", "", value.lower())[:64] or "unknown"
+
+
+async def complete_oidc_login(
+    db: AsyncSession,
+    store: RateLimitStore,
+    provider: OidcProvider,
+    *,
+    sealed_flow: str | None,
+    state: str | None,
+    code: str | None,
+    error: str | None,
+    carried_token: str | None,
+    client: ClientInfo,
+) -> OidcSignedIn | OidcFailed:
+    """The provider sent the browser back (spec §4.3 steps 3-6). Every outcome but an unknown
+    provider (:class:`NotFoundError`) is an answer, not an exception: :class:`OidcSignedIn`
+    (rotated into a new session; committed) or :class:`OidcFailed` (audited
+    ``auth.login_failed`` with the reason, or ``auth.rate_limited``).
+
+    1. At most ``OIDC_MAX_ATTEMPTS_PER_IP`` callbacks per IP and window.
+    2. The flow comes from the encrypted cookie (``sealed_flow``): missing, altered or older than
+       10 minutes is ``expired``; its ``state`` must equal the query's (login CSRF), and its
+       provider the path's.
+    3. The provider's own ``error`` (``access_denied``: ``cancelled``), else the code is exchanged
+       with the PKCE verifier and the ID token validated (``app.modules.identity.oidc``).
+    4. The account is resolved and signed in (:func:`_oidc_sign_in`).
+    """
+    config = _oidc_config(provider)
+    limit = oidc_limit("callback")
+    key = limit.key(hashed(client.ip or "unknown"))
+    window = await store.hit(key, limit.seconds)
+    if window.count > limit.max_hits:
+        await _rate_limited(db, store, limit, key, client)
+        return OidcFailed(OidcLoginError.rate_limited)
+
+    flow = oidc.unseal(sealed_flow)
+    if flow is None or flow.provider is not provider:
+        reason = "no_state_cookie" if sealed_flow is None else "invalid_state_cookie"
+        return await _oidc_failed(db, provider, OidcLoginError.expired, reason, client)
+    if not state or not hmac.compare_digest(state.encode(), flow.state.encode()):
+        return await _oidc_failed(
+            db, provider, OidcLoginError.oidc_failed, "state_mismatch", client
+        )
+    if error:
+        failure = (
+            OidcLoginError.cancelled if error == "access_denied" else OidcLoginError.oidc_failed
+        )
+        return await _oidc_failed(
+            db, provider, failure, "provider_error", client, details={"error": _one_word(error)}
+        )
+    if not code:
+        return await _oidc_failed(db, provider, OidcLoginError.oidc_failed, "no_code", client)
+    try:
+        id_token = await oidc.exchange_code(config, code=code, code_verifier=flow.code_verifier)
+        identity = await oidc.validate_id_token(config, id_token, nonce=flow.nonce)
+    except oidc.OidcError as exc:
+        return await _oidc_failed(db, provider, OidcLoginError.oidc_failed, exc.reason, client)
+    return await _oidc_sign_in(
+        db, config, identity, flow, carried_token=carried_token, client=client
+    )
+
+
+async def _oidc_failed(
+    db: AsyncSession,
+    provider: OidcProvider,
+    error: OidcLoginError,
+    reason: str,
+    client: ClientInfo,
+    *,
+    user_id: uuid.UUID | None = None,
+    details: Mapping[str, Any] | None = None,
+) -> OidcFailed:
+    """Undo the attempt's writes, record ``auth.login_failed`` on its own and commit it."""
+    await db.rollback()
+    await record_audit(
+        db,
+        "auth.login_failed",
+        actor_user_id=user_id,
+        target_type="user" if user_id else None,
+        target_id=user_id,
+        client=client,
+        details={"method": provider.value, "reason": reason, **(details or {})},
+    )
+    await db.commit()
+    return OidcFailed(error)
+
+
+def _display_name(identity: oidc.Identity, email: str) -> str:
+    return identity.name or email.split("@", 1)[0][:200] or email[:200]
+
+
+async def _oidc_sign_in(
+    db: AsyncSession,
+    config: oidc.ProviderConfig,
+    identity: oidc.Identity,
+    flow: oidc.Flow,
+    *,
+    carried_token: str | None,
+    client: ClientInfo,
+) -> OidcSignedIn | OidcFailed:
+    """Resolve the account (spec §4.3 step 5) and sign it in (step 6).
+
+    1. An ``oidc_accounts`` row with this ``(provider, issuer, subject)``: its user. With an
+       invitation, the user's email must be the invited one (``invitation_mismatch``).
+    2. The flow carries an **invitation** (the token proved the invited inbox): the identity is
+       linked to the invited address's account, created (no password, email verified) when
+       there is none. An existing account is linked only when the provider vouches for that same
+       address (``account_exists`` otherwise: sign in with the password, then accept), so a
+       forwarded invitation link cannot attach a stranger's identity to an existing account.
+       The invitation is then accepted (E2-07's :func:`_join_agency`).
+    3. The provider vouches for the email (Google ``email_verified``, Microsoft ``xms_edov``) and
+       an account has it: the identity is linked to it, and the account holder is emailed.
+    4. Otherwise ``no_account`` (a vouched address without an account) or
+       ``email_not_verified`` (an address the provider does not vouch for is never looked up).
+
+    The account must be active with an active membership in an active agency (``no_access``).
+    Then: the session the request carried is revoked and a new one starts (the invitation's
+    agency active, else the only or the most recently used one), and ``auth.oidc_linked`` (when
+    linked), ``team.invitation_accepted`` (with ``method``) and ``auth.login_succeeded``
+    (``method: google|microsoft``) are recorded. Commits, then queues the "new sign-in method"
+    email for a link to an account that existed before."""
+    now = utcnow()
+    provider = identity.provider
+    email_hash = {"email_hash": hashed(identity.email)} if identity.email else {}
+
+    async def failed(
+        error: OidcLoginError, reason: str, user_id: uuid.UUID | None = None
+    ) -> OidcFailed:
+        details = email_hash if user_id is None else {}
+        return await _oidc_failed(
+            db, provider, error, reason, client, user_id=user_id, details=details
+        )
+
+    invitation: Invitation | None = None
+    if flow.invitation_hash is not None:
+        try:
+            invitation, _ = await _usable_invitation_by_hash(
+                db, flow.invitation_hash, now, lock=True
+            )
+        except TokenGone:
+            return await failed(OidcLoginError.invitation_invalid, "invitation_gone")
+
+    account = await repository.get_oidc_account(
+        db, provider.value, identity.issuer, identity.subject
+    )
+    user: User | None
+    linked_via: str | None = None
+    created = False
+    if account is not None:  # 1
+        user = await repository.get_user(db, account.user_id)
+        assert user is not None  # a foreign key, deleted with the user
+        if invitation is not None and user.email != invitation.email:
+            return await failed(
+                OidcLoginError.invitation_mismatch, "invitation_for_another_email", user.id
+            )
+    elif invitation is not None:  # 2
+        user = await repository.get_user_by_email(db, invitation.email)
+        if user is None:
+            user = User(
+                email=invitation.email,
+                email_verified_at=now,  # the invitation token proves the inbox
+                password_hash=None,  # signs in with the provider (or resets a password)
+                display_name=_display_name(identity, invitation.email),
+                status=UserStatus.active.value,
+            )
+            try:
+                async with db.begin_nested():
+                    db.add(user)
+            except IntegrityError:  # created by a parallel request
+                return await failed(OidcLoginError.oidc_failed, "account_race")
+            created = True
+        elif not (identity.email_verified and identity.email == invitation.email):
+            return await failed(OidcLoginError.account_exists, "invitation_account_exists")
+        linked_via = "invitation"
+    elif identity.email is None or not identity.email_verified:  # 4
+        return await failed(OidcLoginError.email_not_verified, "email_not_verified")
+    else:  # 3
+        user = await repository.get_user_by_email(db, identity.email)
+        if user is None:
+            return await failed(OidcLoginError.no_account, "no_account")
+        linked_via = "verified_email"
+
+    if user.status != UserStatus.active.value:
+        return await failed(OidcLoginError.no_access, "user_disabled", user.id)
+    if invitation is not None:
+        try:
+            await _join_agency(db, invitation, user, now)
+        except ConflictError:
+            return await failed(OidcLoginError.already_member, "already_member", user.id)
+    memberships = await repository.usable_memberships(db, user.id)
+    if not memberships:
+        return await failed(OidcLoginError.no_access, "no_agency_access", user.id)
+    active: Membership | None = None
+    if invitation is not None:
+        active = next(m for m, _ in memberships if m.agency_id == invitation.agency_id)
+    elif len(memberships) == 1 or memberships[0][0].last_active_at is not None:
+        active = memberships[0][0]
+    agency_id = active.agency_id if active is not None else None
+
+    if linked_via is not None:
+        try:
+            async with db.begin_nested():
+                db.add(
+                    OidcAccount(
+                        user_id=user.id,
+                        provider=provider.value,
+                        issuer=identity.issuer,
+                        subject=identity.subject,
+                        email_at_link=identity.email,
+                        created_at=now,
+                        last_used_at=now,
+                    )
+                )
+        except IntegrityError:  # the same identity linked by a parallel request
+            return await failed(OidcLoginError.oidc_failed, "link_race", user.id)
+    else:
+        assert account is not None
+        account.last_used_at = now
+
+    # Rotate: the carried session (if any) ends, a new id starts (session fixation).
+    if carried_token:
+        await repository.revoke_session(db, hash_token(carried_token), now)
+    token = await _start_session(db, user.id, agency_id, client, now)
+    user.last_login_at = now
+    if active is not None:
+        active.last_active_at = now
+    if linked_via is not None:
+        await record_audit(
+            db,
+            "auth.oidc_linked",
+            agency_id=agency_id,
+            actor_user_id=user.id,
+            target_type="user",
+            target_id=user.id,
+            client=client,
+            details={
+                "provider": provider.value,
+                "issuer": identity.issuer,
+                "via": linked_via,
+                "new_account": created,
+            },
+        )
+    if invitation is not None:
+        await record_audit(
+            db,
+            "team.invitation_accepted",
+            agency_id=invitation.agency_id,
+            actor_user_id=user.id,
+            target_type="invitation",
+            target_id=invitation.id,
+            client=client,
+            details={"role": invitation.role, "new_account": created, "method": provider.value},
+        )
+    await record_audit(
+        db,
+        "auth.login_succeeded",
+        agency_id=agency_id,
+        actor_user_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        client=client,
+        details={"method": provider.value},
+    )
+    notice = (
+        emails.sign_in_method_linked(
+            to=user.email,
+            display_name=user.display_name,
+            provider_name=config.name,
+            provider_email=identity.email,
+        )
+        if linked_via is not None and not created
+        else None
+    )
+    await db.commit()
+    if notice is not None:
+        tasks.enqueue_email(notice)  # spec §4.3: a new sign-in method is notified by email
+    return OidcSignedIn(token=token, next=flow.next)
 
 
 # ── Operator commands and the development seed ───────────────

@@ -73,6 +73,11 @@ http://localhost:8025. README "Inviting a teammate locally" shows the invitation
 `curl`. In backend tests the console backend keeps them in memory: the `mailbox` fixture
 (`tests/identity/conftest.py`) delivers what the code queued and reads the token from a link.
 
+Google and Microsoft sign-in (E2-08) is tested against fake providers, never the real ones: the
+`fake_oidc` fixture configures both and serves their discovery document, keys and token endpoint
+in-process (`tests/identity/fake_oidc.py`, whose `sign_in` plays the browser). Any other request
+to a provider fails the test.
+
 ### Tests run under row-level security
 
 The test session connects as `hireflow_app` (E2-04), so Postgres RLS is on for every test: a

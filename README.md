@@ -357,6 +357,53 @@ it (spec §8.2). A forgotten password: `POST /auth/password-reset {"email": …}
 /auth/password-reset/confirm {"token": …, "new_password": …}` sets the new one and signs the
 account out everywhere.
 
+#### Enable Google/Microsoft sign-in
+"Continue with Google" and "Continue with Microsoft" (EPIC-02 §4.3, E2-08) are optional and off
+by default: without credentials `GET /api/v2/auth/providers` lists nothing, the buttons are
+hidden and the provider's endpoints answer 404. To offer one, register an app with the provider,
+put its client id **and** secret in `.env` (never commit them) and restart the backend
+(`docker compose up -d backend`). There is no self sign-up: the button signs in people who have
+an account (the first time it is linked by the address the provider **verified**, and they get
+an email about it) or accepts an invitation; anyone else is told there is no account.
+
+The redirect URI to register is `{API_PUBLIC_URL}/api/v2/auth/oidc/{provider}/callback`,
+locally `http://localhost:8000/api/v2/auth/oidc/google/callback` and
+`…/microsoft/callback`. `API_PUBLIC_URL` (default `http://localhost:8000`) is the API as the
+browser reaches it (`NEXT_PUBLIC_API_URL`). Google and Microsoft accept plain `http` redirect
+URIs for `localhost` only: anywhere else the API must be served over **HTTPS** (outside
+development the settings refuse a provider with a non-https `API_PUBLIC_URL`). Scopes:
+`openid email profile`.
+
+**Google** ([Google Cloud console](https://console.cloud.google.com/apis/credentials)):
+1. In a project, **APIs & Services → OAuth consent screen**: user type External (or Internal
+   for one Workspace organisation), app name and support email, scopes `openid`, `email`,
+   `profile`. While the app is in *Testing*, add your Google accounts as test users.
+2. **Credentials → Create credentials → OAuth client ID**, type *Web application*, authorized
+   redirect URI `http://localhost:8000/api/v2/auth/oidc/google/callback` (no JavaScript origin
+   is needed: only the API talks to Google).
+3. `.env`: `OIDC_GOOGLE_CLIENT_ID=<client id>`, `OIDC_GOOGLE_CLIENT_SECRET=<client secret>`.
+
+**Microsoft** ([Microsoft Entra admin center](https://entra.microsoft.com), work and school
+accounts only):
+1. **App registrations → New registration**: supported account types *Accounts in any
+   organizational directory* (multitenant, for `OIDC_MICROSOFT_TENANT=organizations`), or *this
+   organizational directory only* with `OIDC_MICROSOFT_TENANT=<your tenant id>`. Redirect URI:
+   platform *Web*, `http://localhost:8000/api/v2/auth/oidc/microsoft/callback`.
+2. **Certificates & secrets → New client secret**: `.env` gets `OIDC_MICROSOFT_CLIENT_SECRET=<the
+   secret's value>` and `OIDC_MICROSOFT_CLIENT_ID=<Application (client) ID>`.
+3. **Token configuration → Add optional claim → ID**: `email` and `xms_edov` (or in the
+   **Manifest**, `optionalClaims.idToken`: `{"name": "xms_edov", "essential": false}`). HireFlow
+   trusts a Microsoft address only with `xms_edov` true (the tenant verified the email's
+   domain), so without it an identity that is not linked yet can only join through an
+   invitation. **API permissions**: Microsoft Graph `openid`, `email`, `profile` (delegated).
+
+`GET http://localhost:8000/api/v2/auth/providers` then lists the provider. Until the login page
+has its buttons (E2-09), try the flow from the API docs (http://localhost:8000/api/v2/docs) in
+your browser: `getCsrfToken`, then **Authorize** with that token as `csrfToken`, then
+`startOidcLogin`, then open
+the `authorization_url` in the same browser; you land on `FRONTEND_URL` signed in, or on
+`/login?error=…`.
+
 ### 4. Open the app
 | Service | URL |
 |---|---|
@@ -561,7 +608,7 @@ for existing integrations until it is removed after E2:
 | Variable | Description | Default |
 |---|---|---|
 | `APP_ENV` | `development`, `test`, or anything else for a deployment (`production`, `staging`): deployments refuse the development-only settings below | `development` |
-| `SECRET_KEY` | Signs the CSRF tokens. Outside development/test it must be at least 32 bytes and not the template value (`openssl rand -hex 32`) | `change_me` |
+| `SECRET_KEY` | Signs the CSRF tokens and encrypts the Google/Microsoft sign-in cookie. Outside development/test it must be at least 32 bytes and not the template value (`openssl rand -hex 32`) | `change_me` |
 | `AUTH_REQUIRED` | `false` lets `/api/v2` requests without a session act as the default agency's owner (until the login screen, E2-09). Development/test only | `true` (`false` in `.env.example` and the dev Compose stack) |
 | `SESSION_COOKIE_SECURE` | Secure session and CSRF cookies with the `__Host-` prefix; `false` only in development/test | on outside development/test |
 | `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT` | Session lifetimes (seconds or ISO 8601) | `PT8H`, `P7D` |
@@ -573,6 +620,10 @@ for existing integrations until it is removed after E2:
 | `PASSWORD_RESET_MAX_PER_EMAIL`, `PASSWORD_RESET_MAX_PER_IP`, `PASSWORD_RESET_RATE_LIMIT_WINDOW` | Reset requests (429 with `Retry-After`) | `3`, `10`, 1 h |
 | `TOKEN_MAX_ATTEMPTS_PER_IP`, `TOKEN_RATE_LIMIT_WINDOW` | Invitation preview / accept and reset confirm, per IP | `20`, 15 min |
 | `INVITATIONS_MAX_PER_AGENCY_PER_DAY` | Invitation emails (new and resent) an agency may send a day | `50` |
+| `API_PUBLIC_URL` | The API as the browser reaches it; the Google/Microsoft redirect URIs are `{API_PUBLIC_URL}/api/v2/auth/oidc/{provider}/callback` (https outside development when a provider is set) | `http://localhost:8000` |
+| `OIDC_GOOGLE_CLIENT_ID`, `OIDC_GOOGLE_CLIENT_SECRET` | Google sign-in ("Enable Google/Microsoft sign-in"); both or neither, empty hides it | empty |
+| `OIDC_MICROSOFT_CLIENT_ID`, `OIDC_MICROSOFT_CLIENT_SECRET`, `OIDC_MICROSOFT_TENANT` | Microsoft sign-in, work and school accounts: `organizations` or one tenant's id or domain (`common` and `consumers` are refused) | empty, `organizations` |
+| `OIDC_MAX_ATTEMPTS_PER_IP`, `OIDC_RATE_LIMIT_WINDOW` | Starts and callbacks of the Google/Microsoft flow per IP (each) | `30`, 15 min |
 | `IDENTITY_PURGE_AFTER` | The daily `identity.purge_expired` deletes sessions and invitations this long after they ended | 30 days |
 | `AI_PROVIDER` | `gemini` (Google Gemini) or `fake` (deterministic offline answers, no API key needed; for local dev and smoke tests) | `gemini` |
 | `GEMINI_API_KEY` | Google Gemini API key. **Required** when `AI_PROVIDER=gemini` (start-up fails with a clear error without it); not needed with `AI_PROVIDER=fake` | — |
