@@ -23,7 +23,9 @@ import {
  * (`checkScreen`); `docs` marks the README's product-tour screenshots.
  *
  * It creates everything it asserts on (a new campaign, resumes with this run's
- * e-mails), so it does not depend on the seed or on earlier runs.
+ * e-mails), so it does not depend on the seed or on earlier runs. It runs
+ * signed in as the seeded recruiter of the default agency (`auth.setup.ts`,
+ * EPIC-02 §11.4), and the stack requires a session on every request.
  */
 
 function candidatesTable(page: Page) {

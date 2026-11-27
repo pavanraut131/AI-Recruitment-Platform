@@ -33,8 +33,22 @@ export async function settled(page: Page): Promise<void> {
 
 async function applyTheme(page: Page, theme: Theme): Promise<void> {
   // The app follows the system theme by default (next-themes, class on <html>).
-  await page.emulateMedia({ colorScheme: theme })
+  // Reduced motion: sonner then shows a toast without its 400 ms fade-in, and
+  // the app's own transitions are instant (globals.css), so axe never measures
+  // the contrast of something half-faded.
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" })
   await expect(page.locator("html")).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`))
+  await toastsSettled(page)
+}
+
+/**
+ * Every toast has entered: sonner marks it `data-mounted="true"` the frame
+ * after it appears, and with reduced motion it is fully opaque from then on.
+ * A toast caught before that is still transparent, and axe reported its text
+ * as low contrast (an intermittent failure before E2-09).
+ */
+async function toastsSettled(page: Page): Promise<void> {
+  await expect(page.locator("[data-sonner-toast][data-mounted='false']")).toHaveCount(0)
 }
 
 /** Runs axe on the page as it is; fails on serious or critical violations. */
