@@ -60,6 +60,24 @@ export function startSession(queryClient: QueryClient, me: Me): void {
   queryClient.setQueryData(queryKeys.me.all, me)
 }
 
+/**
+ * Work in another of the user's agencies (the shell's agency switcher,
+ * EPIC-02 §9.2): `PUT /me/active-agency`, then the Query cache is cleared and
+ * Home loads as a new page, so nothing of the previous agency (cached data,
+ * the open page's state, its event stream) is left on screen. Failures toast
+ * the API's message (a 404: no longer a member there).
+ */
+export function useSwitchAgency() {
+  const queryClient = useQueryClient()
+  return useMutation<Me, Error, string>({
+    mutationFn: (agencyId) => api.PUT("/me/active-agency", { body: { agency_id: agencyId } }).then(unwrap),
+    onSuccess: (me) => {
+      startSession(queryClient, me)
+      navigateTo("/")
+    },
+  })
+}
+
 const ending = new WeakSet<QueryClient>()
 
 /**

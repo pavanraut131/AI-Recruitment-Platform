@@ -1,16 +1,6 @@
-import type { Metadata } from "next"
-import { SettingsIcon } from "lucide-react"
+import { redirect } from "next/navigation"
 
-import { ComingSoon } from "@/components/coming-soon"
-
-export const metadata: Metadata = { title: "Settings" }
-
+/** `/settings` opens its first section, which every member has. */
 export default function SettingsPage() {
-  return (
-    <ComingSoon
-      title="Settings"
-      icon={SettingsIcon}
-      description="Your profile, your team and the agency's settings come next. Until then, edit a campaign from its Brief tab."
-    />
-  )
+  redirect("/settings/profile")
 }

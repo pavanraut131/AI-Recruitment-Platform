@@ -15,6 +15,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command"
+import { usePermissions } from "@/lib/auth/permissions"
 import { mainNav, settingsNav } from "./nav"
 
 type CommandPaletteContextValue = {
@@ -74,6 +75,7 @@ function CommandPalette({
 }) {
   const router = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
+  const { can } = usePermissions()
 
   function run(action: () => void) {
     onOpenChange(false)
@@ -106,13 +108,15 @@ function CommandPalette({
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Actions">
-            <CommandItem
-              value="New campaign"
-              onSelect={() => run(() => router.push("/campaigns/new"))}
-            >
-              <PlusIcon />
-              New campaign
-            </CommandItem>
+            {can("campaign:write") && (
+              <CommandItem
+                value="New campaign"
+                onSelect={() => run(() => router.push("/campaigns/new"))}
+              >
+                <PlusIcon />
+                New campaign
+              </CommandItem>
+            )}
             <CommandItem
               value="Toggle theme"
               keywords={["dark", "light", "appearance"]}

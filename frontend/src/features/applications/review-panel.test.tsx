@@ -2,6 +2,9 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { UrlUpdateEvent } from "nuqs/adapters/testing"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import type { Schema } from "@/lib/api/client"
+import { meAs } from "@/test/auth"
+
 import { clearUnsavedDrafts } from "@/lib/use-autosave"
 import { makePerson, makePersonApplication } from "@/test/people"
 
@@ -91,9 +94,9 @@ const adaPerson = makePerson({
   ],
 })
 
-function renderTab(searchParams = `?open=${ada.id}`) {
+function renderTab(searchParams = `?open=${ada.id}`, me?: Schema<"Me">) {
   const onUrlUpdate = vi.fn<(event: UrlUpdateEvent) => void>()
-  const result = renderWithProviders(<CandidatesTab campaignId={CAMPAIGN_ID} />, { searchParams, onUrlUpdate })
+  const result = renderWithProviders(<CandidatesTab campaignId={CAMPAIGN_ID} />, { searchParams, onUrlUpdate, me })
   return { ...result, onUrlUpdate }
 }
 
@@ -104,8 +107,8 @@ const stageOf = (name: string) =>
 const notesField = () => within(panel()).getByRole("textbox", { name: "Notes" })
 const notesStatus = () => within(panel()).getByRole("status")
 
-async function openPanel(searchParams?: string) {
-  renderTab(searchParams)
+async function openPanel(searchParams?: string, me?: Schema<"Me">) {
+  renderTab(searchParams, me)
   await within(await screen.findByRole("dialog")).findByRole("heading", { name: "Ada Lovelace" })
 }
 
@@ -423,4 +426,21 @@ describe("ReviewPanel: notes autosave", () => {
     },
     AUTOSAVE_TEST_TIMEOUT_MS,
   )
+})
+
+describe("ReviewPanel: a viewer reads, and changes nothing (E2-10)", () => {
+  it("shows the stage and the notes as text, with no decision buttons, stage selector or S shortcut", async () => {
+    installFakeApi({ applications: [ada, grace], people: [adaPerson] })
+    await openPanel(undefined, meAs("viewer"))
+    const view = within(panel())
+
+    expect(view.getByRole("link", { name: /Open full profile/ })).toBeTruthy()
+    expect(view.queryByRole("button", { name: "Move to phone screen" })).toBeNull()
+    expect(view.queryByRole("button", { name: "Not a fit" })).toBeNull()
+    expect(view.queryByRole("combobox", { name: "Stage" })).toBeNull()
+    expect(view.getByText("Screened")).toBeTruthy()
+    expect(view.queryByRole("textbox", { name: "Notes" })).toBeNull()
+    expect(view.getByRole("group", { name: "Notes" }).textContent).toContain("Called on Monday.")
+    expect(panel().textContent).not.toContain("stage ·")
+  })
 })

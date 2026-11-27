@@ -4,6 +4,7 @@ import * as React from "react"
 import { debounce, parseAsArrayOf, parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs"
 
 import type { CampaignListParams } from "@/lib/api/query-keys"
+import { clientIdParam, useClientFilter } from "@/lib/client-filter"
 import { useDebouncedValue } from "@/lib/use-debounced-value"
 
 import { CAMPAIGN_STATUSES, type CampaignStatus } from "../schema"
@@ -13,8 +14,10 @@ export const CAMPAIGN_LIST_PAGE_SIZE = 20
 export const SEARCH_DEBOUNCE_MS = 300
 
 /**
- * The campaign list's URL state (ADR 0007): `?status=active,closed&q=eng&page=2`.
- * Defaults are left out of the URL, so `/campaigns` is the unfiltered first page.
+ * The campaign list's URL state (ADR 0007): `?status=active,closed&q=eng&page=2`,
+ * and the client (`?client=`, shared with the shell's switcher and Home:
+ * `useClientFilter`, which also remembers it). Defaults are left out of the
+ * URL, so `/campaigns` is the unfiltered first page (of the remembered client).
  */
 export const campaignListSearchParams = {
   status: parseAsArrayOf(parseAsStringLiteral(CAMPAIGN_STATUSES)).withDefault([]),
@@ -24,6 +27,7 @@ export const campaignListSearchParams = {
 
 export function useCampaignListParams() {
   const [{ status, q, page }, setParams] = useQueryStates(campaignListSearchParams)
+  const { clientId, setClientId } = useClientFilter({ fromUrl: true })
 
   // nuqs returns the typed value at once and debounces only the URL, so the
   // request (keyed by these params) follows the debounced value.
@@ -36,17 +40,22 @@ export function useCampaignListParams() {
     return {
       ...(status.length > 0 && { status: CAMPAIGN_STATUSES.filter((item) => status.includes(item)) }),
       ...(search && { q: search }),
+      ...clientIdParam(clientId),
       page: Math.max(1, page),
       page_size: CAMPAIGN_LIST_PAGE_SIZE,
     }
-  }, [status, search, page])
+  }, [status, search, clientId, page])
 
   return {
     status,
     q,
+    clientId,
     page: Math.max(1, page),
     apiParams,
+    /** Filters "Clear filters" clears; the client is the switcher's choice and stays. */
     hasFilters: status.length > 0 || q.trim() !== "",
+    /** A new client starts from the first page (`useClientFilter` clears `page`). */
+    setClient: setClientId,
     setSearch: (value: string) =>
       void setParams(
         { q: value || null, page: null },

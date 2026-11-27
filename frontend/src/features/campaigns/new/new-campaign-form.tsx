@@ -4,14 +4,19 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Loader2Icon } from "lucide-react"
+import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 
+import { RequirePermission } from "@/components/auth/no-access"
 import { Button } from "@/components/ui/button"
 import { Form } from "@/components/ui/form"
+import { useClientFilter } from "@/lib/client-filter"
+import { pickableClients, usePickerClients } from "@/lib/query/clients"
 
 import { useCreateCampaign, type ParsedJobDescription } from "../api"
 import { CampaignFields, FormServerError } from "../components/campaign-fields"
+import { CampaignClientField } from "../components/client-field"
 import { applyServerErrors } from "../components/server-errors"
 import {
   campaignFormSchema,
@@ -24,16 +29,54 @@ import {
 } from "../schema"
 import { JobDescriptionExtractor } from "./job-description-extractor"
 
-const FIELDS = ["title", "role", "description", "required_skills", "status"] as const
+const FIELDS = ["client_id", "title", "role", "description", "required_skills", "status"] as const
 
-/** `/campaigns/new`: create a campaign, optionally starting from a pasted job description. */
+/**
+ * `/campaigns/new`: create a campaign, optionally starting from a pasted job
+ * description. For roles that may create campaigns (`campaign:write`); a
+ * viewer who opens the URL gets the no-access state.
+ */
 export function NewCampaignForm() {
+  return (
+    <RequirePermission
+      permission="campaign:write"
+      what="create campaigns"
+      who="Recruiters, admins and owners can."
+      back={{ href: "/campaigns", label: "Go to Campaigns" }}
+      className="mx-auto w-full max-w-3xl pt-16"
+    >
+      <NewCampaign />
+    </RequirePermission>
+  )
+}
+
+/**
+ * The client to start with (spec §9.3): the one the switcher shows (the URL's
+ * `client`, else the remembered choice) when it can take campaigns, else the
+ * only active client, else none.
+ */
+function usePreselectedClient(): string | null {
+  const { clientId } = useClientFilter({ fromUrl: true })
+  const clients = usePickerClients()
+  if (!clients.data) return null
+  const active = pickableClients(clients.data.items)
+  if (clientId && active.some((client) => client.id === clientId)) return clientId
+  return active.length === 1 ? active[0].id : null
+}
+
+function NewCampaign() {
   const router = useRouter()
   const create = useCreateCampaign()
   const form = useForm<CampaignFormInput, unknown, CampaignFormValues>({
     resolver: zodResolver(campaignFormSchema),
     defaultValues: EMPTY_CAMPAIGN_FORM,
   })
+
+  // The clients load after the form: fill in the preselection then, unless one was chosen meanwhile.
+  const preselected = usePreselectedClient()
+  useEffect(() => {
+    if (preselected && !form.getValues("client_id")) form.setValue("client_id", preselected)
+  }, [preselected, form])
 
   /** Fills the form from the AI's reading of a JD; returns what changed, for the panel's status line. */
   function applyExtraction(parsed: ParsedJobDescription, jobDescription: string): string {
@@ -86,6 +129,10 @@ export function NewCampaignForm() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="New campaign" className="flex flex-col gap-6">
+          <CampaignClientField
+            disabled={busy}
+            description="The company this opening is at. People limited to some clients see only their clients' campaigns."
+          />
           <CampaignFields disabled={busy} />
           <FormServerError message={form.formState.errors.root?.server?.message} />
           <div className="flex items-center justify-end gap-2 border-t pt-5">

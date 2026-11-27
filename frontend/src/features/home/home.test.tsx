@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Schema } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
 import { makeQueryClient } from "@/lib/query/query-client"
-import { meFixture } from "@/test/auth"
+import { meAs, meFixture } from "@/test/auth"
 import { deferred, json, problem, renderWithProviders, toApiCall, type ApiCall } from "@/test/helpers"
 
 import { Home } from "./home"
@@ -114,6 +114,23 @@ function stats({
 }
 
 /** A fake `/api/v2` for Home: `GET /home` and `GET /stats`. */
+const ACME = { id: "00000000-0000-4000-8000-00000000c002", name: "Acme Corp" }
+const CLIENTS = {
+  items: [
+    { ...ACME, status: "active", created_at: "2026-11-01T09:00:00Z", updated_at: "2026-11-01T09:00:00Z" },
+    {
+      id: "00000000-0000-4000-8000-00000000c001",
+      name: "General",
+      status: "active",
+      created_at: "2026-11-01T09:00:00Z",
+      updated_at: "2026-11-01T09:00:00Z",
+    },
+  ],
+  total: 2,
+  page: 1,
+  page_size: 100,
+}
+
 function installHomeApi(routes: { home: () => Response | Promise<Response>; stats?: () => Response }) {
   const calls: ApiCall[] = []
   vi.stubGlobal(
@@ -121,6 +138,7 @@ function installHomeApi(routes: { home: () => Response | Promise<Response>; stat
     vi.fn(async (request: Request) => {
       const call = await toApiCall(request)
       calls.push(call)
+      if (call.method === "GET" && call.path === "/clients") return json(CLIENTS)
       if (call.method === "GET" && call.path === "/home") return routes.home()
       if (call.method === "GET" && call.path === "/stats") return (routes.stats ?? (() => json(stats())))()
       return problem(404, "Not Found")
@@ -129,12 +147,12 @@ function installHomeApi(routes: { home: () => Response | Promise<Response>; stat
   return calls
 }
 
-function renderHome({ me }: { me?: Schema<"Me"> } = {}) {
+function renderHome({ me = meAs("owner"), searchParams }: { me?: Schema<"Me">; searchParams?: string } = {}) {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } })
   // The auth gate loaded the signed-in user before Home rendered.
-  if (me) queryClient.setQueryData(queryKeys.me.all, me)
-  return renderWithProviders(<Home />, { queryClient })
+  queryClient.setQueryData(queryKeys.me.all, me)
+  return renderWithProviders(<Home />, { queryClient, searchParams, me: null })
 }
 
 function section(name: string) {
@@ -182,7 +200,8 @@ describe("Home", () => {
     expect(rows).toHaveLength(2)
     const backend = within(rows[0])
     expect(backend.getByRole("link", { name: "Backend hire, Q1" }).getAttribute("href")).toBe(`/campaigns/${BACKEND}`)
-    expect(backend.getByText("Backend Engineer")).toBeTruthy()
+    // The client, then the role (the title does not say it).
+    expect(backend.getByText("General · Backend Engineer")).toBeTruthy()
     expect(backend.getByText("9 applicants · 4 strong · 5 new today · 2 processing · 1 failed")).toBeTruthy()
     expect(within(rows[1]).getByText("3 applicants")).toBeTruthy()
     expect(within(campaigns).getByRole("link", { name: "All campaigns" }).getAttribute("href")).toBe("/campaigns")
@@ -258,7 +277,7 @@ describe("Home", () => {
     expect(links).toHaveLength(2)
     expect(links.every((link) => link.getAttribute("href") === "/campaigns/new")).toBe(true)
     expect(screen.queryByRole("region", { name: "Open campaigns" })).toBeNull()
-    expect(calls.map((call) => call.path).sort()).toEqual(["/home", "/stats"])
+    expect(calls.map((call) => call.path).sort()).toEqual(["/clients", "/home", "/stats"])
   })
 
   it("points to the campaign list when every campaign is closed", async () => {
@@ -308,7 +327,7 @@ describe("the greeting", () => {
 
   it("is left out without a name to greet", async () => {
     installHomeApi({ home: () => json(HOME) })
-    renderHome()
+    renderHome({ me: meAs("owner", { user: { ...meFixture().user, display_name: " " } }) })
 
     await screen.findByRole("heading", { level: 1, name: "Home" })
     expect(screen.queryByText(/^Good (morning|afternoon|evening)/)).toBeNull()
@@ -368,5 +387,52 @@ describe("homeQuery", () => {
     expect(interval({ state: { data: HOME } })).toBe(HOME_POLL_MS)
     expect(interval({ state: { data: EMPTY_HOME } })).toBe(false)
     expect(interval({ state: {} })).toBe(false)
+  })
+})
+
+describe("Home: clients and roles (E2-10)", () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it("shows the client in the URL only: /home and /stats with its client_id, and a way back to all clients", async () => {
+    const calls = installHomeApi({ home: () => json(HOME) })
+    renderHome({ searchParams: `?client=${ACME.id}` })
+
+    expect(await screen.findByText(/^Only Acme Corp\./)).toBeTruthy()
+    const requested = (path: string) => calls.filter((call) => call.path === path).map((call) => call.url.searchParams.getAll("client_id"))
+    expect(requested("/home")).toEqual([[ACME.id]])
+    expect(requested("/stats")).toEqual([[ACME.id]])
+    // New campaigns start with Home's client.
+    expect(screen.getAllByRole("link", { name: "New campaign" })[0].getAttribute("href")).toBe(`/campaigns/new?client=${ACME.id}`)
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all clients" }))
+    await waitFor(() => expect(requested("/home")).toContainEqual([]))
+    expect(screen.queryByText(/^Only Acme Corp\./)).toBeNull()
+  })
+
+  it("defaults to the client remembered for the agency when the URL has none", async () => {
+    window.localStorage.setItem(`hireflow.client.${meAs("owner").active_agency!.id}`, ACME.id)
+    const calls = installHomeApi({ home: () => json(HOME) })
+    renderHome()
+
+    expect(await screen.findByText(/^Only Acme Corp\./)).toBeTruthy()
+    expect(calls.find((call) => call.path === "/home")?.url.searchParams.getAll("client_id")).toEqual([ACME.id])
+  })
+
+  it("says a chosen client has no campaigns yet, instead of a first run", async () => {
+    installHomeApi({ home: () => json(EMPTY_HOME), stats: () => json(stats({ total: 0, active: 0, unreviewed: 0 })) })
+    renderHome({ searchParams: `?client=${ACME.id}` })
+
+    expect(await screen.findByText("No campaigns for Acme Corp yet")).toBeTruthy()
+    expect(screen.queryByText("Create your first campaign")).toBeNull()
+  })
+
+  it("offers no New campaign to a viewer, and a first run says what will show up", async () => {
+    installHomeApi({ home: () => json(EMPTY_HOME), stats: () => json(stats({ total: 0, active: 0, unreviewed: 0 })) })
+    renderHome({ me: meAs("viewer") })
+
+    expect(await screen.findByText("No campaigns yet")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull()
   })
 })

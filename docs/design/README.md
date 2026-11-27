@@ -146,15 +146,36 @@ colleague.
 
 | Mock-up | App | Where the data differs |
 |---|---|---|
-| Home (`Main.dc.html`) | `/`, `features/home` | The mock's greeting was dropped (D3, owner review): without a name it read as filler, so Home has a plain title and the day's numbers as one quiet row, like a campaign's. It uses the window like the workspace. Since sign-in (E2-09) a short "Good afternoon, <first name>" is back, small and ink-3 above the title, where the mock had the date. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign) and the role instead of a client (no client field). The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
-| Agency switcher (sidebar top) | Product header ("HireFlow AI") | E2-10 adds agencies; until then the header names the product only. |
-| User (sidebar foot: avatar, name, role) | `UserMenu` (`components/app-shell`) | As drawn, under a hairline: initials on the accent tint, the name, then role · agency. Its menu adds the email and Sign out. |
-| Candidates (`Candidates.dc.html`) | `/campaigns/[id]`, `features/campaigns` + `features/applications` | Header: "Created 12 Nov" (no opened-at date), average instead of median score (the stats have no median). Table rows show the email under the name (no current role on an application). "Applied" is "Updated", the column the API sorts by. The panel overlays the table on narrow screens and sits beside it on wide ones; it is non-modal, so J/K keep working. Location is not shown (not extracted). |
+| Home (`Main.dc.html`) | `/`, `features/home` | The mock's greeting was dropped (D3, owner review): without a name it read as filler, so Home has a plain title and the day's numbers as one quiet row, like a campaign's. It uses the window like the workspace. Since sign-in (E2-09) a short "Good afternoon, <first name>" is back, small and ink-3 above the title, where the mock had the date. The queue lists `GET /home`'s recent strong matches with no stage yet (the API has no cross-campaign queue, no "why" line and no current role per match: the row shows the campaign and when it was scored instead). Campaign rows show the counts `Campaign.counts` has, with a strong-share meter instead of the mock's pipeline-stage bar (no per-stage counts per campaign); under the title, the client (E2-10), then the role when the title does not say it. With a client chosen in the switcher, a quiet "Only Finch Pay. Show all clients" sits under the title. The processing line has no "last one at 08:12" (no timestamp for the last finished upload). |
+| Agency switcher (sidebar top) | `WorkspaceSwitcher` (`components/app-shell`) | As drawn (E2-10): the agency's initial on an ink tile, its name, then the client Home and Campaigns show ("All clients"). Its menu lists the user's agencies with their role (only for someone in more than one), then the clients, with a line on what the choice filters and "Manage clients" for admins. The product's name stays on the sign-in pages. |
+| User (sidebar foot: avatar, name, role) | `UserMenu` (`components/app-shell`) | As drawn, under a hairline: initials on the accent tint, the name, then role · agency. Its menu adds the email, Profile and Sign out. |
+| Candidates (`Candidates.dc.html`) | `/campaigns/[id]`, `features/campaigns` + `features/applications` | Header: the client above the title in ink-3, where the mock has "Campaigns / Finch Pay" (the top bar's breadcrumbs already lead back); "Created 12 Nov" (no opened-at date), average instead of median score (the stats have no median). Table rows show the email under the name (no current role on an application). "Applied" is "Updated", the column the API sorts by. The panel overlays the table on narrow screens and sits beside it on wide ones; it is non-modal, so J/K keep working. Location is not shown (not extracted). |
 | Candidates, dark (`CandidatesDark.dc.html`) | Same, `.dark` tokens | Follows the system theme, or the sidebar's Theme menu. |
 
 Screens the mock-ups did not draw (campaign list, new campaign, Uploads, Insights, Brief,
 Person profile, Talent, `/dev/ui`) follow the same rules: page frame, hairlines, one
 primary action, the score display, the voice.
+
+**Settings** (`/settings/*`, E2-10) uses the page frame with the title "Settings", then the
+sections as tabs (links, the workspace's line style), each shown only to a role that can use it.
+A section is a 15px heading with one ink-2 sentence and, on the right, its one primary action
+("Invite a teammate", "New client"), over a hairline table like the campaign list. Dialogs have
+a section-size title, a sentence, the form, and a footer with a ghost Cancel and a verb button
+("Send invitation", "Save access", "Add client"); a choice with consequences is a radio group
+with a line under each option (the roles, all or some clients). What would remove access or
+hide something (Deactivate, Archive, Revoke) asks first in an alert dialog that says what
+happens and that it can be undone. A row the user can't change says why in a 12px ink-3 line
+under its role ("Only owners can change owners and admins.", "You can't change your own role or
+access."). One-click changes (a role, Resend, Restore) confirm in a toast, and a refusal shows
+the API's sentence as it is ("The agency needs at least one active owner").
+
+**What a role can't do is not there** (EPIC-02 §9.2): no greyed-out Upload or Export for a
+viewer, the buttons are simply absent, and where a screen's main content would be the action
+(the Uploads tab's dropzone), one sentence says who does it ("Recruiters, admins and owners
+upload them."). A page the role can't use at all, opened by its URL, shows the no-access state:
+a lock in a muted circle, "You don't have access to this page", the role and agency in a
+sentence ("As a viewer in Northbank Talent, you can't create campaigns."), who can, and an
+outline button back.
 
 The sign-in pages (`/login`, `/forgot-password`, `/reset-password`, `/accept-invite`,
 `/select-agency`; E2-09) have no sidebar: the paper (`bg-canvas`) with the mark and the

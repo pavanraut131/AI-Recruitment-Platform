@@ -4,6 +4,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query"
 
 import { api, unwrap, type Schema } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
+import { clientIdParam } from "@/lib/client-filter"
 import { statsQueryOptions } from "@/lib/query/stats"
 
 export type Home = Schema<"Home">
@@ -18,16 +19,18 @@ export type RecentMatch = Schema<"RecentMatch">
  */
 export const HOME_POLL_MS = 5_000
 
-export function homeQuery() {
+/** `GET /home` for every client the user sees, or for `clientId` alone (E2-10). */
+export function homeQuery(clientId: string | null = null) {
+  const params = clientIdParam(clientId)
   return queryOptions({
-    queryKey: queryKeys.home.all,
-    queryFn: ({ signal }) => api.GET("/home", { signal }).then(unwrap),
+    queryKey: queryKeys.home.detail(params),
+    queryFn: ({ signal }) => api.GET("/home", { params: { query: params }, signal }).then(unwrap),
     refetchInterval: (query) => ((query.state.data?.processing.total ?? 0) > 0 ? HOME_POLL_MS : false),
   })
 }
 
-export function useHome() {
-  return useQuery(homeQuery())
+export function useHome(clientId: string | null = null) {
+  return useQuery(homeQuery(clientId))
 }
 
 /**
@@ -36,6 +39,6 @@ export function useHome() {
  * show, whether this is a first run (no campaigns at all) or every campaign
  * is closed. The sidebar reads the same query.
  */
-export function useWorkspaceStats() {
-  return useQuery(statsQueryOptions())
+export function useWorkspaceStats(clientId: string | null = null) {
+  return useQuery(statsQueryOptions(clientIdParam(clientId)))
 }

@@ -28,7 +28,7 @@ function renderPicker() {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } })
   queryClient.setQueryData(queryKeys.home.all, { from: "no agency" })
-  renderWithProviders(<SelectAgency next="/talent" />, { queryClient })
+  renderWithProviders(<SelectAgency next="/talent" />, { queryClient, me: null })
   return queryClient
 }
 

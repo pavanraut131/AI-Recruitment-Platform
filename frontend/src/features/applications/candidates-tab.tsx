@@ -4,6 +4,7 @@ import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { hashKey } from "@tanstack/react-query"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 
+import { usePermissions } from "@/lib/auth/permissions"
 import { cn } from "@/lib/utils"
 
 import { BulkActionsBar, ExportButton } from "./bulk-actions"
@@ -44,6 +45,10 @@ export function CandidatesTab({
 }) {
   const { state, listParams, setFilters, clearFilters, setSort, setPage, setPageSize, setOpen } =
     useCandidatesUrlState()
+  // What the role may do (EPIC-02 §9.2): a viewer gets no bulk actions, export or checkboxes.
+  const { can } = usePermissions()
+  const canReview = can("application:review")
+  const canExport = can("application:export")
   const list = useApplicationsList(campaignId, listParams)
   const campaign = useCampaign(campaignId)
 
@@ -139,7 +144,7 @@ export function CandidatesTab({
   } else if (list.isError && list.data === undefined) {
     body = <LoadError error={list.error} onRetry={() => void list.refetch()} retrying={list.isFetching} />
   } else if (noCandidatesAtAll) {
-    body = <NoCandidates uploadHref={uploadHref} />
+    body = <NoCandidates uploadHref={can("resume:upload") ? uploadHref : undefined} />
   } else if (total === 0) {
     body = <NoMatches onClear={clearFilters} />
   } else if (rows.length === 0) {
@@ -159,6 +164,7 @@ export function CandidatesTab({
             onActiveChange={onActiveChange}
             onOpen={onOpen}
             isFetching={list.isPlaceholderData}
+            selectable={canReview || canExport}
           />
         </div>
         <CandidatesPagination
@@ -184,15 +190,17 @@ export function CandidatesTab({
             onClearFilters={() => void clearFilters()}
             hasFilters={filtersActive}
           />
-          <ExportButton
-            selectedCount={selectedIds.length}
-            pending={exporter.isPending}
-            disabled={total === 0}
-            onExport={onExport}
-          />
+          {canExport && (
+            <ExportButton
+              selectedCount={selectedIds.length}
+              pending={exporter.isPending}
+              disabled={total === 0}
+              onExport={onExport}
+            />
+          )}
         </div>
       )}
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && canReview && (
         <BulkActionsBar
           count={selectedIds.length}
           pending={bulk.isPending}

@@ -72,6 +72,14 @@ request's headers. In Playwright, specs start signed in as the seeded recruiter
 (`e2e/auth.setup.ts`); a spec that needs to start signed out uses
 `test.use({ storageState: { cookies: [], origins: [] } })`.
 
+What a screen offers follows the role (E2-10): ask `usePermissions()` (`@/lib/auth/permissions`)
+with a permission of the matrix, `can("campaign:write")`, never the role's name, and leave out
+what the role can't do rather than disabling it; a page a URL can reach goes inside
+`RequirePermission` (`@/components/auth/no-access`), which shows the no-access state. The API
+checks every request anyway. In Vitest the shared renders cache a signed-in owner; pass
+`me: meAs("viewer")` (`src/test/auth.ts`, each role's permissions as `/me` lists them) to render as
+another role, or `me: null` for a signed-out page.
+
 In backend tests the `client`
 fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
 need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`

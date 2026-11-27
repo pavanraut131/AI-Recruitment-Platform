@@ -15,7 +15,19 @@ function matching(client: QueryClient, queryKey: QueryKey): string[] {
 describe("queryKeys", () => {
   it("has one factory per resource", () => {
     expect(Object.keys(queryKeys).sort()).toEqual(
-      ["applications", "authProviders", "campaigns", "home", "me", "people", "resumes", "stats"].sort(),
+      [
+        "agency",
+        "applications",
+        "authProviders",
+        "campaigns",
+        "clients",
+        "home",
+        "me",
+        "people",
+        "resumes",
+        "stats",
+        "team",
+      ].sort(),
     )
   })
 
@@ -37,6 +49,16 @@ describe("queryKeys", () => {
     expect(queryKeys.people.detail("p-1")).toEqual(["people", "detail", "p-1"])
     expect(queryKeys.home.all).toEqual(["home"])
     expect(queryKeys.stats.all).toEqual(["stats"])
+    expect(queryKeys.home.detail({ client_id: ["k-1"] })).toEqual(["home", { client_id: ["k-1"] }])
+    expect(queryKeys.stats.detail()).toEqual(["stats", {}])
+    expect(queryKeys.clients.list({ status: ["active"], q: "acme" })).toEqual([
+      "clients",
+      "list",
+      { status: ["active"], q: "acme" },
+    ])
+    expect(queryKeys.team.members({ page: 2 })).toEqual(["team", "members", { page: 2 }])
+    expect(queryKeys.team.invitations()).toEqual(["team", "invitations", {}])
+    expect(queryKeys.agency.all).toEqual(["agency"])
     expect(queryKeys.me.all).toEqual(["me"])
   })
 

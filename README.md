@@ -6,9 +6,10 @@
 
 ## Product tour
 
-A recruiter at an agency opens a new role, drops in a batch of resumes and has a ranked, explained
-shortlist a few minutes later. Every candidate is one **person** with their history across the
-agency's campaigns. Light and dark themes, keyboard-first, built for long sessions.
+A recruiter at an agency opens a new role for a client, drops in a batch of resumes and has a
+ranked, explained shortlist a few minutes later. Every candidate is one **person** with their
+history across the agency's campaigns. Each agency's team signs in with its own roles, limited to
+the clients they work for. Light and dark themes, keyboard-first, built for long sessions.
 
 1. **Home.** A calm "today" page: one sentence on how many candidates wait for a first look,
    the strong matches nobody has reviewed yet (best first, each one click from its review), the
@@ -56,6 +57,17 @@ agency's campaigns. Light and dark themes, keyboard-first, built for long sessio
 
 8. **CSV export.** "Export CSV" downloads the shortlist in the table's order, with scores,
    categories, stages and notes, for the client or the ATS.
+
+9. **Clients, the team and roles.** Every campaign is run for one of the agency's clients. The
+   sidebar's header switches between your agencies and filters Home and Campaigns to one client.
+   Settings → Team invites people by email as an owner, admin, recruiter or viewer, limited to
+   some clients if you like, and changes or ends their access; Settings → Clients adds, renames
+   and archives clients. Each role sees only what it can do: a viewer reads campaigns and
+   candidates, with no upload, review or export.
+
+   | Settings → Team | The agency and client switcher |
+   |---|---|
+   | ![Settings, Team: members and pending invitations](docs/screenshots/settings-team-light.png) | ![The sidebar's agency and client switcher, open](docs/screenshots/agency-switcher-light.png) |
 
 The screenshots come from the end-to-end test run (fake AI, generated resumes); see
 [End-to-end tests](#end-to-end-tests) to refresh them. The look and the voice are written down in
@@ -195,6 +207,7 @@ contract migration, and dropped in E0-20.
 - **AI Scoring**: Each candidate scored 0–100 against job role requirements
 - **Smart Categorization**: Strong Match / Moderate Match / Weak Match / Rejected
 - **Candidate Review**: Ranked table with filters, sorting and bulk actions in the URL, a review side panel, and one profile per person across campaigns
+- **Agencies, clients and roles**: Sign-in with email, Google or Microsoft; an agency's team invited by email as owner, admin, recruiter or viewer, optionally limited to some clients; each role sees only what it can do, and each agency only its own data
 - **Insights**: Category distribution, score histogram, top skills vs required skills, processing funnel
 - **Celery Monitoring**: Flower dashboard at `localhost:5555`
 - **Retry Logic**: 3 automatic retries per failed task; every step is safe to re-run, and a quota error retries after the provider's retry delay
@@ -284,7 +297,8 @@ The seed creates two agencies and one account per role in each, all with the
 | Default agency (the seeded campaigns) | `owner@default.example` | `admin@default.example` | `recruiter@default.example` | `viewer@default.example` |
 | Northbank Talent (empty) | `owner@northbank.example` | `admin@northbank.example` | `recruiter@northbank.example` | `viewer@northbank.example` |
 
-Both agencies have a client named "General" to run campaigns for (more under `/api/v2/clients`).
+Both agencies have a client named "General" to run campaigns for; owners and admins add more in
+Settings → Clients (or `/api/v2/clients`).
 What each role may do is the permission matrix of the
 [E2 spec, §5.2](docs/specs/EPIC-02-identity-tenancy.md#52-permission-matrix)
 (`app.modules.identity.permissions`); `GET /api/v2/me` lists your `permissions` and
@@ -339,8 +353,10 @@ another port, e.g. `http://localhost:3001`). The token is in the link's `#fragme
 Compose, `EMAIL_BACKEND=console` logs the messages instead (development and test only).
 
 #### Inviting a teammate locally
-There are no Team screens before E2-10, so send the invitation with `curl` (or
-http://localhost:8000/api/v2/docs), signed in as an owner or admin as above:
+Sign in as an owner or admin (for example `owner@default.example`) and open **Settings → Team**:
+"Invite a teammate" takes the email address, the role and, for a recruiter or viewer, all
+clients or only some. The pending invitation shows under the members, with Resend and Revoke.
+For scripts, send it with `curl` (or http://localhost:8000/api/v2/docs), signed in as above:
 
 ```bash
 API=http://localhost:8000/api/v2
@@ -355,12 +371,14 @@ shows the agency, who invited you and the role, and creates the account with a n
 password (an address that already has an account signs in first, then joins).
 
 Admins invite recruiters and viewers; owners invite any role. An invitation link works for 7
-days (resend it for a new one), a reset link for 30 minutes, once. `GET /team/members` lists the
-team; `PATCH /team/members/{id}`, `POST /team/members/{id}/deactivate` and `/reactivate` manage
-it (spec §8.2). A forgotten password: "Forgot password?" on the login page emails a link (the
-answer is the same whether or not the account exists; the API is `POST /auth/password-reset`), and
-the link's page (`/reset-password#token=…`) sets the new password and signs the account out
-everywhere.
+days (resend it for a new one), a reset link for 30 minutes, once. Settings → Team changes a
+member's role and client access and deactivates or reactivates them (the API:
+`GET /team/members`, `PATCH /team/members/{id}`, `POST /team/members/{id}/deactivate` and
+`/reactivate`, spec §8.2). Nobody changes their own row, only owners change owners and admins,
+and the last active owner stays an owner; the screen says which rule holds a row back. A
+forgotten password: "Forgot password?" on the login page emails a link (the answer is the same
+whether or not the account exists; the API is `POST /auth/password-reset`), and the link's page
+(`/reset-password#token=…`) sets the new password and signs the account out everywhere.
 
 #### Enable Google/Microsoft sign-in
 "Continue with Google" and "Continue with Microsoft" (EPIC-02 §4.3, E2-08) are optional and off
@@ -499,7 +517,10 @@ campaign's Insights, Talent (with a search) and Home. It runs signed in as the s
 `recruiter@default.example`: a `setup` project signs in once through the login page and saves the
 browser state for the other specs (`frontend/e2e/auth.setup.ts`). `auth.spec.ts` starts signed
 out: sign in and out, a wrong password, coming back to the page you asked for, a password reset
-and an invitation read from Mailpit. Every page these visit is checked with
+and an invitation read from Mailpit. `team.spec.ts` has an owner add a client and invite a
+recruiter limited to it from Settings → Team (who then sees only that client's campaigns and
+switches to a second agency), and checks that a viewer gets no write action. Every page these
+visit is checked with
 [axe](https://github.com/dequelabs/axe-core) in light and dark (no serious or critical violations)
 and screenshotted in both themes.
 
@@ -521,7 +542,7 @@ with the run's id), so they don't depend on the seed or on earlier runs.
 - **README screenshots:** `E2E_SCREENSHOT_DIR=docs/screenshots make e2e` (a path from the repo
   root) also writes the product tour's screenshots, cropped to the 1440 × 900 viewport, over the
   ones in `docs/screenshots/`. Which screens and themes go there is the `docs` option of
-  `checkScreen` in `frontend/e2e/hero-flow.spec.ts`. That run uses friendly demo names (no run
+  `checkScreen` in `frontend/e2e/hero-flow.spec.ts` and `team.spec.ts`. That run uses friendly demo names (no run
   id in the campaign title, e-mails or file names), so run it on a fresh stack, the default.
 
 ---

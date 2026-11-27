@@ -56,13 +56,14 @@ describe("UserMenu", () => {
     expect(trigger.textContent).toContain("Recruiter · Northbank Talent")
   })
 
-  it("lists the email, the agency and the role", async () => {
+  it("lists the email, the agency and the role, and links to the profile", async () => {
     renderMenu(meFixture({ role: "admin" }))
 
     const menu = await openMenu()
     expect(menu.textContent).toContain("priya@northbank.example")
     expect(menu.textContent).toContain("Northbank Talent")
     expect(within(menu).getByText("Admin")).toBeTruthy()
+    expect(within(menu).getByRole("menuitem", { name: "Profile" }).getAttribute("href")).toBe("/settings/profile")
   })
 
   it("signs out: POST /auth/logout, the cache cleared, then the login page", async () => {

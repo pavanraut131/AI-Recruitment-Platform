@@ -7,7 +7,7 @@ import { useId, useRef, type ReactNode, type RefObject } from "react"
 import { toast } from "sonner"
 
 import { EvaluationBlock, MustHaveChips, Recommendation, ScoreBreakdown } from "@/components/application/evaluation"
-import { ApplicationNotes, ApplicationStageSelect } from "@/components/application/review-controls"
+import { ApplicationNotes, ApplicationStageSelect, useCanReview } from "@/components/application/review-controls"
 import { ScoreCell, ScoreHeadline } from "@/components/application/score"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -67,7 +67,8 @@ export function ReviewPanel({
 }: ReviewPanelProps) {
   const stageTrigger = useRef<HTMLButtonElement>(null)
   // S focuses the stage selector while the panel shows an application (spec §5.1).
-  useFocusShortcut("s", stageTrigger, open && application !== undefined)
+  const canReview = useCanReview()
+  useFocusShortcut("s", stageTrigger, open && application !== undefined && canReview)
 
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()} modal={false}>
@@ -145,6 +146,7 @@ function ReviewContent({
 }) {
   const stageId = useId()
   const stageHintId = useId()
+  const canReview = useCanReview()
   const target = { applicationId: application.id, campaignId: application.campaign_id, personId: application.person.id }
   const email = application.person.email
   // The Person (profile and other applications): the current role, recent experience, "Also applied to".
@@ -182,12 +184,14 @@ function ReviewContent({
             target={target}
             stage={application.pipeline_stage}
             triggerRef={stageTrigger}
-            aria-describedby={stageHintId}
+            aria-describedby={canReview ? stageHintId : undefined}
           />
-          <span id={stageHintId} className="text-xs text-muted-foreground">
-            <Kbd>S</Kbd>
-            <span className="sr-only"> focuses the stage</span>
-          </span>
+          {canReview && (
+            <span id={stageHintId} className="text-xs text-muted-foreground">
+              <Kbd>S</Kbd>
+              <span className="sr-only"> focuses the stage</span>
+            </span>
+          )}
         </div>
 
         {application.score === null ? (
@@ -219,7 +223,13 @@ function ReviewContent({
 
       <p className="mt-auto flex flex-wrap items-center gap-1.5 border-t px-7 py-3 text-xs text-muted-foreground">
         <Kbd>J</Kbd>
-        <Kbd>K</Kbd> next and previous · <Kbd>S</Kbd> stage · <Kbd>Esc</Kbd> close
+        <Kbd>K</Kbd> next and previous ·{" "}
+        {canReview && (
+          <>
+            <Kbd>S</Kbd> stage ·{" "}
+          </>
+        )}
+        <Kbd>Esc</Kbd> close
       </p>
     </>
   )
@@ -231,6 +241,7 @@ function ReviewContent({
  * say so in a toast with Undo.
  */
 function Decision({ application, target }: { application: Application; target: ApplicationRef }) {
+  const canReview = useCanReview()
   const update = useUpdateApplicationStage()
   const current = application.pipeline_stage
   const next = nextStep(current)
@@ -246,6 +257,14 @@ function Decision({ application, target }: { application: Application; target: A
           }),
       },
     )
+
+  const profileLink = (
+    <Button asChild variant="link" className="px-1.5">
+      <Link href={personHref(application.person.id, application.id)}>Open full profile</Link>
+    </Button>
+  )
+  // A viewer (no `application:review`) decides nothing here.
+  if (!canReview) return <div className="flex flex-wrap items-center gap-2">{profileLink}</div>
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -265,9 +284,7 @@ function Decision({ application, target }: { application: Application; target: A
           Not a fit
         </Button>
       )}
-      <Button asChild variant="link" className="px-1.5">
-        <Link href={personHref(application.person.id, application.id)}>Open full profile</Link>
-      </Button>
+      {profileLink}
     </div>
   )
 }

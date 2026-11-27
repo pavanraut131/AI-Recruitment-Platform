@@ -65,7 +65,8 @@ const BAR_END_RADIUS: [number, number, number, number] = [0, 4, 4, 0]
  * from `GET /campaigns/{id}/stats`. The workspace's live events invalidate
  * the stats as resumes finish, so the charts follow uploads without polling.
  */
-export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUpload: () => void }) {
+/** `onUpload`: go to the Uploads tab; absent for a role that cannot upload (no button then). */
+export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUpload?: () => void }) {
   const stats = useCampaignStats(campaign.id)
 
   if (stats.isPending) return <InsightsSkeleton />
@@ -80,12 +81,18 @@ export function InsightsTab({ campaign, onUpload }: { campaign: Campaign; onUplo
       <EmptyState
         icon={ChartColumnIcon}
         title="No insights yet"
-        description="Upload resumes to this campaign. As they are scored, you see here how the candidates compare."
+        description={
+          onUpload
+            ? "Upload resumes to this campaign. As they are scored, you see here how the candidates compare."
+            : "No resumes have been uploaded yet. As they are scored, you see here how the candidates compare."
+        }
         action={
-          <Button onClick={onUpload}>
-            <UploadIcon data-icon="inline-start" />
-            Upload resumes
-          </Button>
+          onUpload && (
+            <Button onClick={onUpload}>
+              <UploadIcon data-icon="inline-start" />
+              Upload resumes
+            </Button>
+          )
         }
       />
     )

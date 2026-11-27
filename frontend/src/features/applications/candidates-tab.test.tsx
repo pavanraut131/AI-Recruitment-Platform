@@ -2,6 +2,8 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { UrlUpdateEvent } from "nuqs/adapters/testing"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { meAs } from "@/test/auth"
+
 import { CandidatesTab } from "./candidates-tab"
 import { makeApplication, makeApplications } from "./fixtures"
 import type { Application } from "./model"
@@ -34,9 +36,9 @@ const people: Application[] = [
   makeApplication(2, { person: { id: "p2", name: "Alan Turing", email: "alan@example.com" }, score: 40, category: "weak_match", pipeline_stage: null }),
 ]
 
-function renderTab(searchParams = "") {
+function renderTab(searchParams = "", { me }: { me?: ReturnType<typeof meAs> } = {}) {
   const onUrlUpdate = vi.fn<(event: UrlUpdateEvent) => void>()
-  const result = renderWithProviders(<CandidatesTab campaignId={CAMPAIGN_ID} />, { searchParams, onUrlUpdate })
+  const result = renderWithProviders(<CandidatesTab campaignId={CAMPAIGN_ID} />, { searchParams, onUrlUpdate, me })
   const lastQuery = () => onUrlUpdate.mock.lastCall?.[0].queryString
   return { ...result, onUrlUpdate, lastQuery }
 }
@@ -377,5 +379,37 @@ describe("CandidatesTab: panel and keyboard", () => {
     renderTab(`?open=${elsewhere.id}`)
     expect(await screen.findByRole("heading", { name: "Radia Perlman" })).toBeTruthy()
     expect(api.callsTo("GET", /^\/applications\//)).toHaveLength(1)
+  })
+})
+
+describe("CandidatesTab: what each role can do (E2-10)", () => {
+  it("gives a viewer the ranked table without checkboxes, bulk actions or export", async () => {
+    installFakeApi({ applications: people })
+    renderTab("", { me: meAs("viewer") })
+
+    expect(await screen.findByText("Ada Lovelace")).toBeTruthy()
+    expect(within(table()).queryAllByRole("checkbox")).toHaveLength(0)
+    expect(screen.queryByRole("button", { name: /Export/ })).toBeNull()
+    // Space on a row selects nothing, so no bulk bar appears.
+    fireEvent.keyDown(rowOf("Ada Lovelace"), { key: " " })
+    expect(screen.queryByRole("toolbar", { name: "Bulk actions" })).toBeNull()
+  })
+
+  it("gives a recruiter the checkboxes, bulk actions and export", async () => {
+    installFakeApi({ applications: people })
+    renderTab("", { me: meAs("recruiter") })
+
+    await screen.findByText("Ada Lovelace")
+    expect(screen.getByRole("button", { name: "Export CSV" })).toBeTruthy()
+    fireEvent.click(within(rowOf("Ada Lovelace")).getByRole("checkbox"))
+    expect(await screen.findByRole("toolbar", { name: "Bulk actions" })).toBeTruthy()
+  })
+
+  it("does not invite a viewer to upload into an empty campaign", async () => {
+    installFakeApi({ applications: [] })
+    renderTab("", { me: meAs("viewer") })
+
+    expect(await screen.findByText("No candidates yet")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Upload resumes" })).toBeNull()
   })
 })

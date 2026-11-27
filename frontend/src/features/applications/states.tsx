@@ -34,20 +34,26 @@ function StateBlock({
   )
 }
 
-/** The campaign has no applications yet. */
-export function NoCandidates({ uploadHref }: { uploadHref: string }) {
+/** The campaign has no applications yet. `uploadHref`: absent for a role that cannot upload. */
+export function NoCandidates({ uploadHref }: { uploadHref?: string }) {
   return (
     <StateBlock
       icon={UsersIcon}
       title="No candidates yet"
-      description="Upload their resumes. Each one is read, scored against this campaign's must-haves and ranked here."
+      description={
+        uploadHref
+          ? "Upload their resumes. Each one is read, scored against this campaign's must-haves and ranked here."
+          : "Once resumes are uploaded, each one is read, scored against this campaign's must-haves and ranked here."
+      }
       action={
-        <Button asChild>
-          <Link href={uploadHref}>
-            <UploadIcon aria-hidden="true" />
-            Upload resumes
-          </Link>
-        </Button>
+        uploadHref && (
+          <Button asChild>
+            <Link href={uploadHref}>
+              <UploadIcon aria-hidden="true" />
+              Upload resumes
+            </Link>
+          </Button>
+        )
       }
     />
   )

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isApiProblem } from "@/lib/api/client"
+import { usePermissions } from "@/lib/auth/permissions"
 import { useCampaignEvents, type CampaignEventsStatus } from "@/lib/query/use-campaign-events"
 import { cn } from "@/lib/utils"
 
@@ -44,6 +45,7 @@ export function CampaignWorkspace({
   const campaign = useCampaign(campaignId)
   const live = useCampaignEvents(campaignId, { enabled: campaign.data !== undefined })
   const [tab, setTab] = useQueryState("tab", workspaceTabParser)
+  const { can } = usePermissions()
 
   if (campaign.isPending) return <WorkspaceSkeleton />
 
@@ -98,7 +100,7 @@ export function CampaignWorkspace({
         <TabsContent value="candidates">{candidatesTab}</TabsContent>
         <TabsContent value="uploads">{uploadsTab}</TabsContent>
         <TabsContent value="insights">
-          <InsightsTab campaign={data} onUpload={() => void setTab("uploads")} />
+          <InsightsTab campaign={data} onUpload={can("resume:upload") ? () => void setTab("uploads") : undefined} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsTab campaign={data} />
@@ -141,10 +143,16 @@ function WorkspaceHeader({
   live: CampaignEventsStatus
   onTab: (tab: WorkspaceTab) => void
 }) {
+  const { can } = usePermissions()
   return (
     <header className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-col gap-1">
+          {/* The client, above the title, as the D1 mock-up places it. */}
+          <p className="text-dense text-muted-foreground">
+            <span className="sr-only">Client: </span>
+            {campaign.client.name}
+          </p>
           <h1 className="text-title font-semibold tracking-tight break-words">{campaign.title}</h1>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-dense text-muted-foreground">
             <span className="text-ink-2">{campaign.role}</span>
@@ -156,14 +164,19 @@ function WorkspaceHeader({
             <LiveIndicator status={live} />
           </p>
         </div>
+        {/* Only what the role can do (EPIC-02 §9.2): a viewer gets neither. */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={() => onTab("settings")} className="text-ink-2">
-            Edit brief
-          </Button>
-          <Button onClick={() => onTab("uploads")}>
-            <UploadIcon data-icon="inline-start" />
-            Upload resumes
-          </Button>
+          {can("campaign:write") && (
+            <Button variant="ghost" onClick={() => onTab("settings")} className="text-ink-2">
+              Edit brief
+            </Button>
+          )}
+          {can("resume:upload") && (
+            <Button onClick={() => onTab("uploads")}>
+              <UploadIcon data-icon="inline-start" />
+              Upload resumes
+            </Button>
+          )}
         </div>
       </div>
       <CampaignSummary campaign={campaign} onTab={onTab} />
