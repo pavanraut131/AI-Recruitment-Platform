@@ -21,9 +21,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { usePermissions } from "@/lib/auth/permissions"
 
 import { useDeleteCampaign, useUpdateCampaign, type Campaign } from "../api"
 import { CampaignFields, FormServerError } from "../components/campaign-fields"
+import { CampaignClientField } from "../components/client-field"
 import { applyServerErrors } from "../components/server-errors"
 import {
   CAMPAIGN_STATUS_DESCRIPTIONS,
@@ -36,15 +38,71 @@ import {
   type CampaignFormValues,
 } from "../schema"
 
-const FIELDS = ["title", "role", "description", "required_skills", "status"] as const
+const FIELDS = ["client_id", "title", "role", "description", "required_skills", "status"] as const
 
-/** The workspace's Brief tab (`?tab=settings`): edit the campaign, change its status, delete it. */
+/**
+ * The workspace's Brief tab (`?tab=settings`): edit the campaign, move it to
+ * another client, change its status (`campaign:write`), delete it
+ * (`campaign:delete`). A viewer reads the brief instead.
+ */
 export function SettingsTab({ campaign }: { campaign: Campaign }) {
+  const { can } = usePermissions()
   return (
     <div className="flex max-w-3xl flex-col gap-10 pt-1">
-      <CampaignSettingsForm campaign={campaign} />
-      <DeleteCampaignSection campaign={campaign} />
+      {can("campaign:write") ? <CampaignSettingsForm campaign={campaign} /> : <BriefReadOnly campaign={campaign} />}
+      {can("campaign:delete") && <DeleteCampaignSection campaign={campaign} />}
     </div>
+  )
+}
+
+/** The brief for a role that cannot change it (viewers). */
+function BriefReadOnly({ campaign }: { campaign: Campaign }) {
+  const facts: { label: string; value: React.ReactNode }[] = [
+    { label: "Client", value: campaign.client.name },
+    { label: "Title", value: campaign.title },
+    { label: "Role", value: campaign.role },
+    { label: "Status", value: `${CAMPAIGN_STATUS_LABELS[campaign.status]}. ${CAMPAIGN_STATUS_DESCRIPTIONS[campaign.status]}` },
+    {
+      label: "Required skills",
+      value:
+        campaign.required_skills.length > 0 ? (
+          <ul aria-label="Required skills" className="flex flex-wrap gap-1.5">
+            {campaign.required_skills.map((skill) => (
+              <li key={skill} className="rounded-full bg-muted px-2.5 py-0.5 text-dense">
+                {skill}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        ),
+    },
+    {
+      label: "Description",
+      value: campaign.description ? (
+        <p className="whitespace-pre-line">{campaign.description}</p>
+      ) : (
+        <span className="text-muted-foreground">None</span>
+      ),
+    },
+  ]
+  return (
+    <section aria-labelledby="campaign-brief-heading" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 id="campaign-brief-heading" className="text-section font-semibold">
+          The brief
+        </h2>
+        <p className="text-ink-2">What resumes are scored against. Recruiters, admins and owners can change it.</p>
+      </div>
+      <dl className="flex flex-col border-t">
+        {facts.map(({ label, value }) => (
+          <div key={label} className="grid gap-1 border-b py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-dense font-semibold text-muted-foreground">{label}</dt>
+            <dd className="min-w-0 break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 
@@ -58,7 +116,7 @@ function CampaignSettingsForm({ campaign }: { campaign: Campaign }) {
   })
 
   function onSubmit(values: CampaignFormValues) {
-    update.mutate(formValuesToRequest(values), {
+    update.mutate(formValuesToRequest(values, { currentClientId: campaign.client.id }), {
       onSuccess: (saved) => {
         form.reset(campaignToFormValues(saved))
         toast.success("Campaign saved")
@@ -82,6 +140,11 @@ function CampaignSettingsForm({ campaign }: { campaign: Campaign }) {
       </div>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate aria-label="Campaign settings" className="flex flex-col gap-5">
+          <CampaignClientField
+            disabled={update.isPending}
+            currentClientId={campaign.client.id}
+            description="Moving it to another client changes who sees it: people limited to some clients see only their clients' campaigns."
+          />
           <CampaignFields disabled={update.isPending} />
           <FormField
             control={form.control}

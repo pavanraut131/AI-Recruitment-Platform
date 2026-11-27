@@ -6,10 +6,13 @@ import { formatDistanceToNow } from "date-fns"
 import { BriefcaseIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, SearchXIcon } from "lucide-react"
 
 import { CampaignStatusBadge } from "@/components/campaign/status-badge"
+import { ClientFilterSelect } from "@/components/clients/client-select"
 import { Button } from "@/components/ui/button"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { usePermissions } from "@/lib/auth/permissions"
+import { clientName, usePickerClients } from "@/lib/query/clients"
 import { cn } from "@/lib/utils"
 
 import { useCampaigns, type Campaign } from "../api"
@@ -17,10 +20,15 @@ import { EmptyState, ErrorState } from "@/components/data-states"
 import { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUSES } from "../schema"
 import { useCampaignListParams } from "./use-campaign-list-params"
 
-/** `/campaigns`: every campaign, filtered by status and searched by title or role, all in the URL. */
+/**
+ * `/campaigns`: every campaign, filtered by client and status and searched by
+ * title or role, all in the URL. "New campaign" only for roles that can
+ * create one (`campaign:write`).
+ */
 export function CampaignList() {
   const params = useCampaignListParams()
   const query = useCampaigns(params.apiParams)
+  const { can } = usePermissions()
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 pt-6 pb-14 sm:px-8 lg:px-14">
@@ -29,12 +37,7 @@ export function CampaignList() {
           <h1 className="text-title font-semibold tracking-tight">Campaigns</h1>
           <p className="text-ink-2">One campaign per opening, with its resumes, ranked candidates and pipeline.</p>
         </div>
-        <Button asChild size="lg">
-          <Link href="/campaigns/new">
-            <PlusIcon data-icon="inline-start" />
-            New campaign
-          </Link>
-        </Button>
+        {can("campaign:write") && <NewCampaignButton clientId={params.clientId} />}
       </header>
 
       <Toolbar params={params} />
@@ -46,9 +49,23 @@ export function CampaignList() {
 
 type ListParams = ReturnType<typeof useCampaignListParams>
 
+/** To the new-campaign form, with the list's client preselected. */
+function NewCampaignButton({ clientId }: { clientId: string | null }) {
+  const href = clientId ? `/campaigns/new?client=${encodeURIComponent(clientId)}` : "/campaigns/new"
+  return (
+    <Button asChild size="lg">
+      <Link href={href}>
+        <PlusIcon data-icon="inline-start" />
+        New campaign
+      </Link>
+    </Button>
+  )
+}
+
 function Toolbar({ params }: { params: ListParams }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <ClientFilterSelect value={params.clientId} onValueChange={params.setClient} />
       <InputGroup className="w-full max-w-xs">
         <InputGroupAddon>
           <SearchIcon aria-hidden="true" />
@@ -93,6 +110,8 @@ function Toolbar({ params }: { params: ListParams }) {
 }
 
 function Results({ params, query }: { params: ListParams; query: ReturnType<typeof useCampaigns> }) {
+  const { can } = usePermissions()
+  const clients = usePickerClients()
   if (query.isPending) return <CampaignTableSkeleton />
 
   if (query.isError) {
@@ -130,19 +149,38 @@ function Results({ params, query }: { params: ListParams; query: ReturnType<type
         />
       )
     }
+    if (params.clientId) {
+      const name = clientName(clients.data?.items, params.clientId)
+      return (
+        <EmptyState
+          icon={BriefcaseIcon}
+          title={name ? `No campaigns for ${name} yet` : "No campaigns for this client yet"}
+          description={
+            can("campaign:write")
+              ? "Create one for an opening at this client, or show every client's campaigns."
+              : "Show every client's campaigns instead."
+          }
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={() => params.setClient(null)}>
+                Show all clients
+              </Button>
+              {can("campaign:write") && <NewCampaignButton clientId={params.clientId} />}
+            </div>
+          }
+        />
+      )
+    }
     return (
       <EmptyState
         icon={BriefcaseIcon}
         title="No campaigns yet"
-        description="Create a campaign for an opening, then upload resumes to get a ranked shortlist."
-        action={
-          <Button asChild size="lg">
-            <Link href="/campaigns/new">
-              <PlusIcon data-icon="inline-start" />
-              New campaign
-            </Link>
-          </Button>
+        description={
+          can("campaign:write")
+            ? "Create a campaign for an opening, then upload resumes to get a ranked shortlist."
+            : "Campaigns your agency creates show up here."
         }
+        action={can("campaign:write") && <NewCampaignButton clientId={null} />}
       />
     )
   }
@@ -185,11 +223,12 @@ const NUMERIC = "text-right tabular-nums"
 function CampaignTable({ campaigns }: { campaigns: Campaign[] }) {
   const router = useRouter()
   return (
-    <Table className="min-w-[720px] text-dense">
+    <Table className="min-w-[840px] text-dense">
       <TableCaption className="sr-only">Campaigns, newest first. Open a campaign by its title.</TableCaption>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="pl-1">Campaign</TableHead>
+          <TableHead>Client</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className={NUMERIC}>Applicants</TableHead>
           <TableHead className={NUMERIC}>Strong matches</TableHead>
@@ -220,6 +259,7 @@ function CampaignTable({ campaigns }: { campaigns: Campaign[] }) {
                 </Link>
                 <span className="block truncate text-muted-foreground">{campaign.role}</span>
               </TableCell>
+              <TableCell className="max-w-48 truncate text-ink-2">{campaign.client.name}</TableCell>
               <TableCell>
                 <CampaignStatusBadge status={campaign.status} />
               </TableCell>

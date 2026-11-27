@@ -11,8 +11,11 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { Schema } from "@/lib/api/client"
 import { displayName } from "@/lib/applications"
+import { usePermissions } from "@/lib/auth/permissions"
 import { firstName } from "@/lib/auth/roles"
 import { useSignedInUser } from "@/lib/auth/session"
+import { useClientFilter } from "@/lib/client-filter"
+import { clientName, usePickerClients } from "@/lib/query/clients"
 import { applicationHref, campaignHref } from "@/lib/routes"
 import { cn } from "@/lib/utils"
 
@@ -68,13 +71,18 @@ function useGreeting(): string | null {
  * at all) invites creating one.
  */
 export function Home() {
-  const home = useHome()
-  const stats = useWorkspaceStats()
+  const { clientId, setClientId } = useClientFilter({ fromUrl: true })
+  const home = useHome(clientId)
+  const stats = useWorkspaceStats(clientId)
+  const clients = usePickerClients()
   const today = useToday()
   const greeting = useGreeting()
+  const { can } = usePermissions()
+  const canCreate = can("campaign:write")
 
-  const firstRun = stats.data?.campaigns.total === 0 && home.data !== undefined && isEmpty(home.data)
+  const nothing = stats.data?.campaigns.total === 0 && home.data !== undefined && isEmpty(home.data)
   const facts = home.data && stats.data ? homeFacts(home.data, stats.data) : null
+  const chosenClient = clientId ? (clientName(clients.data?.items, clientId) ?? "this client") : null
 
   return (
     <div className="flex w-full flex-col gap-8 px-4 pt-3 pb-14 sm:px-6 lg:px-10 2xl:px-14">
@@ -82,6 +90,14 @@ export function Home() {
         <div className="flex min-w-0 flex-col gap-1.5">
           {greeting && <p className="text-dense text-muted-foreground">{greeting}</p>}
           <h1 className="text-title font-semibold tracking-tight">Home</h1>
+          {chosenClient && (
+            <p className="text-dense text-muted-foreground">
+              Only {chosenClient}.{" "}
+              <button type="button" className="text-link" onClick={() => setClientId(null)}>
+                Show all clients
+              </button>
+            </p>
+          )}
           <div className="min-h-6">
             {facts ? (
               <TodayFacts facts={facts} today={today} />
@@ -92,19 +108,41 @@ export function Home() {
             ) : null}
           </div>
         </div>
-        <NewCampaignButton />
+        {canCreate && <NewCampaignButton clientId={clientId} />}
       </header>
 
       {home.isPending || stats.isPending ? (
         <HomeSkeleton />
       ) : home.isError ? (
         <ErrorState error={home.error} onRetry={() => void home.refetch()} retrying={home.isFetching} />
-      ) : firstRun ? (
+      ) : nothing && chosenClient ? (
         <EmptyState
           icon={BriefcaseIcon}
-          title="Create your first campaign"
-          description="A campaign is one opening: describe the role, upload resumes, and get a ranked shortlist of candidates."
-          action={<NewCampaignButton />}
+          title={`No campaigns for ${chosenClient} yet`}
+          description={
+            canCreate
+              ? "Create one for an opening at this client, or show every client's work."
+              : "Show every client's work instead."
+          }
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={() => setClientId(null)}>
+                Show all clients
+              </Button>
+              {canCreate && <NewCampaignButton clientId={clientId} />}
+            </div>
+          }
+        />
+      ) : nothing ? (
+        <EmptyState
+          icon={BriefcaseIcon}
+          title={canCreate ? "Create your first campaign" : "No campaigns yet"}
+          description={
+            canCreate
+              ? "A campaign is one opening: describe the role, upload resumes, and get a ranked shortlist of candidates."
+              : "Campaigns your agency creates show up here, with their strong matches."
+          }
+          action={canCreate && <NewCampaignButton clientId={null} />}
         />
       ) : (
         <div className="grid items-start gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
@@ -142,10 +180,11 @@ function TodayFacts({ facts, today }: { facts: HomeFact[]; today: string | null 
   )
 }
 
-function NewCampaignButton() {
+/** To the new-campaign form, with Home's client preselected. */
+function NewCampaignButton({ clientId }: { clientId: string | null }) {
   return (
     <Button asChild>
-      <Link href="/campaigns/new">
+      <Link href={clientId ? `/campaigns/new?client=${encodeURIComponent(clientId)}` : "/campaigns/new"}>
         <PlusIcon data-icon="inline-start" />
         New campaign
       </Link>
@@ -301,7 +340,9 @@ function CampaignRow({ campaign }: { campaign: Campaign }) {
         >
           {campaign.title}
         </Link>
-        {showRole && <span className="truncate text-dense text-muted-foreground">{campaign.role}</span>}
+        <span className="truncate text-dense text-muted-foreground">
+          {showRole ? `${campaign.client.name} · ${campaign.role}` : campaign.client.name}
+        </span>
       </span>
       {/* Strong matches as a share of the applicants (the sentence below says the numbers). */}
       <span aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-border">

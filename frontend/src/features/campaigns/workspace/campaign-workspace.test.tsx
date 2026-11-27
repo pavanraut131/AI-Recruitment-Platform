@@ -3,13 +3,17 @@ import type { UrlUpdateEvent } from "nuqs/adapters/testing"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { useCampaignEvents } from "@/lib/query/use-campaign-events"
+import { meAs } from "@/test/auth"
 import { installDomPolyfills } from "@/test/helpers"
 
 import {
   CAMPAIGN_ID,
   campaignFixture,
+  clientFixture,
+  GENERAL_CLIENT,
   json,
   mockApi,
+  pageOf,
   problem,
   renderWithProviders,
   statsFixture,
@@ -29,7 +33,7 @@ beforeEach(() => {
   vi.mocked(useCampaignEvents).mockClear()
 })
 
-function renderWorkspace(searchParams = "") {
+function renderWorkspace(searchParams = "", { me }: { me?: ReturnType<typeof meAs> } = {}) {
   const urlUpdates: UrlUpdateEvent[] = []
   const view = renderWithProviders(
     <CampaignWorkspace
@@ -37,7 +41,7 @@ function renderWorkspace(searchParams = "") {
       candidatesTab={<p>Candidates slot</p>}
       uploadsTab={<p>Uploads slot</p>}
     />,
-    { searchParams, onUrlUpdate: (event) => urlUpdates.push(event) },
+    { searchParams, onUrlUpdate: (event) => urlUpdates.push(event), me },
   )
   return { ...view, lastUrl: () => urlUpdates.at(-1)?.queryString }
 }
@@ -205,5 +209,66 @@ describe("Settings tab", () => {
     )
     expect(screen.getByRole("alertdialog")).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
+  })
+})
+
+describe("CampaignWorkspace: clients and roles (E2-10)", () => {
+  const ACME = clientFixture({ id: "00000000-0000-4000-8000-00000000c002", name: "Acme Corp" })
+
+  it("shows the campaign's client above its title", async () => {
+    mockCampaignApi()
+    renderWorkspace()
+
+    await screen.findByRole("heading", { level: 1, name: campaign.title })
+    expect(screen.getByText("Client:").parentElement?.textContent).toBe("Client: General")
+  })
+
+  it("gives a viewer neither Edit brief nor Upload resumes, and the brief to read", async () => {
+    const fetchMock = mockCampaignApi()
+    renderWorkspace("?tab=settings", { me: meAs("viewer") })
+
+    await screen.findByRole("heading", { level: 1, name: campaign.title })
+    expect(screen.queryByRole("button", { name: "Edit brief" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Upload resumes" })).toBeNull()
+    expect(screen.getByRole("heading", { name: "The brief" })).toBeTruthy()
+    expect(screen.queryByRole("form", { name: "Campaign settings" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Delete campaign" })).toBeNull()
+    expect(within(screen.getByRole("list", { name: "Required skills" })).getAllByRole("listitem").map((item) => item.textContent)).toEqual(
+      campaign.required_skills,
+    )
+    const brief = screen.getByRole("region", { name: "The brief" })
+    expect(within(brief).getByText("Client").nextElementSibling?.textContent).toBe("General")
+    expect(fetchMock.mock.calls.every(([request]) => request.method === "GET")).toBe(true)
+  })
+
+  it("lets a recruiter edit the brief and upload, but not delete the campaign", async () => {
+    mockCampaignApi()
+    renderWorkspace("?tab=settings", { me: meAs("recruiter") })
+
+    expect(await screen.findByRole("form", { name: "Campaign settings" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Edit brief" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Upload resumes" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Delete campaign" })).toBeNull()
+  })
+
+  it("moves the campaign to another client, sending the client only when it changed", async () => {
+    const fetchMock = mockCampaignApi({
+      "GET /clients": () => json(pageOf([ACME, GENERAL_CLIENT])),
+      "PATCH /campaigns/{id}": async (request) => {
+        const body = await request.clone().json()
+        return json({ ...campaign, client: { id: ACME.id, name: ACME.name }, ...body })
+      },
+    })
+    renderWorkspace("?tab=settings")
+
+    const client = await screen.findByRole("combobox", { name: "Client" })
+    await waitFor(() => expect(client.textContent).toBe("General"))
+    fireEvent.click(client)
+    fireEvent.click(await screen.findByRole("option", { name: "Acme Corp" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([request]) => request.method === "PATCH")).toBe(true))
+    const patch = fetchMock.mock.calls.find(([request]) => request.method === "PATCH")![0]
+    expect((await patch.json()).client_id).toBe(ACME.id)
   })
 })

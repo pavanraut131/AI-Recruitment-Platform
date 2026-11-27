@@ -26,6 +26,8 @@ export const SKILLS_MAX = 50
 export const JOB_DESCRIPTION_MAX = 50_000
 
 export const campaignFormSchema = z.object({
+  /** Required in the UI (spec §9.3), though the API would pick the user's default client. */
+  client_id: z.string().min(1, "Choose the client this campaign is for."),
   title: z
     .string()
     .trim()
@@ -49,6 +51,7 @@ export type CampaignFormValues = z.infer<typeof campaignFormSchema>
 export type CampaignFormInput = z.input<typeof campaignFormSchema>
 
 export const EMPTY_CAMPAIGN_FORM: CampaignFormInput = {
+  client_id: "",
   title: "",
   role: "",
   description: "",
@@ -58,6 +61,7 @@ export const EMPTY_CAMPAIGN_FORM: CampaignFormInput = {
 
 export function campaignToFormValues(campaign: Campaign): CampaignFormInput {
   return {
+    client_id: campaign.client.id,
     title: campaign.title,
     role: campaign.role,
     description: campaign.description ?? "",
@@ -66,10 +70,18 @@ export function campaignToFormValues(campaign: Campaign): CampaignFormInput {
   }
 }
 
-/** The request body. An empty description is sent as `null` (no description). */
-export function formValuesToRequest(values: CampaignFormValues): CampaignCreate & CampaignUpdate {
+/**
+ * The request body. An empty description is sent as `null` (no description).
+ * `currentClientId` (an edit): the client is sent only when it changed, since
+ * sending a campaign's archived client back would be refused.
+ */
+export function formValuesToRequest(
+  values: CampaignFormValues,
+  { currentClientId }: { currentClientId?: string } = {},
+): CampaignCreate & CampaignUpdate {
   const description = values.description.trim()
   return {
+    ...(values.client_id !== currentClientId && { client_id: values.client_id }),
     title: values.title,
     role: values.role,
     description: description === "" ? null : description,

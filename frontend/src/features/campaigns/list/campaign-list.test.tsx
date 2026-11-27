@@ -2,7 +2,10 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { UrlUpdateEvent } from "nuqs/adapters/testing"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { campaignFixture, deferred, json, mockApi, pageOf, problem, renderWithProviders } from "../test-utils"
+import { meAs } from "@/test/auth"
+import { installDomPolyfills } from "@/test/helpers"
+
+import { campaignFixture, clientFixture, deferred, GENERAL_CLIENT, json, mockApi, pageOf, problem, renderWithProviders } from "../test-utils"
 import { CampaignList } from "./campaign-list"
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }))
@@ -22,17 +25,21 @@ const CLOSED = campaignFixture({
   counts: { resumes: 0, in_progress: 0, failed: 0, new_resumes_24h: 0, applications: 0, strong_matches: 0 },
 })
 
-function renderList(searchParams = "") {
+function renderList(searchParams = "", { me }: { me?: ReturnType<typeof meAs> } = {}) {
   const urlUpdates: UrlUpdateEvent[] = []
   const view = renderWithProviders(<CampaignList />, {
     searchParams,
     onUrlUpdate: (event) => urlUpdates.push(event),
+    me,
   })
   return { ...view, urlUpdates, lastUrl: () => urlUpdates.at(-1)?.queryString }
 }
 
+/** The campaign list's requests (the client picker's `GET /clients` aside). */
 function requestedUrls(fetchMock: ReturnType<typeof mockApi>) {
-  return fetchMock.mock.calls.map(([request]) => new URL(request.url))
+  return fetchMock.mock.calls
+    .map(([request]) => new URL(request.url))
+    .filter((url) => url.pathname.endsWith("/campaigns"))
 }
 
 describe("CampaignList", () => {
@@ -115,7 +122,7 @@ describe("CampaignList", () => {
     await waitFor(() => expect(view.lastUrl()).toBe("?q=back"))
     await waitFor(() => expect(requestedUrls(fetchMock).at(-1)?.searchParams.get("q")).toBe("back"))
     // One request for the first load, one for the search: not one per keystroke.
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(requestedUrls(fetchMock)).toHaveLength(2)
   })
 
   it("invites creating the first campaign when there are none", async () => {
@@ -155,5 +162,72 @@ describe("CampaignList", () => {
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
 
     expect(await screen.findByRole("table")).toBeTruthy()
+  })
+})
+
+describe("CampaignList: clients and roles (E2-10)", () => {
+  const ACME = clientFixture({ id: "00000000-0000-4000-8000-00000000c002", name: "Acme Corp" })
+  const OLD = clientFixture({ id: "00000000-0000-4000-8000-00000000c003", name: "Old Co", status: "archived" })
+
+  beforeEach(() => {
+    installDomPolyfills()
+    window.localStorage.clear()
+  })
+
+  it("shows each campaign's client in its own column", async () => {
+    mockApi({ "GET /campaigns": () => json(pageOf([campaignFixture({ client: { id: ACME.id, name: ACME.name } })])) })
+    renderList()
+
+    const table = await screen.findByRole("table")
+    expect(within(table).getByRole("columnheader", { name: "Client" })).toBeTruthy()
+    expect(within(within(table).getAllByRole("row")[1]).getByText("Acme Corp")).toBeTruthy()
+  })
+
+  it("filters by the client in the URL, offers the active clients, and starts a new campaign with it", async () => {
+    const fetchMock = mockApi({
+      "GET /clients": () => json(pageOf([ACME, GENERAL_CLIENT, OLD])),
+      "GET /campaigns": () => json(pageOf([ACTIVE])),
+    })
+    const view = renderList(`?client=${ACME.id}&page=2`)
+
+    await screen.findByRole("table")
+    expect(requestedUrls(fetchMock)[0].searchParams.getAll("client_id")).toEqual([ACME.id])
+    expect(screen.getByRole("link", { name: "New campaign" }).getAttribute("href")).toBe(`/campaigns/new?client=${ACME.id}`)
+
+    const filter = screen.getByRole("combobox", { name: "Filter by client" })
+    await waitFor(() => expect(filter.textContent).toBe("Acme Corp"))
+    fireEvent.click(filter)
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent)
+    // Archived clients are not offered.
+    expect(options).toEqual(["All clients", "Acme Corp", "General"])
+    fireEvent.click(screen.getByRole("option", { name: "General" }))
+
+    // A new client starts from the first page, and is remembered for the agency.
+    await waitFor(() => expect(view.lastUrl()).toBe(`?client=${GENERAL_CLIENT.id}`))
+    expect(window.localStorage.getItem(`hireflow.client.${meAs("owner").active_agency!.id}`)).toBe(GENERAL_CLIENT.id)
+    await waitFor(() =>
+      expect(requestedUrls(fetchMock).at(-1)?.searchParams.getAll("client_id")).toEqual([GENERAL_CLIENT.id]),
+    )
+  })
+
+  it("says when a chosen client has no campaigns, and goes back to all clients", async () => {
+    mockApi({
+      "GET /clients": () => json(pageOf([ACME, GENERAL_CLIENT])),
+      "GET /campaigns": () => json(pageOf([])),
+    })
+    const view = renderList(`?client=${ACME.id}`)
+
+    expect(await screen.findByText("No campaigns for Acme Corp yet")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Show all clients" }))
+    await waitFor(() => expect(view.lastUrl()).toBe(""))
+  })
+
+  it("offers a viewer no New campaign, even with no campaigns at all", async () => {
+    mockApi({ "GET /campaigns": () => json(pageOf([])) })
+    renderList("", { me: meAs("viewer") })
+
+    expect(await screen.findByText("No campaigns yet")).toBeTruthy()
+    expect(screen.getByText("Campaigns your agency creates show up here.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull()
   })
 })

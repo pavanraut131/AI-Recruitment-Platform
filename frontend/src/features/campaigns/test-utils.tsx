@@ -6,6 +6,7 @@ import { vi } from "vitest"
 import type { Schema } from "@/lib/api/client"
 import { PROBLEM_MEDIA_TYPE } from "@/lib/api/problem"
 import { makeQueryClient } from "@/lib/query/query-client"
+import { signInForTest } from "@/test/auth"
 
 /*
  * Test helpers for the campaigns feature: the app's real QueryClient (minus
@@ -22,7 +23,9 @@ type Handler = (request: Request, match: { url: URL; params: Record<string, stri
  * An unmatched request fails the test loudly with a 599.
  */
 export function mockApi(routes: Record<string, Handler>) {
-  const compiled = Object.entries(routes).map(([route, handler]) => {
+  // The client pickers' list, unless a test routes it itself.
+  const withDefaults: Record<string, Handler> = { "GET /clients": () => json(pageOf([GENERAL_CLIENT])), ...routes }
+  const compiled = Object.entries(withDefaults).map(([route, handler]) => {
     const [method, path] = route.split(" ")
     const names: string[] = []
     const pattern = new RegExp(
@@ -69,12 +72,22 @@ export function deferred<T>() {
 
 export function renderWithProviders(
   ui: React.ReactElement,
-  { searchParams = "", onUrlUpdate }: { searchParams?: string; onUrlUpdate?: OnUrlUpdateFunction } = {},
+  {
+    searchParams = "",
+    onUrlUpdate,
+    me,
+  }: {
+    searchParams?: string
+    onUrlUpdate?: OnUrlUpdateFunction
+    /** The signed-in user (default: an owner, every permission). */
+    me?: Schema<"Me"> | null
+  } = {},
 ) {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({
     queries: { ...queryClient.getDefaultOptions().queries, retry: false },
   })
+  signInForTest(queryClient, me)
   const result = render(
     <QueryClientProvider client={queryClient}>
       <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={onUrlUpdate} hasMemory>
@@ -86,6 +99,20 @@ export function renderWithProviders(
 }
 
 export const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111"
+
+export function clientFixture(overrides: Partial<Schema<"Client">> = {}): Schema<"Client"> {
+  return {
+    id: "00000000-0000-4000-8000-00000000c001",
+    name: "General",
+    status: "active",
+    created_at: "2026-11-01T09:00:00Z",
+    updated_at: "2026-11-01T09:00:00Z",
+    ...overrides,
+  }
+}
+
+/** The agency's one client in most tests (every campaign fixture is run for it). */
+export const GENERAL_CLIENT = clientFixture()
 
 export function campaignFixture(overrides: Partial<Schema<"Campaign">> = {}): Schema<"Campaign"> {
   return {
