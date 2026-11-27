@@ -159,7 +159,10 @@ primary action, the score display, the voice.
 The sign-in pages (`/login`, `/forgot-password`, `/reset-password`, `/accept-invite`,
 `/select-agency`; E2-09) have no sidebar: the paper (`bg-canvas`) with the mark and the
 product name, then one white panel (400px, 12px radius, a hairline) holding a 20px title,
-the form and one full-width primary button. Messages above or under the form are tinted
+the form and one full-width primary button. When Google or Microsoft sign-in is configured,
+"Continue with Google" / "Continue with Microsoft" come first as full-width outline buttons
+with the providers' own marks (the one place colours are not tokens: their branding asks for
+it), then a hairline with "or". Messages above or under the form are tinted
 blocks (`FormAlert`: an error in the destructive tint, a notice in sunken grey, a success in
 the accent tint), never toasts. Wording follows the voice: "Sign in to HireFlow AI", "Email
 me a link", "Change password", "Join Northbank Talent"; errors say what happened and what to

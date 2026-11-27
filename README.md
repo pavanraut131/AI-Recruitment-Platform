@@ -296,7 +296,9 @@ clients' campaigns, and every other campaign, application or client is a 404.
 these accounts. The app sends a signed-out visitor there and back to the page they asked for
 afterwards; the user menu at the foot of the sidebar shows who you are and signs you out. Open the
 app on `localhost`, not `127.0.0.1`: the session cookie belongs to the API's host, and the browser
-sends it only to the same site. "Forgot password?" emails a reset link to Mailpit (below).
+sends it only to the same site. "Forgot password?" emails a reset link to Mailpit (below). With
+Google or Microsoft set up ("Enable Google/Microsoft sign-in", below) the page offers those
+too.
 
 For scripts, sign in with `curl` (or the API docs, http://localhost:8000/api/v2/docs):
 
@@ -400,12 +402,13 @@ accounts only):
    domain), so without it an identity that is not linked yet can only join through an
    invitation. **API permissions**: Microsoft Graph `openid`, `email`, `profile` (delegated).
 
-`GET http://localhost:8000/api/v2/auth/providers` then lists the provider. Until the login page
-has its buttons (E2-09), try the flow from the API docs (http://localhost:8000/api/v2/docs) in
-your browser: `getCsrfToken`, then **Authorize** with that token as `csrfToken`, then
-`startOidcLogin`, then open
-the `authorization_url` in the same browser; you land on `FRONTEND_URL` signed in, or on
-`/login?error=…`.
+`GET http://localhost:8000/api/v2/auth/providers` then lists the provider, and the login page
+(and an invitation's page) shows **Continue with Google / Microsoft** above the email form. The
+button starts the flow and opens the provider; you come back to `FRONTEND_URL` signed in (on the
+page you asked for), or to `/login?error=…`, which says what went wrong (no account for the
+address, no agency access, the address not verified by the provider, a used invitation, a
+cancelled or expired sign-in, too many attempts). `FRONTEND_URL` must be the address your
+frontend runs on, since that is where the API sends you back.
 
 ### 4. Open the app
 | Service | URL |
