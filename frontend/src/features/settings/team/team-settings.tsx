@@ -55,7 +55,7 @@ function Team() {
         description={
           total === undefined
             ? "Everyone who works in this agency, and what they can do."
-            : `${total === 1 ? "1 person works" : `${total} people work`} in this agency. Owners and admins see every client; recruiters and viewers can be limited to some.`
+            : `${total === 1 ? "1 person works" : `${total} people work`} in this agency, deactivated members included.`
         }
         action={
           canInvite &&

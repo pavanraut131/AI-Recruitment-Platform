@@ -71,7 +71,7 @@ describe("Settings → Team: members", () => {
     renderSettings(<TeamSettings />)
 
     await screen.findByRole("table")
-    expect(screen.getByText("4 people work in this agency.", { exact: false })).toBeTruthy()
+    expect(screen.getByText("4 people work in this agency, deactivated members included.")).toBeTruthy()
     const nia = within(row("Nia Okafor"))
     expect(nia.getByText("nia@northbank.example")).toBeTruthy()
     expect(nia.getByRole("combobox", { name: "Role of Nia Okafor" }).textContent).toBe("Recruiter")
