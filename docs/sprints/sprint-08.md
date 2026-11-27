@@ -50,6 +50,11 @@
 
 Goal and acceptance criteria: [spec §12, E2-06](../specs/EPIC-02-identity-tenancy.md#e2-06--authorization-and-clients). Design: spec §5 (roles, matrix, client scoping, enforcement) and §8.
 
+**Notes:**
+- Details are in the spec's "Notes (done)". The one deviation is that `CampaignCreate.client_id` is optional: it defaults to the caller's oldest active in-scope client, so the new-campaign form works until E2-10 adds the client select.
+- **Merge order:** E2-07's PR merged first. This branch merged `e2-07-invitations-team` and reconciled them: the `/team` routes use `require_permission`, E2-07's stand-in matrix became `ROLE_PERMISSIONS`, there is one `ClientRef`, client grants stay within the granter's scope, and `e2d06b8c4f17` is chained after `e2d07c3f9b12`.
+- **Local upgrade after both merge:** follow E2-07's steps (`docker compose up -d --build` for `mailpit` and `worker_default`), then `docker compose exec backend alembic upgrade head`. That applies `e2d07c3f9b12` (invitation and reset tables) and then `e2d06b8c4f17`, which gives Northbank Talent its "General" client.
+
 ---
 
 ### E2-07 · Invitations, team and password reset
