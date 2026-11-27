@@ -42,7 +42,13 @@ pre-commit install   # once per clone; runs the hooks on every commit
 locally"). Until the login screen arrives (E2-09) the dev and E2E stacks run with
 `AUTH_REQUIRED=false`, so the frontend works without signing in. In backend tests the `client`
 fixture acts as an owner of the default agency (it overrides `current_principal`); tests that
-need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`.
+need real cookies and CSRF tokens use `auth_client` and `users` from `tests/identity/conftest.py`
+(never both in one test: the `client` override applies to every request of the app).
+
+Emails (invitations, password resets, E2-07) go to **Mailpit** in the Compose stack: read them at
+http://localhost:8025. README "Inviting a teammate locally" shows the invitation flow with
+`curl`. In backend tests the console backend keeps them in memory: the `mailbox` fixture
+(`tests/identity/conftest.py`) delivers what the code queued and reads the token from a link.
 
 ### Tests run under row-level security
 
