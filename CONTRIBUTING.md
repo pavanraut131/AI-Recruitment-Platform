@@ -35,22 +35,6 @@ pre-commit install   # once per clone; runs the hooks on every commit
 
 > These Make targets and the pre-commit config arrive with ticket **E0-02**. Until it merges they may not exist yet.
 
-### Running the frontend while developing (Windows)
-
-Run the frontend natively and keep the rest in Docker. On Windows the bind-mounted `./frontend`
-makes the containerised `next dev` slow to compile and blind to files a `git pull` creates (a
-stale "Module not found" until the container is recreated), and the Docker VM's memory is shared
-with every stack and test database:
-
-```bash
-docker compose stop frontend          # the backend, workers and databases stay in Docker
-cd frontend && npm ci                 # in frontend/, never the repository root
-npm run dev -- -p 3001                # 3001 is in the dev CORS_ORIGINS
-```
-
-If the containerised frontend is used anyway, recreate it after a pull that adds files:
-`docker compose up -d --force-recreate --renew-anon-volumes frontend`.
-
 ### Signing in while developing
 
 `/api/v2` requires a session (E2-05). The seed creates one account per role in two agencies
