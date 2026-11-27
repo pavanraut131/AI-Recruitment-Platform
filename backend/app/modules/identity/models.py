@@ -7,6 +7,8 @@
   (E2-05, migration ``e2c05b3f7a21``).
 - ``invitations`` and ``password_reset_tokens`` (E2-07, migration ``e2d07c3f9b12``): emailed,
   single-use tokens, stored as their SHA-256 only (spec §4.3).
+- ``oidc_accounts`` (E2-08, migration ``e2e08a4c7d21``): a Google or Microsoft identity linked
+  to a user, keyed by ``(provider, issuer, subject)``, never by email (spec §4.3).
 
 Every identity table is **global**, not under agency row-level security (spec §6.4): they are
 read before a tenant is known (sign-in by email, the session lookup on every request, the agency
@@ -344,3 +346,43 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class OidcAccount(Base):
+    """A Google or Microsoft identity that signs a user in (spec §3.3, §4.3; E2-08).
+
+    Keyed by what the provider's signed ID token says about **who** it is: ``(provider, issuer,
+    subject)``. The issuer is per tenant for Microsoft (``https://login.microsoftonline.com/{tid}
+    /v2.0``), and ``subject`` is only unique within its issuer, so all three form the key. Never
+    looked up by email: an address is only how an identity gets **linked** the first time (a
+    provider-verified email or an invitation), and ``email_at_link`` records the provider's
+    address at that moment (it may change at the provider later). The provider's tokens are not
+    stored (ADR 0010). Deleted with the user.
+    """
+
+    __tablename__ = "oidc_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "issuer", "subject", name="uq_oidc_accounts_provider_issuer_subject"
+        ),
+        CheckConstraint("provider IN ('google', 'microsoft')", name="ck_oidc_accounts_provider"),
+        # A user's sign-in methods (and the cascade when a user is deleted).
+        Index("ix_oidc_accounts_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_oidc_accounts_user_id_users", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # app.modules.identity.schemas.OidcProvider
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(300), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The provider's address when the identity was linked (normalised; NULL if it gave none).
+    email_at_link: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

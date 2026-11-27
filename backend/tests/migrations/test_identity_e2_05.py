@@ -34,7 +34,8 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
 BEFORE = "e2b02c7a4d19"
 REVISION = "e2c05b3f7a21"
 TABLES = {"users", "memberships", "membership_clients", "user_sessions", "audit_events"}
-LATER_TABLES = {"invitations", "password_reset_tokens"}  # E2-07, a later revision
+# Later revisions: E2-07, E2-08.
+LATER_TABLES = {"invitations", "password_reset_tokens", "oidc_accounts"}
 APP_ROLE = "hireflow_app"
 
 
