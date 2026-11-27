@@ -1,6 +1,6 @@
 # Sprint 7 · Tenancy in the data, isolation in the database, sign-in
 
-**Epic:** [E2 · Identity & tenancy](../specs/EPIC-02-identity-tenancy.md)  ·  **Dates:** 2026-11-19 → 2026-11-26  ·  **Status:** in progress
+**Epic:** [E2 · Identity & tenancy](../specs/EPIC-02-identity-tenancy.md)  ·  **Dates:** 2026-11-19 → 2026-11-26  ·  **Status:** done (closed 2026-11-27)
 
 ## Sprint goal
 
@@ -16,9 +16,11 @@
 | E2-01 | Tenancy expand: `agencies`, `clients`, nullable `agency_id` / `client_id`, writes set them | M | done ([#50](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/50)) |
 | E2-02 | Tenancy backfill, verify and contract: NOT NULL, per-agency uniques and matching | M | done ([#54](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/54)) |
 | E2-03 | Tenant context: bound sessions, repository filters, Celery, SSE channels and storage keys | L | done ([#52](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/52)) |
-| E2-04 | Row-level security: roles, policies, the app role everywhere, the isolation suite | L | doing |
-| E2-05 | Identity core: users, sessions, login, CSRF, rate limits, audit; v2 requires a session | L | doing |
+| E2-04 | Row-level security: roles, policies, the app role everywhere, the isolation suite | L | done ([#59](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/59)) |
+| E2-05 | Identity core: users, sessions, login, CSRF, rate limits, audit; v2 requires a session | L | done ([#58](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/58)) |
 | D1 | Redesign rollout: the approved direction (calm recruiter desk) across the frontend | L | done ([#53](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/53)) |
+| D2 | Polish from the owner's review: numbers as a quiet row, tidier header, the workspace uses the window | S | done ([#56](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/56)) |
+| D3 | Home uses the window, a plain title and the day's numbers instead of the greeting; toast contrast | S | done ([#57](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/57)) |
 
 **Order** (spec §12):
 - **Wave 1:** E2-01 and S3 in parallel.
@@ -87,7 +89,7 @@ Goal and acceptance criteria: [spec §12, E2-03](../specs/EPIC-02-identity-tenan
 ---
 
 ### E2-04 · Row-level security
-**Status:** doing  ·  **Size:** L  ·  **Branch:** `e2-04-rls`
+**Status:** done ([#59](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/59))  ·  **Size:** L  ·  **Branch:** `e2-04-rls`
 
 Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenancy.md#e2-04--row-level-security). Design: spec §6, §7.2 and §11.1–11.2; [ADR 0009](../adr/0009-tenant-isolation-row-level-security.md) is accepted in this ticket.
 
@@ -98,7 +100,7 @@ Goal and acceptance criteria: [spec §12, E2-04](../specs/EPIC-02-identity-tenan
 ---
 
 ### E2-05 · Identity core
-**Status:** doing  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
+**Status:** done ([#58](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/58))  ·  **Size:** L  ·  **Branch:** `e2-05-identity-core`
 
 Goal and acceptance criteria: [spec §12, E2-05](../specs/EPIC-02-identity-tenancy.md#e2-05--identity-core). Design: spec §4, §5.4, §8 and §10; [ADR 0010](../adr/0010-server-side-sessions.md) is accepted in this ticket.
 
@@ -118,9 +120,50 @@ The approved direction (three mock-ups, `docs/design/source`) across the whole f
 
 ## Sprint review & retro
 
-*(To be filled in at the end of the sprint.)*
+**Goal met:** yes, one day over (closed 2026-11-27, planned 11-26).
+- Eleven PRs merged: the six E2 and security tickets, three design tickets added mid-sprint, and two docs PRs (#49, #55).
+- CI is green on `master` (`b398633`).
+- The local dev stack was upgraded through every migration with the runbooks: backfill, contract, roles, identity tables, row-level security. It connects as `hireflow_app`, and a real sign-in works.
 
-- **Demo:**
-- **Keep:**
-- **Drop:**
-- **Try:**
+### Demo
+
+- **Every row, task, stream and file belongs to an agency.**
+  - Expand, backfill and contract ([#50](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/50), [#54](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/54)) without rewriting a table or blocking traffic. The rehearsals took about 2 s each on the dev-sized data.
+  - Candidate matching and its locks are per agency.
+  - Sessions, Celery tasks, SSE channels and storage keys carry the agency ([#52](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/52)).
+- **Postgres row-level security** ([#59](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/59)):
+  - separate owner and app roles, `FORCE` policies that fail closed;
+  - the API and workers refuse to start under a role that could bypass them;
+  - the whole suite runs as the app role;
+  - `test_forgotten_filter_is_contained`, and a sweep of every v2 endpoint with another agency's ids (404).
+- **Sign-in core** ([#58](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/58)):
+  - Argon2id passwords and server-side sessions in a `__Host-` cookie;
+  - CSRF protection and rate limits that never lock accounts;
+  - an append-only audit log;
+  - every v2 route requires a session, and the app refuses to start if a route forgets to declare one.
+- **Security:** `pip-audit` 96 → 0 ([#51](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/51)).
+- **Redesign** ([#53](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/53), [#56](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/56), [#57](https://github.com/pavanraut131/AI-Recruitment-Platform/pull/57)):
+  - the forest-green accent and Instrument Sans;
+  - numbers in quiet rows instead of KPI cards;
+  - the workspace and Home use the window;
+  - a style guide and mock-ups kept locally in `docs/design/`.
+
+### Keep
+
+- **The second of two parallel tickets merges the first's branch before its PR opens** (E2-02 took E2-03, E2-04 took E2-05). The overlap gets resolved once, by the agent that knows both sides, and is tested together. Each PR still merges cleanly in either order.
+- **Rehearsals on throwaway stacks that copy the owner's situation**: an old-style volume, seeded, with uploads running during the change. They caught the missing role bootstrap for existing volumes and the backfill-before-contract ordering before any real data was touched.
+- **The owner reviewing the running app.** D1–D3 came from looking at real screens; each fix was small, checked with screenshots against real data, and shipped the same day.
+- **Reading CI artifacts before re-running.** #59's E2E failure looked like row-level security, but the stack logs showed every request answered 200. It was a flake plus a real, timing-dependent contrast bug in toasts, which got fixed (#57).
+
+### Drop
+
+- **One fixed E2E project name shared by parallel agents.** `docker compose ls` checks race: runs were torn down or recreated by another agent, which gave false failures.
+- **Design mock-ups published on claude.ai.** HireFlow is the owner's own product and the account belongs to their employer's workspace. Design work stays in the repository.
+
+### Try
+
+- **Each agent runs E2E under its own project name and ports** (`E2E_PROJECT=hireflow-e2e<ticket>`, which the script supports). The default project is for the owner and CI only.
+- **Run the frontend natively for local development** (`npm run dev -- -p 3001`, backend in Docker). The Docker bind mount on Windows is slow and misses new files, and the Docker VM has only 5.7 GB for every stack and test database. Now in CONTRIBUTING.
+- **After a merge with a migration, the coordinator upgrades the local stack with the runbook in the same session**: drain the queues, back up, rebuild, migrate, verify, then a real check (a sign-in, an API call). This sprint it went cleanly every time.
+
+Next: [Sprint 8](sprint-08.md).

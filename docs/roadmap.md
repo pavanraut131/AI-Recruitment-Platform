@@ -41,8 +41,8 @@ Ordering notes:
 | [4](sprints/sprint-04.md) | 2026-10-19 (closed early) | Switch reads, contract, close E0 | done |
 | [5](sprints/sprint-05.md) | 2026-11-17 (closed 11-18) | E1 foundation: design system & app shell, `/api/v2`, generated client, campaigns and the candidate table | done |
 | [6](sprints/sprint-06.md) | 2026-11-18 (closed 11-19) | E1 hero flow end to end: uploads, review panel and Person profile, Home/Insights/Talent, Playwright E2E, old UI removed; close E1 | done |
-| [7](sprints/sprint-07.md) | 2026-11-19 → 11-26 | E2 part 1: tenancy in the data, row-level security, sign-in core; backend dependency advisories | in progress |
-| [8](sprints/sprint-08.md) | after Sprint 7 | E2 part 2: roles and clients, invitations, Google/Microsoft sign-in, auth screens, `/api/v1` removed; close E2 | planned |
+| [7](sprints/sprint-07.md) | 2026-11-19 (closed 11-27) | E2 part 1: tenancy in the data, row-level security, sign-in core; backend dependency advisories; redesign (D1–D3) | done |
+| [8](sprints/sprint-08.md) | 2026-11-27 → 12-04 | E2 part 2: roles and clients, invitations, Google/Microsoft sign-in, auth screens, `/api/v1` removed; close E2 | in progress |
 
 Open follow-ups (bugs, upgrades, small debts) that no sprint has taken yet: [backlog.md](backlog.md).
 
