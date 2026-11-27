@@ -14,6 +14,8 @@ import {
   problem,
   renderWithProviders,
 } from "./test-utils"
+import { meAs } from "@/test/auth"
+
 import { UploadsTab } from "./uploads-tab"
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
@@ -310,5 +312,20 @@ describe("UploadsTab", () => {
     fail = false
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
     expect(await screen.findByText("ok.pdf")).toBeTruthy()
+  })
+})
+
+describe("UploadsTab: a viewer (E2-10)", () => {
+  it("lists the resumes without the dropzone or Retry failed", async () => {
+    installFakeApi({
+      resumes: [makeResume("r1", { filename: "ada.pdf", status: "failed", error_message: "Could not read the PDF" })],
+    })
+    renderWithProviders(<Workspace />, { me: meAs("viewer") })
+
+    expect(await screen.findByText("ada.pdf")).toBeTruthy()
+    expect(screen.getByText(/Recruiters, admins and owners upload them\./)).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Upload resumes" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Choose PDFs" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Retry failed" })).toBeNull()
   })
 })

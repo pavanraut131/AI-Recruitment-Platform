@@ -39,6 +39,11 @@ export type CandidatesTableProps = {
   onOpen: (applicationId: string) => void
   /** A newer page is loading behind the current rows. */
   isFetching?: boolean
+  /**
+   * Rows can be checked (the bulk actions and export work on them). Off for a
+   * role that can neither review nor export (viewers): no checkbox column.
+   */
+  selectable?: boolean
 }
 
 /** Each includes its column's visible header, so the button's name contains its text (WCAG 2.5.3). */
@@ -63,8 +68,10 @@ export function CandidatesTable({
   onActiveChange,
   onOpen,
   isFetching = false,
+  selectable = true,
 }: CandidatesTableProps) {
   const sorting = useMemo(() => [sortToSorting(sort)], [sort])
+  const columnVisibility = useMemo(() => ({ [SELECT_COLUMN]: selectable }), [selectable])
   const meta = useMemo(() => ({ requiredSkills }), [requiredSkills])
   // TanStack Table v8 is not React Compiler-safe; this component memoises by hand (memoised rows).
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -73,9 +80,9 @@ export function CandidatesTable({
     columns: candidateColumns,
     getRowId: (application) => application.id,
     getCoreRowModel: getCoreRowModel(),
-    state: { sorting, rowSelection },
+    state: { sorting, rowSelection, columnVisibility },
     onRowSelectionChange,
-    enableRowSelection: true,
+    enableRowSelection: selectable,
     manualSorting: true,
     manualPagination: true,
     meta,

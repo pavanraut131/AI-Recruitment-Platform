@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { errorMessage, type Schema } from "@/lib/api/client"
+import { usePermissions } from "@/lib/auth/permissions"
 import { cn } from "@/lib/utils"
 
 import { ResumeDropzone } from "./dropzone"
@@ -68,6 +69,8 @@ export function UploadsTab({ campaignId }: { campaignId: string }) {
   const forgetBatches = useForgetBatches(campaignId)
   const retry = useRetryFailed(campaignId)
   const now = useNow()
+  // Uploading and retrying need `resume:upload` (EPIC-02 §5.2): a viewer follows the list only.
+  const canUpload = usePermissions().can("resume:upload")
 
   const [clientRejections, setClientRejections] = useState<ClientRejection[]>([])
   const [dropMessage, setDropMessage] = useState("")
@@ -115,6 +118,25 @@ export function UploadsTab({ campaignId }: { campaignId: string }) {
   const clearFinished = () => {
     forgetBatches()
     setClientRejections([])
+  }
+
+  if (!canUpload) {
+    return (
+      <div className="flex max-w-4xl flex-col gap-6">
+        <p className="text-ink-2">
+          The resumes uploaded to this campaign, and how far each one got. Recruiters, admins and owners upload them.
+        </p>
+        <ResumesSection
+          campaignId={campaignId}
+          resumes={resumes}
+          counts={counts}
+          page={page}
+          onPage={setPage}
+          hasPending={false}
+          now={now}
+        />
+      </div>
+    )
   }
 
   return (
@@ -183,7 +205,8 @@ function ResumesSection({
   counts: Schema<"Campaign">["counts"] | undefined
   page: number
   onPage: (page: number) => void
-  retry: UseMutationResult<RetryResult, Error, void>
+  /** Retrying failed resumes; absent for a role that cannot upload. */
+  retry?: UseMutationResult<RetryResult, Error, void>
   hasPending: boolean
   now: Date
 }) {
@@ -218,18 +241,21 @@ function ResumesSection({
           <p className="flex items-start gap-2 text-sm">
             <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
             <span>
-              {plural(failed, "resume")} could not be processed. Retrying queues {failed === 1 ? "it" : "them"} again
-              from the step {failed === 1 ? "it" : "they"} stopped at.
+              {plural(failed, "resume")} could not be processed.
+              {retry &&
+                ` Retrying queues ${failed === 1 ? "it" : "them"} again from the step ${failed === 1 ? "it" : "they"} stopped at.`}
             </span>
           </p>
-          <Button variant="outline" size="sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
-            <RotateCwIcon
-              data-icon="inline-start"
-              aria-hidden="true"
-              className={cn(retry.isPending && "animate-spin motion-reduce:animate-none")}
-            />
-            {retry.isPending ? "Retrying…" : "Retry failed"}
-          </Button>
+          {retry && (
+            <Button variant="outline" size="sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
+              <RotateCwIcon
+                data-icon="inline-start"
+                aria-hidden="true"
+                className={cn(retry.isPending && "animate-spin motion-reduce:animate-none")}
+              />
+              {retry.isPending ? "Retrying…" : "Retry failed"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -254,7 +280,9 @@ function ResumesSection({
             <InboxIcon className="size-5 text-muted-foreground" aria-hidden="true" />
             <p className="text-section font-semibold">No resumes yet</p>
             <p className="max-w-sm text-ink-2">
-              Drop PDFs above. Each one is read and scored, then shows up under Candidates.
+              {retry
+                ? "Drop PDFs above. Each one is read and scored, then shows up under Candidates."
+                : "Each resume uploaded here is read and scored, then shows up under Candidates."}
             </p>
           </div>
         )

@@ -3,7 +3,7 @@
 import { BriefcaseIcon, ExternalLinkIcon, MailIcon, PhoneIcon } from "lucide-react"
 import { useId, type ReactNode, type RefObject } from "react"
 
-import { ApplicationStageSelect } from "@/components/application/review-controls"
+import { ApplicationStageSelect, useCanReview } from "@/components/application/review-controls"
 import { Kbd } from "@/components/ui/kbd"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { displayName, formatDate, formatYears } from "@/lib/applications"
@@ -65,6 +65,7 @@ export function ProfileHeader({
 }) {
   const switcherId = useId()
   const stageId = useId()
+  const canReview = useCanReview()
   const { emails, phones } = contacts(person)
   const github = safeUrl(person.github_url)
   const linkedin = safeUrl(person.linkedin_url)
@@ -132,7 +133,7 @@ export function ProfileHeader({
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor={stageId} className="text-xs font-medium text-muted-foreground">
-              Stage <Kbd aria-hidden="true">S</Kbd>
+              Stage {canReview && <Kbd aria-hidden="true">S</Kbd>}
             </label>
             <ApplicationStageSelect
               id={stageId}

@@ -4,6 +4,7 @@ import { Profiler, type ProfilerOnRenderCallback } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeQueryClient } from "@/lib/query/query-client"
+import { signInForTest } from "@/test/auth"
 
 import { CandidatesTable } from "./candidates-table"
 import { CandidatesFixtureView } from "./fixture-view"
@@ -55,8 +56,11 @@ describe(`candidates table with ${ROWS} rows`, () => {
     const onCommit = (phase: string, ms: number) => commits.push({ phase, ms })
 
     let start = performance.now()
+    // Signed in (as an owner): the fixture view's panel has editable notes.
+    const queryClient = makeQueryClient()
+    signInForTest(queryClient)
     render(
-      <QueryClientProvider client={makeQueryClient()}>
+      <QueryClientProvider client={queryClient}>
         <CandidatesFixtureView rowCount={ROWS} onCommit={onCommit} />
       </QueryClientProvider>,
     )

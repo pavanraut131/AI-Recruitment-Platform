@@ -7,6 +7,7 @@ import { vi } from "vitest"
 import type { Schema } from "@/lib/api/client"
 import { PROBLEM_MEDIA_TYPE } from "@/lib/api/problem"
 import { makeQueryClient } from "@/lib/query/query-client"
+import { signInForTest } from "@/test/auth"
 
 /*
  * Test helpers for the uploads feature: a fake `/api/v2` behind `fetch` that
@@ -279,7 +280,18 @@ export function testQueryClient(): QueryClient {
   return client
 }
 
-export function renderWithProviders(ui: ReactElement, { queryClient = testQueryClient() }: { queryClient?: QueryClient } = {}) {
+export function renderWithProviders(
+  ui: ReactElement,
+  {
+    queryClient = testQueryClient(),
+    me,
+  }: {
+    queryClient?: QueryClient
+    /** The signed-in user (default: an owner, every permission). */
+    me?: Schema<"Me"> | null
+  } = {},
+) {
+  signInForTest(queryClient, me)
   const view = render(
     <QueryClientProvider client={queryClient}>
       <NuqsTestingAdapter hasMemory>{ui}</NuqsTestingAdapter>

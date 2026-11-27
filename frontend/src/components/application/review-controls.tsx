@@ -8,7 +8,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { errorMessage } from "@/lib/api/client"
-import { NOTES_MAX_LENGTH, type Stage } from "@/lib/applications"
+import { NOTES_MAX_LENGTH, STAGE_LABELS, UNREVIEWED_LABEL, type Stage } from "@/lib/applications"
+import { usePermissions } from "@/lib/auth/permissions"
 import { saveApplicationNotes, useUpdateApplicationStage, type ApplicationRef } from "@/lib/query/applications"
 import { useAutosave, type AutosaveStatus } from "@/lib/use-autosave"
 import { cn } from "@/lib/utils"
@@ -19,11 +20,36 @@ import { StageSelect } from "./stage-select"
  * The recruiter's controls on one application, shared by the review panel and
  * the Person profile: the stage (saved at once, optimistically) and the notes
  * (autosaved). Both keep every cached copy of the application in step
- * (`@/lib/query/applications`).
+ * (`@/lib/query/applications`). A role without `application:review`
+ * (viewers, EPIC-02 §5.2) gets both read-only.
  */
 
-/** The stage selector, saving each change with `updateApplication`. */
-export function ApplicationStageSelect({
+/** Whether the signed-in role may change stages and notes. */
+export function useCanReview(): boolean {
+  return usePermissions().can("application:review")
+}
+
+/** The stage selector, saving each change with `updateApplication`; the stage as text for a viewer. */
+export function ApplicationStageSelect(props: {
+  target: ApplicationRef
+  stage: Stage | null
+  triggerRef?: Ref<HTMLButtonElement>
+  id?: string
+  className?: string
+  "aria-describedby"?: string
+}) {
+  const canReview = useCanReview()
+  if (!canReview) {
+    return (
+      <span id={props.id} className={cn("text-dense font-medium", props.className)}>
+        {props.stage ? STAGE_LABELS[props.stage] : UNREVIEWED_LABEL}
+      </span>
+    )
+  }
+  return <EditableStageSelect {...props} />
+}
+
+function EditableStageSelect({
   target,
   stage,
   triggerRef,
@@ -125,9 +151,36 @@ function NotesStatus({
  * The application's notes, autosaved after a pause in typing (`useAutosave`):
  * "Saving…", "Saved", or the problem with a Retry. Leaving the field saves at
  * once; unmounting (closing the panel, switching application) saves what is
- * pending. Key it by the application id.
+ * pending. Key it by the application id. A viewer reads them.
  */
-export function ApplicationNotes({
+export function ApplicationNotes(props: {
+  target: ApplicationRef
+  notes: string | null
+  label?: string
+  className?: string
+}) {
+  const canReview = useCanReview()
+  if (!canReview) return <ReadOnlyNotes notes={props.notes} label={props.label} className={props.className} />
+  return <EditableNotes {...props} />
+}
+
+function ReadOnlyNotes({ notes, label = "Notes", className }: { notes: string | null; label?: string; className?: string }) {
+  const labelId = useId()
+  return (
+    <div className={cn("flex flex-col gap-1.5", className)} role="group" aria-labelledby={labelId}>
+      <p id={labelId} className="text-dense font-semibold text-muted-foreground">
+        {label}
+      </p>
+      {notes?.trim() ? (
+        <p className="rounded-md bg-canvas px-3 py-2 text-sm whitespace-pre-wrap">{notes}</p>
+      ) : (
+        <p className="text-dense text-muted-foreground">No notes.</p>
+      )}
+    </div>
+  )
+}
+
+function EditableNotes({
   target,
   notes,
   label = "Notes",
