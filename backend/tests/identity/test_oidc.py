@@ -209,6 +209,9 @@ async def test_google_links_an_existing_account_by_verified_email(
     ada = await users.user(ADA)
     resp = await sign_in(auth_client, fake_oidc.google, next="/campaigns", email="Ada@Example.com")
     assert location(resp) == f"{FRONTEND}/campaigns"
+    # The callback's URL (with the code) never reaches the frontend in a Referer, nor a cache.
+    assert resp.headers["referrer-policy"] == "no-referrer"
+    assert resp.headers["cache-control"] == "no-store"
 
     # Signed in: new session and CSRF cookies; the flow's cookie is deleted.
     cookies = set_cookie_headers(resp)
