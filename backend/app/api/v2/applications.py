@@ -5,6 +5,10 @@ An ``Application`` shows facts from its current resume's extraction snapshot (in
 hiring's scoring and recruiter fields (spec §7.1), so hiring builds it with
 ``ingestion.resume_profiles(db)``. Deletes remove hiring's applications and ingestion's resumes
 in one transaction, then the stored PDFs.
+
+Permissions (EPIC-02 §8.3): reads need ``workspace:read``, changes ``application:review``,
+deletes ``application:delete`` (the bulk ``delete`` action too), the CSV ``application:export``.
+Everything goes through the campaign, so it follows the campaign's client (§5.3).
 """
 
 import uuid
@@ -25,7 +29,14 @@ from app.modules.hiring.schemas_v2 import (
     BulkApplicationResult,
     PipelineStage,
 )
-from app.modules.identity.dependencies import access_scope, tenant_db
+from app.modules.identity.dependencies import (
+    Permission,
+    access_scope,
+    ensure_permission,
+    require_permission,
+    tenant_db,
+)
+from app.modules.identity.schemas import Principal
 from app.modules.ingestion import service as ingestion
 from app.platform.pagination import PageParams
 from app.platform.problems import errors_as_http, problem_responses
@@ -37,6 +48,11 @@ HIRING_ERRORS: dict[type[Exception], int] = {
     hiring.NotFoundError: status.HTTP_404_NOT_FOUND,
     hiring.InvalidInputError: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
+
+READ = Depends(require_permission(Permission.workspace_read))
+REVIEW = Depends(require_permission(Permission.application_review))
+DELETE = Depends(require_permission(Permission.application_delete))
+EXPORT = Depends(require_permission(Permission.application_export))
 
 
 def application_filters(
@@ -87,6 +103,7 @@ Filters = Annotated[hiring.ApplicationQuery, Depends(application_filters)]
     operation_id="listCampaignApplications",
     response_model=ApplicationPage,
     responses=problem_responses(404, 422),
+    dependencies=[READ],
 )
 async def list_campaign_applications(
     filters: Filters,
@@ -113,6 +130,7 @@ async def list_campaign_applications(
         },
         **problem_responses(404, 422),
     },
+    dependencies=[EXPORT],
 )
 async def export_campaign_applications(
     campaign_id: uuid.UUID,
@@ -148,10 +166,13 @@ async def bulk_application_action(
     payload: BulkApplicationAction,
     db: AsyncSession = Depends(tenant_db),
     scope: AccessScope = Depends(access_scope),
+    principal: Principal = REVIEW,
 ) -> BulkApplicationResult:
     """Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them
-    (with their resumes). Ids that are not this campaign's applications are reported in
-    ``not_found``; the others are acted on."""
+    (with their resumes; the ``delete`` action also needs ``application:delete``). Ids that are
+    not this campaign's applications are reported in ``not_found``; the others are acted on."""
+    if payload.root.action == "delete":
+        ensure_permission(principal, Permission.application_delete)
     with errors_as_http(HIRING_ERRORS):
         result, deleted = await hiring.bulk_applications(db, scope, campaign_id, payload.root)
     files = await ingestion.delete_application_resumes(db, deleted)
@@ -165,6 +186,7 @@ async def bulk_application_action(
     operation_id="getApplication",
     response_model=Application,
     responses=problem_responses(404, 422),
+    dependencies=[READ],
 )
 async def get_application(
     application_id: uuid.UUID,
@@ -182,6 +204,7 @@ async def get_application(
     operation_id="updateApplication",
     response_model=Application,
     responses=problem_responses(404, 422),
+    dependencies=[REVIEW],
 )
 async def update_application(
     application_id: uuid.UUID,
@@ -201,6 +224,7 @@ async def update_application(
     operation_id="deleteApplication",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=problem_responses(404, 422),
+    dependencies=[DELETE],
 )
 async def delete_application(
     application_id: uuid.UUID,

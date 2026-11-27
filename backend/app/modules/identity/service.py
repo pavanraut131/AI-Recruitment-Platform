@@ -34,10 +34,10 @@ Operator commands (``app.modules.identity.cli``) and the development seed use
 
 **Team, invitations and password reset (E2-07, spec §4.3, §5.2).**
 
-- *Who may do what* is decided in one place, :func:`has_team_permission` (the team rows of the
-  §5.2 matrix) and :func:`can_manage` (``team:manage`` for recruiters and viewers,
-  ``team:manage_privileged`` for owners and admins). Every team use case calls them; E2-06's
-  permission matrix replaces the first. Guard rails: nobody changes their own role or
+- *Who may do what* is the permission matrix (``app.modules.identity.permissions``, E2-06):
+  the routes declare ``team:read`` / ``team:manage``, every team use case checks it again
+  (:func:`check_permission`), and :func:`can_manage` adds ``team:manage_privileged`` for owners
+  and admins (as the target's old or new role, or an invitation's). Guard rails: nobody changes their own role or
   deactivates themselves (403), and the agency always keeps an active owner (409; the active
   owners are row-locked first, so two owners demoting each other at once cannot both succeed).
 - *Emailed tokens* (invitations: 7 days; reset links: 30 minutes, single use) are 256-bit
@@ -86,6 +86,12 @@ from app.modules.identity.models import (
     UserStatus,
 )
 from app.modules.identity.passwords import PasswordPolicyError
+from app.modules.identity.permissions import (
+    Permission,
+    denied_detail,
+    has_permission,
+    permissions_of,
+)
 from app.modules.identity.schemas import (
     ActiveMembership,
     AgencySummary,
@@ -496,6 +502,7 @@ async def me(db: AsyncSession, signed_in: SignedIn, csrf_token: str) -> Me:
         memberships=memberships,
         active_agency=AgencyRef(id=active.agency_id, name=active.agency_name) if active else None,
         role=active.role if active else None,
+        permissions=permissions_of(active.role) if active else [],
         client_scope=(
             ClientScope(
                 all_clients=active.all_clients,
@@ -624,10 +631,7 @@ async def get_agency_v2(db: AsyncSession, principal: Principal) -> AgencyResourc
 async def update_agency_v2(
     db: AsyncSession, principal: Principal, name: str, client: ClientInfo
 ) -> AgencyResource:
-    """Rename the principal's agency: owners only (``agency:manage``, spec §5.2; E2-06 moves the
-    check into the permission matrix)."""
-    if principal.role != Role.owner:
-        raise PermissionDenied("You don't have permission to manage the agency")
+    """Rename the principal's agency. The route requires ``agency:manage`` (spec §5.2)."""
     agency = await repository.get_agency(db, principal.agency_id)
     if agency is None:
         raise NotFoundError("Agency not found")
@@ -650,55 +654,36 @@ async def update_agency_v2(
 
 
 # ── Team permissions (spec §5.2) ──────────────────────────────
-# E2-07's stand-in for E2-06's permission matrix (app.modules.identity.permissions): the team
-# rows only. Every team decision goes through has_team_permission (and can_manage, built on
-# it), so merging E2-06 replaces TEAM_PERMISSIONS with ROLE_PERMISSIONS and the router checks
-# with require_permission, mechanically.
-TEAM_READ: Final = "team:read"
-TEAM_MANAGE: Final = "team:manage"
-TEAM_MANAGE_PRIVILEGED: Final = "team:manage_privileged"
-
-TEAM_PERMISSIONS: Final[Mapping[Role, frozenset[str]]] = {
-    Role.owner: frozenset({TEAM_READ, TEAM_MANAGE, TEAM_MANAGE_PRIVILEGED}),
-    Role.admin: frozenset({TEAM_READ, TEAM_MANAGE}),
-    Role.recruiter: frozenset(),
-    Role.viewer: frozenset(),
-}
+# The team rows of the permission matrix (app.modules.identity.permissions, E2-06). The routes
+# declare team:read / team:manage (require_permission); the use cases check them again, and
+# decide team:manage_privileged, which depends on the roles involved (can_manage).
 PRIVILEGED_ROLES: Final = frozenset({Role.owner, Role.admin})
 """Roles only ``team:manage_privileged`` may grant, change or remove (and that always have
 every client)."""
-
-TEAM_DENIED: Final[Mapping[str, str]] = {
-    TEAM_READ: "You don't have permission to see the team",
-    TEAM_MANAGE: "You don't have permission to manage the team",
-    TEAM_MANAGE_PRIVILEGED: "You don't have permission to manage owners and admins",
-}
-
-
-def has_team_permission(role: Role, permission: str) -> bool:
-    """Whether ``role`` has the team ``permission`` (``team:read``, ``team:manage`` or
-    ``team:manage_privileged``) in the §5.2 matrix."""
-    return permission in TEAM_PERMISSIONS[role]
 
 
 def can_manage(principal: Principal, target_role: Role) -> bool:
     """Whether the principal may invite, change, deactivate or reactivate someone with
     ``target_role``, or resend and revoke their invitation: ``team:manage`` for recruiters and
     viewers, ``team:manage_privileged`` for owners and admins."""
-    needed = TEAM_MANAGE_PRIVILEGED if target_role in PRIVILEGED_ROLES else TEAM_MANAGE
-    return has_team_permission(principal.role, needed)
+    needed = (
+        Permission.team_manage_privileged
+        if target_role in PRIVILEGED_ROLES
+        else Permission.team_manage
+    )
+    return has_permission(principal.role, needed)
 
 
-def require_team_permission(principal: Principal, permission: str) -> None:
+def check_permission(principal: Principal, permission: Permission) -> None:
     """:class:`PermissionDenied` (403) unless the principal's role has ``permission``."""
-    if not has_team_permission(principal.role, permission):
-        raise PermissionDenied(TEAM_DENIED[permission])
+    if not has_permission(principal.role, permission):
+        raise PermissionDenied(denied_detail(permission))
 
 
 def _require_can_manage(principal: Principal, *roles: Role) -> None:
     for role in roles:
         if not can_manage(principal, role):
-            raise PermissionDenied(TEAM_DENIED[TEAM_MANAGE_PRIVILEGED])
+            raise PermissionDenied(denied_detail(Permission.team_manage_privileged))
 
 
 # ── Emailed tokens (E2-07) ────────────────────────────────────
@@ -810,7 +795,7 @@ async def list_members(
 ) -> tuple[list[TeamMember], int]:
     """A page of the agency's members (deactivated ones included) and the total
     (``team:read``)."""
-    require_team_permission(principal, TEAM_READ)
+    check_permission(principal, Permission.team_read)
     rows, total = await repository.list_members(db, principal.agency_id, offset, limit)
     return [_team_member(m, user, ids) for m, user, ids in rows], total
 
@@ -850,7 +835,7 @@ async def update_member(
     """Change a member's role and client access (``team:manage``; owners and admins, as the
     old or the new role, need ``team:manage_privileged``). Audited as
     ``team.member_role_changed`` with the old and new values; commits."""
-    require_team_permission(principal, TEAM_MANAGE)
+    check_permission(principal, Permission.team_manage)
     # Owners first, in id order, then the member: the same lock order in every request.
     await repository.lock_active_owners(db, principal.agency_id)
     membership, user = await _member_for_change(
@@ -910,7 +895,7 @@ async def set_member_status(
     ``team:manage_privileged``). The last active owner cannot be deactivated (409). Doing it
     twice changes nothing. Audited as ``team.member_deactivated`` / ``team.member_reactivated``;
     commits."""
-    require_team_permission(principal, TEAM_MANAGE)
+    check_permission(principal, Permission.team_manage)
     if not active:
         await repository.lock_active_owners(db, principal.agency_id)
     membership, user = await _member_for_change(
@@ -969,7 +954,7 @@ async def list_invitations(
 ) -> tuple[list[TeamInvitation], int]:
     """A page of the agency's open invitations (pending and expired), newest first, and the
     total (``team:read``)."""
-    require_team_permission(principal, TEAM_READ)
+    check_permission(principal, Permission.team_read)
     rows, total = await repository.list_open_invitations(db, principal.agency_id, offset, limit)
     now = utcnow()
     return [_team_invitation(invitation, inviter, now) for invitation, inviter in rows], total
@@ -1029,7 +1014,7 @@ async def create_invitation(
     ``INVITATIONS_MAX_PER_AGENCY_PER_DAY`` emails a day (:class:`RateLimited`). The client ids
     must have been checked by the caller (hiring). Audited ``team.invitation_created``;
     commits, then queues the email."""
-    require_team_permission(principal, TEAM_MANAGE)
+    check_permission(principal, Permission.team_manage)
     _require_can_manage(principal, role)
     address = _invitee_email(email)
     access = client_access(role, all_clients, client_ids)
@@ -1105,7 +1090,7 @@ async def resend_invitation(
     """Email an open invitation again with a **new** token and a new expiry (the old link stops
     working); an expired one is renewed this way. Same permissions, conflict and daily limit as
     :func:`create_invitation`. Audited ``team.invitation_resent``; commits, then queues."""
-    require_team_permission(principal, TEAM_MANAGE)
+    check_permission(principal, Permission.team_manage)
     invitation = await _open_invitation_to_manage(db, principal, invitation_id)
     quota_key = await _invitation_quota(db, store, principal.agency_id, client)
     if await repository.is_active_member(db, principal.agency_id, invitation.email):
@@ -1143,7 +1128,7 @@ async def revoke_invitation(
 ) -> None:
     """Revoke an open invitation (its link stops working). Audited ``team.invitation_revoked``;
     commits."""
-    require_team_permission(principal, TEAM_MANAGE)
+    check_permission(principal, Permission.team_manage)
     invitation = await _open_invitation_to_manage(db, principal, invitation_id)
     invitation.revoked_at = utcnow()
     await record_audit(

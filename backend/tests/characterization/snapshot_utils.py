@@ -13,7 +13,8 @@ with stable placeholders:
 * the fixed id of the default agency (``app.platform.tenancy.DEFAULT_AGENCY_ID``, the same in
   every run) becomes ``<default-agency>``, not a number: since E2-03 it appears in the Celery
   calls' ``agency_id`` and in new storage keys, and naming it keeps the other numbers as they
-  were.
+  were. Likewise the default agency's client (``DEFAULT_CLIENT_ID``) becomes
+  ``<default-client>``: since E2-06 every v2 ``Campaign`` shows its client.
 
 Dict keys are visited in sorted order (the order Amber prints them in), so numbering follows the
 order you read the snapshot in.
@@ -35,6 +36,9 @@ from syrupy.extensions.amber import AmberSnapshotExtension
 # app.platform.tenancy.DEFAULT_AGENCY_ID (not imported: the masker must not depend on app).
 DEFAULT_AGENCY_ID = "00000000-0000-4000-8000-00000000a001"
 DEFAULT_AGENCY_PLACEHOLDER = "<default-agency>"
+# app.platform.tenancy.DEFAULT_CLIENT_ID.
+DEFAULT_CLIENT_ID = "00000000-0000-4000-8000-00000000c001"
+DEFAULT_CLIENT_PLACEHOLDER = "<default-client>"
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 DATETIME_PLACEHOLDER = "<datetime>"
@@ -50,6 +54,8 @@ class Masker:
         key = str(value).lower()
         if key == DEFAULT_AGENCY_ID:
             return DEFAULT_AGENCY_PLACEHOLDER
+        if key == DEFAULT_CLIENT_ID:
+            return DEFAULT_CLIENT_PLACEHOLDER
         if key not in self._uuids:
             self._uuids[key] = f"<uuid:{len(self._uuids) + 1}>"
         return self._uuids[key]

@@ -268,10 +268,18 @@ async def page_for_campaign(
 
 
 async def page_in_statuses(
-    db: AsyncSession, statuses: Sequence[str], *, limit: int
+    db: AsyncSession,
+    statuses: Sequence[str],
+    campaign_ids: Sequence[uuid.UUID] | None,
+    *,
+    limit: int,
 ) -> tuple[Sequence[Resume], int]:
-    """The newest resumes in any of ``statuses`` across campaigns, and how many there are."""
-    return await _page(db, [Resume.status.in_(list(statuses))], offset=0, limit=limit)
+    """The newest resumes in any of ``statuses`` across campaigns (only ``campaign_ids``, unless
+    ``None``), and how many there are."""
+    clauses: list[ColumnElement[bool]] = [Resume.status.in_(list(statuses))]
+    if campaign_ids is not None:
+        clauses.append(Resume.campaign_id == any_(uuid_array(campaign_ids)))
+    return await _page(db, clauses, offset=0, limit=limit)
 
 
 async def _page(

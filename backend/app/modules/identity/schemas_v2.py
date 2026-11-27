@@ -14,6 +14,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.modules.identity.permissions import Permission
 from app.modules.identity.schemas import Role
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -68,6 +69,11 @@ class Me(BaseModel):
         description="null until the user has chosen an agency (setActiveAgency)."
     )
     role: Role | None = Field(description="The user's role in the active agency.")
+    permissions: list[Permission] = Field(
+        description="What the role may do in the active agency (the permission matrix), in a "
+        "fixed order; empty without an active agency. For showing only what the user can do: "
+        "the API checks every request anyway."
+    )
     client_scope: ClientScope | None = Field(description="null without an active agency.")
     csrf_token: str = Field(
         description="The CSRF token for this session (also in the CSRF cookie): send it in "

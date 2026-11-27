@@ -23,7 +23,7 @@ export interface paths {
         head?: never;
         /**
          * Update Agency
-         * @description Rename the active agency (owners only).
+         * @description Rename the active agency (``agency:manage``: owners).
          */
         patch: operations["updateAgency"];
         trace?: never;
@@ -217,13 +217,14 @@ export interface paths {
         };
         /**
          * List Campaigns
-         * @description Campaigns, newest first, with their counts.
+         * @description Campaigns of the clients you have access to, newest first, with their counts.
          */
         get: operations["listCampaigns"];
         put?: never;
         /**
          * Create Campaign
-         * @description Create a campaign (status ``active`` unless given).
+         * @description Create a campaign (status ``active`` unless given) for the client ``client_id`` names, or
+         *     your default client. 422 for a client that is unknown, archived or not one of yours.
          */
         post: operations["createCampaign"];
         delete?: never;
@@ -273,7 +274,8 @@ export interface paths {
         head?: never;
         /**
          * Update Campaign
-         * @description Change the fields sent (title, role, description, required skills, status).
+         * @description Change the fields sent (title, role, description, required skills, status, client).
+         *     A new client must be an active client you have access to (422 otherwise).
          */
         patch: operations["updateCampaign"];
         trace?: never;
@@ -310,8 +312,8 @@ export interface paths {
         /**
          * Bulk Application Action
          * @description Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them
-         *     (with their resumes). Ids that are not this campaign's applications are reported in
-         *     ``not_found``; the others are acted on.
+         *     (with their resumes; the ``delete`` action also needs ``application:delete``). Ids that are
+         *     not this campaign's applications are reported in ``not_found``; the others are acted on.
          */
         post: operations["bulkApplicationAction"];
         delete?: never;
@@ -446,6 +448,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Clients
+         * @description The agency's clients you have access to, by name (ignoring case).
+         */
+        get: operations["listClients"];
+        put?: never;
+        /**
+         * Create Client
+         * @description Add an active client. 409 when the agency already has a client with this name (ignoring
+         *     case, archived ones included).
+         */
+        post: operations["createClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Client
+         * @description One client (404 unless it is one you have access to).
+         */
+        get: operations["getClient"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Client
+         * @description Rename the client, archive it (``status: archived``: hidden from pickers, its campaigns
+         *     keep it) or restore it. 409 for a name another client of the agency has.
+         */
+        patch: operations["updateClient"];
+        trace?: never;
+    };
     "/home": {
         parameters: {
             query?: never;
@@ -455,7 +507,7 @@ export interface paths {
         };
         /**
          * Get Home
-         * @description The Home screen in one call.
+         * @description The Home screen in one call (the campaigns of the clients you have access to).
          */
         get: operations["getHome"];
         put?: never;
@@ -563,7 +615,8 @@ export interface paths {
         };
         /**
          * Get Person
-         * @description The Person's profile, identifiers and identity conflicts, with all their applications.
+         * @description The Person's profile, identifiers and identity conflicts, with their applications (to
+         *     campaigns of the clients you have access to).
          */
         get: operations["getPerson"];
         put?: never;
@@ -583,8 +636,8 @@ export interface paths {
         };
         /**
          * Get Stats
-         * @description Counts across all campaigns: campaigns by status, resumes by status, applications by
-         *     category and stage, and people.
+         * @description Counts across the campaigns of the clients you have access to: campaigns by status,
+         *     resumes by status, applications by category and stage; and the agency's people.
          */
         get: operations["getStats"];
         put?: never;
@@ -999,6 +1052,8 @@ export interface components {
         };
         /** Campaign */
         Campaign: {
+            /** @description The client the campaign is run for. */
+            client: components["schemas"]["ClientRef"];
             counts: components["schemas"]["CampaignCounts"];
             /**
              * Created At
@@ -1066,6 +1121,11 @@ export interface components {
         };
         /** CampaignCreate */
         CampaignCreate: {
+            /**
+             * Client Id
+             * @description The client the campaign is run for: an active client you have access to (422 otherwise). Omitted or null: your default client, the agency's oldest active client you have access to.
+             */
+            client_id?: string | null;
             /** Description */
             description?: string | null;
             /**
@@ -1162,9 +1222,15 @@ export interface components {
         /**
          * CampaignUpdate
          * @description Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others
-         *     may be omitted but not ``null``.
+         *     may be omitted but not ``null``. ``client_id`` moves the campaign to another active client
+         *     you have access to (422 otherwise).
          */
         CampaignUpdate: {
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id?: string;
             /** Description */
             description?: string | null;
             /** Required Skills */
@@ -1199,8 +1265,60 @@ export interface components {
             weak_match: number;
         };
         /**
+         * Client
+         * @description One of the agency's customers; every campaign is run for one client (EPIC-02 §3.1).
+         */
+        Client: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Name
+             * @description Unique in the agency (ignoring case).
+             */
+            name: string;
+            status: components["schemas"]["ClientStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ClientCreate */
+        ClientCreate: {
+            /** Name */
+            name: string;
+        };
+        /** ClientPage */
+        ClientPage: {
+            /** Items */
+            items: components["schemas"]["Client"][];
+            /**
+             * Page
+             * @description This page's number, from 1.
+             */
+            page: number;
+            /**
+             * Page Size
+             * @description The requested page size.
+             */
+            page_size: number;
+            /**
+             * Total
+             * @description Items matching the filters, across all pages.
+             */
+            total: number;
+        };
+        /**
          * ClientRef
-         * @description One of the agency's clients, by name.
+         * @description One of the agency's clients, by name (a campaign's client, a member's clients).
          */
         ClientRef: {
             /**
@@ -1223,6 +1341,22 @@ export interface components {
              * @description Empty when all_clients is true.
              */
             client_ids: string[];
+        };
+        /**
+         * ClientStatus
+         * @description ``archived`` clients are kept (campaigns refer to them) but hidden from pickers.
+         * @enum {string}
+         */
+        ClientStatus: "active" | "archived";
+        /**
+         * ClientUpdate
+         * @description Only the fields sent are changed: rename, archive (``status: archived``) or restore
+         *     (``active``). Neither may be ``null``.
+         */
+        ClientUpdate: {
+            /** Name */
+            name?: string;
+            status?: components["schemas"]["ClientStatus"];
         };
         /**
          * ConflictRole
@@ -1506,6 +1640,11 @@ export interface components {
             csrf_token: string;
             /** Memberships */
             memberships: components["schemas"]["Membership"][];
+            /**
+             * Permissions
+             * @description What the role may do in the active agency (the permission matrix), in a fixed order; empty without an active agency. For showing only what the user can do: the API checks every request anyway.
+             */
+            permissions: components["schemas"]["Permission"][];
             /** @description The user's role in the active agency. */
             role: components["schemas"]["Role"] | null;
             user: components["schemas"]["MeUser"];
@@ -1673,6 +1812,12 @@ export interface components {
              */
             detail: string;
         };
+        /**
+         * Permission
+         * @description What a role may do in its agency (spec §5.2). The values are the spec's names.
+         * @enum {string}
+         */
+        Permission: "workspace:read" | "campaign:write" | "campaign:delete" | "resume:upload" | "application:review" | "application:delete" | "application:export" | "client:read" | "client:manage" | "team:read" | "team:manage" | "team:manage_privileged" | "agency:manage";
         /** Person */
         Person: {
             /**
@@ -2853,6 +2998,8 @@ export interface operations {
                 status?: components["schemas"]["CampaignStatus"][] | null;
                 /** @description Contained in the title or the role. */
                 q?: string | null;
+                /** @description Only campaigns of any of these clients (within the clients you have access to). */
+                client_id?: string[] | null;
                 /** @description Page number, from 1. */
                 page?: number;
                 /** @description Items per page. */
@@ -3713,9 +3860,257 @@ export interface operations {
             };
         };
     };
-    getHome: {
+    listClients: {
+        parameters: {
+            query?: {
+                /** @description Only clients in any of these statuses. */
+                status?: components["schemas"]["ClientStatus"][] | null;
+                /** @description Contained in the name. */
+                q?: string | null;
+                /** @description Page number, from 1. */
+                page?: number;
+                /** @description Items per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createClient: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Client"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Client"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Client"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getHome: {
+        parameters: {
+            query?: {
+                /** @description Only campaigns of any of these clients (within the clients you have access to). */
+                client_id?: string[] | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3742,6 +4137,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4063,7 +4467,10 @@ export interface operations {
     };
     getStats: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only campaigns of any of these clients (within the clients you have access to). */
+                client_id?: string[] | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4090,6 +4497,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

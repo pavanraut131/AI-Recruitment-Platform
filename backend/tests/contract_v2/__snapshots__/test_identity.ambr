@@ -120,6 +120,21 @@
             'role': 'owner',
           }),
         ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'campaign:delete',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
+          'client:manage',
+          'team:read',
+          'team:manage',
+          'team:manage_privileged',
+          'agency:manage',
+        ]),
         'role': 'owner',
         'user': dict({
           'display_name': 'ada',
@@ -309,6 +324,15 @@
             'role': 'recruiter',
           }),
         ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
+        ]),
         'role': 'recruiter',
         'user': dict({
           'display_name': 'Ada Lovelace',
@@ -354,6 +378,8 @@
             'role': 'recruiter',
           }),
         ]),
+        'permissions': list([
+        ]),
         'role': None,
         'user': dict({
           'display_name': 'ada',
@@ -393,6 +419,15 @@
             }),
             'role': 'recruiter',
           }),
+        ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
         ]),
         'role': 'recruiter',
         'user': dict({
@@ -445,6 +480,15 @@
             }),
             'role': 'recruiter',
           }),
+        ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
         ]),
         'role': 'recruiter',
         'user': dict({

@@ -81,6 +81,7 @@ export function installFakeApi({
         description: null,
         required_skills: requiredSkills,
         status: "active",
+        client: { id: "00000000-0000-4000-8000-00000000c001", name: "General" },
         created_at: "2026-11-01T00:00:00Z",
         updated_at: "2026-11-01T00:00:00Z",
         last_activity_at: "2026-11-01T00:00:00Z",

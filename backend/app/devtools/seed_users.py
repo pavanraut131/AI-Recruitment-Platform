@@ -22,8 +22,9 @@ email                                   role       agency
 Password for all of them: :data:`DEV_PASSWORD` (``hireflow-dev-password``). Refused unless
 ``APP_ENV`` is ``development`` or ``test``: a known password must never reach a deployment.
 
-Until E2-06 gives each agency its own clients, a campaign created in Northbank Talent still gets
-the default agency's client and fails; sign in to the default agency to work with campaigns.
+Each seeded agency has a client to run campaigns for (E2-06): the default agency its "General"
+from the E2-01 migration, Northbank Talent one named "General" too, created by :func:`run` if it
+has no client yet (:func:`ensure_clients`).
 """
 
 from __future__ import annotations
@@ -32,13 +33,14 @@ import uuid
 from dataclasses import dataclass
 from typing import Final
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.modules.hiring import service as hiring
 from app.modules.identity import service as identity
 from app.modules.identity.schemas import Role
 from app.platform.config import settings
-from app.platform.tenancy import DEFAULT_AGENCY_ID
+from app.platform.tenancy import DEFAULT_AGENCY_ID, bind
 
 DEV_PASSWORD: Final = "hireflow-dev-password"
 SECOND_AGENCY_NAME: Final = "Northbank Talent"
@@ -56,6 +58,7 @@ class SeededUser:
     role: Role
     agency_name: str
     created: bool
+    agency_id: uuid.UUID
 
 
 async def seed_users(db: AsyncSession) -> list[SeededUser]:
@@ -83,18 +86,35 @@ async def seed_users(db: AsyncSession) -> list[SeededUser]:
                 password=DEV_PASSWORD,
             )
             created = await identity.ensure_membership(db, agency_id, user.id, role)
-            seeded.append(SeededUser(user.email, role, agency_name, user.created or created))
+            seeded.append(
+                SeededUser(user.email, role, agency_name, user.created or created, agency_id)
+            )
     return seeded
 
 
+async def ensure_clients(engine: AsyncEngine, agency_ids: set[uuid.UUID]) -> int:
+    """Give each of these agencies a "General" client if it has no client at all
+    (``hiring.service.ensure_first_client``), each in a session bound to it (clients are under
+    row-level security). Returns how many it created."""
+    created = 0
+    for agency_id in sorted(agency_ids):
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            bind(db, agency_id)
+            created += await hiring.ensure_first_client(db)
+            await db.commit()
+    return created
+
+
 async def run() -> list[SeededUser]:
-    """:func:`seed_users` in its own transaction on ``DATABASE_URL``."""
+    """:func:`seed_users` in its own transaction on ``DATABASE_URL``, then
+    :func:`ensure_clients` for the seeded agencies."""
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     try:
         async with AsyncSession(engine, expire_on_commit=False) as db:
             seeded = await seed_users(db)
             await db.commit()
-            return seeded
+        await ensure_clients(engine, {user.agency_id for user in seeded})
+        return seeded
     finally:
         await engine.dispose()
 

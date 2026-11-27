@@ -66,3 +66,14 @@ def test_the_default_agency_is_named_not_numbered() -> None:
         "agency_id": "<default-agency>",
         "key": "agencies/<default-agency>/campaigns/<uuid:1>/resumes/<uuid:2>.pdf",
     }
+
+
+def test_the_default_client_is_named_not_numbered() -> None:
+    from app.platform.tenancy import DEFAULT_CLIENT_ID
+
+    masker = Masker()
+    campaign = {"client": {"id": str(DEFAULT_CLIENT_ID), "name": "General"}, "id": A}
+    assert masker.mask(campaign) == {
+        "client": {"id": "<default-client>", "name": "General"},
+        "id": "<uuid:1>",
+    }

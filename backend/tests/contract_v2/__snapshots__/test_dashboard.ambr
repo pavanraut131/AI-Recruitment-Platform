@@ -4,6 +4,10 @@
     'body': dict({
       'active_campaigns': list([
         dict({
+          'client': dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
           'counts': dict({
             'applications': 1,
             'failed': 1,
@@ -27,6 +31,10 @@
           'updated_at': '<datetime>',
         }),
         dict({
+          'client': dict({
+            'id': '<default-client>',
+            'name': 'General',
+          }),
           'counts': dict({
             'applications': 1,
             'failed': 0,
@@ -196,6 +204,113 @@
     }),
     'status_code': 200,
   })
+# ---
+# name: test_stats_and_home_of_one_client
+  list([
+    dict({
+      'body': dict({
+        'applications': dict({
+          'by_category': dict({
+            'moderate_match': 0,
+            'rejected': 0,
+            'strong_match': 1,
+            'weak_match': 0,
+          }),
+          'by_stage': dict({
+            'hired': 0,
+            'offer': 0,
+            'phone_call': 0,
+            'rejected_manual': 0,
+            'screened': 0,
+            'technical': 0,
+            'unreviewed': 1,
+          }),
+          'total': 1,
+        }),
+        'campaigns': dict({
+          'active': 1,
+          'archived': 0,
+          'closed': 0,
+          'total': 1,
+        }),
+        'people': 5,
+        'resumes': dict({
+          'done': 1,
+          'extracting': 0,
+          'failed': 0,
+          'pending': 0,
+          'processing': 0,
+          'quota_exceeded': 0,
+          'total': 1,
+        }),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+    dict({
+      'body': dict({
+        'active_campaigns': list([
+          dict({
+            'client': dict({
+              'id': '<uuid:1>',
+              'name': 'Acme',
+            }),
+            'counts': dict({
+              'applications': 1,
+              'failed': 0,
+              'in_progress': 0,
+              'new_resumes_24h': 0,
+              'resumes': 1,
+              'strong_matches': 1,
+            }),
+            'created_at': '<datetime>',
+            'description': 'Build and run the Python services behind our recruiting product.',
+            'id': '<uuid:2>',
+            'last_activity_at': '<datetime>',
+            'required_skills': list([
+              'Python',
+              'FastAPI',
+              'PostgreSQL',
+            ]),
+            'role': 'Backend Engineer',
+            'status': 'active',
+            'title': "Acme's",
+            'updated_at': '<datetime>',
+          }),
+        ]),
+        'processing': dict({
+          'items': list([
+          ]),
+          'total': 0,
+        }),
+        'recent_strong_matches': list([
+          dict({
+            'campaign': dict({
+              'id': '<uuid:2>',
+              'status': 'active',
+              'title': "Acme's",
+            }),
+            'category': 'strong_match',
+            'created_at': '<datetime>',
+            'id': '<uuid:3>',
+            'person': dict({
+              'email': 'applicant9@example.com',
+              'id': '<uuid:4>',
+              'name': 'Alan',
+            }),
+            'pipeline_stage': None,
+            'score': 95.0,
+          }),
+        ]),
+      }),
+      'headers': dict({
+        'content-type': 'application/json',
+      }),
+      'status_code': 200,
+    }),
+  ])
 # ---
 # name: test_stats_empty
   dict({

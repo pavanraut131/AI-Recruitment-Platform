@@ -39,6 +39,8 @@ _STATUS_CODES: dict[type[service.HiringError], int] = {
     service.NotFoundError: status.HTTP_404_NOT_FOUND,
     service.InvalidInputError: status.HTTP_400_BAD_REQUEST,
     service.JDParseError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    # Raised only by the /api/v2 client use cases (E2-06); mapped so every error has a status.
+    service.ConflictError: status.HTTP_409_CONFLICT,
 }
 
 

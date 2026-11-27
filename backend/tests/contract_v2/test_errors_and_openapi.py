@@ -109,8 +109,8 @@ def test_every_operation_follows_the_client_conventions() -> None:
     document = v2_app.openapi()
     operations = _operations(document)
     ids = [op["operationId"] for _, _, op in operations]
-    # 21 + 9 identity operations (E2-05) + 4 auth and 8 team operations (E2-07)
-    assert len(ids) == len(set(ids)) == 42
+    # 21 + 9 identity (E2-05) + 4 clients (E2-06) + 4 auth and 8 team operations (E2-07)
+    assert len(ids) == len(set(ids)) == 46
     for method, path, op in operations:
         assert CAMEL_CASE.match(op["operationId"]), (method, path)
         assert len(op["tags"]) == 1, (method, path)
@@ -123,7 +123,14 @@ def test_every_operation_follows_the_client_conventions() -> None:
         assert ("422" in op["responses"]) == has_input, (method, path)
     schemas = document["components"]["schemas"]
     assert "HTTPValidationError" not in schemas  # FastAPI's default 422 shape is never used
-    for enum_name in ("ApplicationCategory", "PipelineStage", "ResumeStatus", "CampaignStatus"):
+    for enum_name in (
+        "ApplicationCategory",
+        "PipelineStage",
+        "ResumeStatus",
+        "CampaignStatus",
+        "ClientStatus",
+        "Permission",
+    ):
         assert schemas[enum_name]["enum"], enum_name
     assert schemas["Problem"]["required"] == ["title", "status"]
 

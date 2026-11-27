@@ -315,19 +315,21 @@ async def test_another_agencys_members_are_not_found(
     assert unchanged is not None and (unchanged.role, unchanged.status) == ("viewer", "active")
 
 
-# ── The decision function (the E2-06 swap point) ──────────────
+# ── The decision functions (the permission matrix, E2-06) ─────
 @pytest.mark.parametrize("role", list(Role))
 def test_the_team_rows_of_the_matrix(role: Role) -> None:
     """Spec §5.2: team:read and team:manage for owners and admins, team:manage_privileged for
     owners; recruiters and viewers have none."""
+    from app.modules.identity.permissions import Permission, has_permission
+
+    team = {Permission.team_read, Permission.team_manage, Permission.team_manage_privileged}
     expected = {
-        Role.owner: {service.TEAM_READ, service.TEAM_MANAGE, service.TEAM_MANAGE_PRIVILEGED},
-        Role.admin: {service.TEAM_READ, service.TEAM_MANAGE},
+        Role.owner: team,
+        Role.admin: {Permission.team_read, Permission.team_manage},
         Role.recruiter: set(),
         Role.viewer: set(),
     }[role]
-    permissions = {service.TEAM_READ, service.TEAM_MANAGE, service.TEAM_MANAGE_PRIVILEGED}
-    assert {p for p in permissions if service.has_team_permission(role, p)} == expected
+    assert {p for p in team if has_permission(role, p)} == expected
 
     principal = dataclasses.replace(DEV_FALLBACK, role=role)
     manages = {target for target in Role if service.can_manage(principal, target)}

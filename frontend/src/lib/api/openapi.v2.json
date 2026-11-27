@@ -535,6 +535,10 @@
       },
       "Campaign": {
         "properties": {
+          "client": {
+            "$ref": "#/components/schemas/ClientRef",
+            "description": "The client the campaign is run for."
+          },
           "counts": {
             "$ref": "#/components/schemas/CampaignCounts"
           },
@@ -596,6 +600,7 @@
           "description",
           "required_skills",
           "status",
+          "client",
           "created_at",
           "updated_at",
           "last_activity_at",
@@ -651,6 +656,19 @@
       "CampaignCreate": {
         "additionalProperties": false,
         "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The client the campaign is run for: an active client you have access to (422 otherwise). Omitted or null: your default client, the agency's oldest active client you have access to.",
+            "title": "Client Id"
+          },
           "description": {
             "anyOf": [
               {
@@ -839,8 +857,13 @@
       },
       "CampaignUpdate": {
         "additionalProperties": false,
-        "description": "Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others\nmay be omitted but not ``null``.",
+        "description": "Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others\nmay be omitted but not ``null``. ``client_id`` moves the campaign to another active client\nyou have access to (422 otherwise).",
         "properties": {
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
           "description": {
             "anyOf": [
               {
@@ -908,8 +931,95 @@
         "title": "CategoryCounts",
         "type": "object"
       },
+      "Client": {
+        "description": "One of the agency's customers; every campaign is run for one client (EPIC-02 \u00a73.1).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "Unique in the agency (ignoring case).",
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClientStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Client",
+        "type": "object"
+      },
+      "ClientCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ClientCreate",
+        "type": "object"
+      },
+      "ClientPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "description": "This page's number, from 1.",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "The requested page size.",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items matching the filters, across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ClientPage",
+        "type": "object"
+      },
       "ClientRef": {
-        "description": "One of the agency's clients, by name.",
+        "description": "One of the agency's clients, by name (a campaign's client, a member's clients).",
         "properties": {
           "id": {
             "format": "uuid",
@@ -950,6 +1060,32 @@
           "client_ids"
         ],
         "title": "ClientScope",
+        "type": "object"
+      },
+      "ClientStatus": {
+        "description": "``archived`` clients are kept (campaigns refer to them) but hidden from pickers.",
+        "enum": [
+          "active",
+          "archived"
+        ],
+        "title": "ClientStatus",
+        "type": "string"
+      },
+      "ClientUpdate": {
+        "additionalProperties": false,
+        "description": "Only the fields sent are changed: rename, archive (``status: archived``) or restore\n(``active``). Neither may be ``null``.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClientStatus"
+          }
+        },
+        "title": "ClientUpdate",
         "type": "object"
       },
       "ConflictRole": {
@@ -1485,6 +1621,14 @@
             "title": "Memberships",
             "type": "array"
           },
+          "permissions": {
+            "description": "What the role may do in the active agency (the permission matrix), in a fixed order; empty without an active agency. For showing only what the user can do: the API checks every request anyway.",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
           "role": {
             "anyOf": [
               {
@@ -1505,6 +1649,7 @@
           "memberships",
           "active_agency",
           "role",
+          "permissions",
           "client_scope",
           "csrf_token"
         ],
@@ -1853,6 +1998,26 @@
         ],
         "title": "PasswordResetRequested",
         "type": "object"
+      },
+      "Permission": {
+        "description": "What a role may do in its agency (spec \u00a75.2). The values are the spec's names.",
+        "enum": [
+          "workspace:read",
+          "campaign:write",
+          "campaign:delete",
+          "resume:upload",
+          "application:review",
+          "application:delete",
+          "application:export",
+          "client:read",
+          "client:manage",
+          "team:read",
+          "team:manage",
+          "team:manage_privileged",
+          "agency:manage"
+        ],
+        "title": "Permission",
+        "type": "string"
       },
       "Person": {
         "properties": {
@@ -3045,10 +3210,13 @@
         "summary": "Get Agency",
         "tags": [
           "agency"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       },
       "patch": {
-        "description": "Rename the active agency (owners only).",
+        "description": "Rename the active agency (``agency:manage``: owners).",
         "operationId": "updateAgency",
         "requestBody": {
           "content": {
@@ -3111,6 +3279,9 @@
         "summary": "Update Agency",
         "tags": [
           "agency"
+        ],
+        "x-permissions": [
+          "agency:manage"
         ]
       }
     },
@@ -3184,6 +3355,9 @@
         "summary": "Delete Application",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "application:delete"
         ]
       },
       "get": {
@@ -3260,6 +3434,9 @@
         "summary": "Get Application",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       },
       "patch": {
@@ -3348,6 +3525,9 @@
         "summary": "Update Application",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "application:review"
         ]
       }
     },
@@ -3794,7 +3974,7 @@
     },
     "/campaigns": {
       "get": {
-        "description": "Campaigns, newest first, with their counts.",
+        "description": "Campaigns of the clients you have access to, newest first, with their counts.",
         "operationId": "listCampaigns",
         "parameters": [
           {
@@ -3835,6 +4015,29 @@
               ],
               "description": "Contained in the title or the role.",
               "title": "Q"
+            }
+          },
+          {
+            "description": "Only campaigns of any of these clients (within the clients you have access to).",
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only campaigns of any of these clients (within the clients you have access to).",
+              "title": "Client Id"
             }
           },
           {
@@ -3915,10 +4118,13 @@
         "summary": "List Campaigns",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       },
       "post": {
-        "description": "Create a campaign (status ``active`` unless given).",
+        "description": "Create a campaign (status ``active`` unless given) for the client ``client_id`` names, or\nyour default client. 422 for a client that is unknown, archived or not one of yours.",
         "operationId": "createCampaign",
         "requestBody": {
           "content": {
@@ -3981,6 +4187,9 @@
         "summary": "Create Campaign",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "campaign:write"
         ]
       }
     },
@@ -4059,6 +4268,9 @@
         "summary": "Parse Job Description",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "campaign:write"
         ]
       }
     },
@@ -4132,6 +4344,9 @@
         "summary": "Delete Campaign",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "campaign:delete"
         ]
       },
       "get": {
@@ -4208,10 +4423,13 @@
         "summary": "Get Campaign",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       },
       "patch": {
-        "description": "Change the fields sent (title, role, description, required skills, status).",
+        "description": "Change the fields sent (title, role, description, required skills, status, client).\nA new client must be an active client you have access to (422 otherwise).",
         "operationId": "updateCampaign",
         "parameters": [
           {
@@ -4296,6 +4514,9 @@
         "summary": "Update Campaign",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "campaign:write"
         ]
       }
     },
@@ -4548,12 +4769,15 @@
         "summary": "List Campaign Applications",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
     "/campaigns/{campaign_id}/applications/bulk": {
       "post": {
-        "description": "Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them\n(with their resumes). Ids that are not this campaign's applications are reported in\n``not_found``; the others are acted on.",
+        "description": "Move the applications to a stage, reject them (stage ``rejected_manual``) or delete them\n(with their resumes; the ``delete`` action also needs ``application:delete``). Ids that are\nnot this campaign's applications are reported in ``not_found``; the others are acted on.",
         "operationId": "bulkApplicationAction",
         "parameters": [
           {
@@ -4638,6 +4862,9 @@
         "summary": "Bulk Application Action",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "application:review"
         ]
       }
     },
@@ -4886,6 +5113,9 @@
         "summary": "Export Campaign Applications",
         "tags": [
           "applications"
+        ],
+        "x-permissions": [
+          "application:export"
         ]
       }
     },
@@ -4965,6 +5195,9 @@
         "summary": "Stream Campaign Events",
         "tags": [
           "uploads"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
@@ -5092,6 +5325,9 @@
         "summary": "List Campaign Resumes",
         "tags": [
           "uploads"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
@@ -5172,6 +5408,9 @@
         "summary": "Retry Failed Resumes",
         "tags": [
           "uploads"
+        ],
+        "x-permissions": [
+          "resume:upload"
         ]
       }
     },
@@ -5251,6 +5490,9 @@
         "summary": "Get Campaign Stats",
         "tags": [
           "campaigns"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
@@ -5351,13 +5593,432 @@
         "summary": "Upload Resumes",
         "tags": [
           "uploads"
+        ],
+        "x-permissions": [
+          "resume:upload"
+        ]
+      }
+    },
+    "/clients": {
+      "get": {
+        "description": "The agency's clients you have access to, by name (ignoring case).",
+        "operationId": "listClients",
+        "parameters": [
+          {
+            "description": "Only clients in any of these statuses.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ClientStatus"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only clients in any of these statuses.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Contained in the name.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Contained in the name.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Page number, from 1.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number, from 1.",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List Clients",
+        "tags": [
+          "clients"
+        ],
+        "x-permissions": [
+          "client:read"
+        ]
+      },
+      "post": {
+        "description": "Add an active client. 409 when the agency already has a client with this name (ignoring\ncase, archived ones included).",
+        "operationId": "createClient",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Client"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Create Client",
+        "tags": [
+          "clients"
+        ],
+        "x-permissions": [
+          "client:manage"
+        ]
+      }
+    },
+    "/clients/{client_id}": {
+      "get": {
+        "description": "One client (404 unless it is one you have access to).",
+        "operationId": "getClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Client"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get Client",
+        "tags": [
+          "clients"
+        ],
+        "x-permissions": [
+          "client:read"
+        ]
+      },
+      "patch": {
+        "description": "Rename the client, archive it (``status: archived``: hidden from pickers, its campaigns\nkeep it) or restore it. 409 for a name another client of the agency has.",
+        "operationId": "updateClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Client"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "summary": "Update Client",
+        "tags": [
+          "clients"
+        ],
+        "x-permissions": [
+          "client:manage"
         ]
       }
     },
     "/home": {
       "get": {
-        "description": "The Home screen in one call.",
+        "description": "The Home screen in one call (the campaigns of the clients you have access to).",
         "operationId": "getHome",
+        "parameters": [
+          {
+            "description": "Only campaigns of any of these clients (within the clients you have access to).",
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only campaigns of any of these clients (within the clients you have access to).",
+              "title": "Client Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5388,6 +6049,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -5398,6 +6069,9 @@
         "summary": "Get Home",
         "tags": [
           "dashboard"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
@@ -5755,12 +6429,15 @@
         "summary": "List People",
         "tags": [
           "people"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
     "/people/{person_id}": {
       "get": {
-        "description": "The Person's profile, identifiers and identity conflicts, with all their applications.",
+        "description": "The Person's profile, identifiers and identity conflicts, with their applications (to\ncampaigns of the clients you have access to).",
         "operationId": "getPerson",
         "parameters": [
           {
@@ -5834,13 +6511,41 @@
         "summary": "Get Person",
         "tags": [
           "people"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
     "/stats": {
       "get": {
-        "description": "Counts across all campaigns: campaigns by status, resumes by status, applications by\ncategory and stage, and people.",
+        "description": "Counts across the campaigns of the clients you have access to: campaigns by status,\nresumes by status, applications by category and stage; and the agency's people.",
         "operationId": "getStats",
+        "parameters": [
+          {
+            "description": "Only campaigns of any of these clients (within the clients you have access to).",
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only campaigns of any of these clients (within the clients you have access to).",
+              "title": "Client Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5871,6 +6576,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -5881,6 +6596,9 @@
         "summary": "Get Stats",
         "tags": [
           "dashboard"
+        ],
+        "x-permissions": [
+          "workspace:read"
         ]
       }
     },
@@ -5967,6 +6685,9 @@
         "summary": "List Invitations",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:read"
         ]
       },
       "post": {
@@ -6053,6 +6774,9 @@
         "summary": "Create Invitation",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     },
@@ -6126,6 +6850,9 @@
         "summary": "Revoke Invitation",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     },
@@ -6226,6 +6953,9 @@
         "summary": "Resend Invitation",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     },
@@ -6312,6 +7042,9 @@
         "summary": "List Members",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:read"
         ]
       }
     },
@@ -6412,6 +7145,9 @@
         "summary": "Update Member",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     },
@@ -6502,6 +7238,9 @@
         "summary": "Deactivate Member",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     },
@@ -6582,6 +7321,9 @@
         "summary": "Reactivate Member",
         "tags": [
           "team"
+        ],
+        "x-permissions": [
+          "team:manage"
         ]
       }
     }
@@ -6623,6 +7365,10 @@
     {
       "description": "The active agency.",
       "name": "agency"
+    },
+    {
+      "description": "The agency's clients, whom campaigns are run for.",
+      "name": "clients"
     },
     {
       "description": "The agency's members and invitations.",

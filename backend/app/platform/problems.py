@@ -167,7 +167,9 @@ def errors_as_http(status_codes: Mapping[type[Exception], int]) -> Iterator[None
 
     ``status_codes`` maps error classes (the first matching entry wins, subclasses included) to
     status codes; the error's ``detail`` attribute (or its message) becomes the problem's
-    ``detail``. Other exceptions pass through.
+    ``detail``. An error with a ``field`` attribute (a request body field the service rejected)
+    becomes a problem with one :class:`FieldError` at ``["body", field]``, like a validation
+    error. Other exceptions pass through.
     """
     try:
         yield
@@ -175,6 +177,13 @@ def errors_as_http(status_codes: Mapping[type[Exception], int]) -> Iterator[None
         for error_type, status in status_codes.items():
             if isinstance(exc, error_type):
                 detail = getattr(exc, "detail", None) or str(exc)
+                field = getattr(exc, "field", None)
+                if isinstance(field, str):
+                    raise ProblemError(
+                        status,
+                        "1 invalid field",
+                        errors=[FieldError(loc=["body", field], msg=detail)],
+                    ) from exc
                 raise HTTPException(status_code=status, detail=detail) from exc
         raise
 

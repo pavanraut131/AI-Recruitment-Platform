@@ -22,7 +22,8 @@
   every connection a pool hands out carries no agency.
 - :class:`TenantContext` is "which agency"; :class:`AccessScope` adds which of its clients the
   caller may see (``None``: all of them). Services that list or fetch campaign data take an
-  ``AccessScope``; until E2-06 every scope covers all clients.
+  ``AccessScope`` and filter by it (client scoping, E2-06): it is an authorization rule inside
+  one tenant, enforced by the application, not by row-level security (spec §5.3).
 
 Operator commands that span agencies (``reset_stuck``, ``storage_orphans``,
 ``verify_people_applications``, ``backfill_tenancy``) connect as the owner role through
@@ -36,8 +37,9 @@ call only repository functions that say they read every agency; those never call
   belongs to, named **"Default agency"** (slug ``default``). Until E2-05 every HTTP request is
   bound to it, and ``/api/v1`` stays bound to it until it is removed (E2-12).
 - :data:`DEFAULT_CLIENT_ID`: the client (hiring's ``clients``) of the default agency that every
-  existing campaign is run for, named **"General"** (spec §15, Q7). New campaigns get it until
-  E2-06 makes the client a required field.
+  existing campaign is run for, named **"General"** (spec §15, Q7). Since E2-06 a campaign is
+  created for the client its request names (or the caller's default client); the E2-06
+  migration gave every other agency a "General" client too.
 
 The values are fixed, so the migration, the code and the runbooks agree without a lookup.
 Never reuse them for anything else. They live here, not in ``identity`` or ``hiring``, because
@@ -47,6 +49,7 @@ every tenant module needs them and none of them may import ``identity`` (a leaf)
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -87,8 +90,8 @@ class TenantContext:
 @dataclass(frozen=True, slots=True)
 class AccessScope:
     """What a caller may see inside its agency: every client (``client_ids=None``) or only the
-    listed ones (spec §5.3). Client scoping arrives with E2-06; until then every scope has
-    ``client_ids=None``."""
+    listed ones (spec §5.3; an empty set: no client at all). A membership limited to some
+    clients gets the second kind (E2-06), and services filter campaign-owned data by it."""
 
     agency_id: uuid.UUID
     client_ids: frozenset[uuid.UUID] | None = None
@@ -96,6 +99,19 @@ class AccessScope:
     @property
     def all_clients(self) -> bool:
         return self.client_ids is None
+
+    def allows(self, client_id: uuid.UUID) -> bool:
+        """Whether a client of this agency is in the scope."""
+        return self.client_ids is None or client_id in self.client_ids
+
+    def restricted_to(self, client_ids: Iterable[uuid.UUID] | None) -> AccessScope:
+        """This scope narrowed to ``client_ids`` (a request's ``client_id`` filter): their
+        intersection with the allowed clients, never more. ``None`` (no filter) keeps it."""
+        if client_ids is None:
+            return self
+        wanted = frozenset(client_ids)
+        allowed = wanted if self.client_ids is None else wanted & self.client_ids
+        return AccessScope(self.agency_id, allowed)
 
 
 AnySession = Session | AsyncSession

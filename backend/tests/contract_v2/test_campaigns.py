@@ -1,4 +1,5 @@
-"""Contract: /api/v2/campaigns (list, create, detail, update, delete, stats, parse-jd)."""
+"""Contract: /api/v2/campaigns (list, create, detail, update, delete, stats, parse-jd), with the
+client each campaign is run for (E2-06)."""
 
 from __future__ import annotations
 
@@ -13,9 +14,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from app.modules.hiring.models import Application, Campaign
 from app.modules.ingestion.models import Resume
+from app.platform.tenancy import DEFAULT_CLIENT_ID
 from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import UNKNOWN_ID, V2, applicant, ranked_campaign
-from tests.factories import at, make_campaign, make_resume
+from tests.factories import at, make_campaign, make_client, make_resume
 from tests.fakes import FakeGemini, InMemoryStorage
 
 
@@ -71,9 +73,29 @@ async def test_list_campaigns_filters(
             "page": body["page"], "page_size": body["page_size"]} == snapshot  # fmt: skip
 
 
+async def test_list_campaigns_by_client(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
+) -> None:
+    acme = await make_client(db_session, "Acme")
+    globex = await make_client(db_session, "Globex")
+    await make_campaign(db_session, title="General's")
+    await make_campaign(db_session, title="Acme's", client_id=acme.id, created_at=at(1))
+    await make_campaign(db_session, title="Globex's", client_id=globex.id, created_at=at(2))
+    found = {}
+    for name, query in {
+        "acme": f"client_id={acme.id}",
+        "acme-and-globex": f"client_id={acme.id}&client_id={globex.id}",
+        "unknown-client": f"client_id={UNKNOWN_ID}",
+    }.items():
+        body = (await client.get(f"{V2}/campaigns?{query}")).json()
+        found[name] = [(c["title"], c["client"]["name"]) for c in body["items"]]
+    assert found == snapshot
+
+
 @pytest.mark.parametrize(
     "params",
     [
+        pytest.param("client_id=acme", id="client-id-not-a-uuid"),
         pytest.param("page=0", id="page-zero"),
         pytest.param("page_size=0", id="page-size-zero"),
         pytest.param("page_size=101", id="page-size-over-100"),
@@ -101,8 +123,43 @@ async def test_create_campaign(client: AsyncClient, snapshot: SnapshotAssertion)
 
 
 async def test_create_campaign_minimal(client: AsyncClient, snapshot: SnapshotAssertion) -> None:
+    """No ``client_id``: the caller's default client, the agency's oldest active one (here the
+    migration's "General")."""
     resp = await client.post(f"{V2}/campaigns", json={"title": "Minimal", "role": "Dev"})
     assert response_data(resp) == snapshot
+
+
+async def test_create_campaign_for_a_client(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
+) -> None:
+    acme = await make_client(db_session, "Acme")
+    resp = await client.post(
+        f"{V2}/campaigns", json={"title": "For Acme", "role": "Dev", "client_id": str(acme.id)}
+    )
+    assert response_data(resp) == snapshot
+    stored = await db_session.scalar(select(Campaign).where(Campaign.title == "For Acme"))
+    assert stored is not None and stored.client_id == acme.id
+
+
+@pytest.mark.parametrize("case", ["unknown", "archived"])
+async def test_create_campaign_for_an_unusable_client(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion, case: str
+) -> None:
+    archived = await make_client(db_session, "Gone", status="archived")
+    client_id = {"unknown": UNKNOWN_ID, "archived": str(archived.id)}[case]
+    resp = await client.post(
+        f"{V2}/campaigns", json={"title": "T", "role": "Dev", "client_id": client_id}
+    )
+    assert response_data(resp) == snapshot
+    assert await db_session.scalar(select(func.count(Campaign.id))) == 0
+
+
+async def test_create_campaign_with_a_null_client_takes_the_default(client: AsyncClient) -> None:
+    resp = await client.post(
+        f"{V2}/campaigns", json={"title": "T", "role": "Dev", "client_id": None}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["client"] == {"id": str(DEFAULT_CLIENT_ID), "name": "General"}
 
 
 @pytest.mark.parametrize(
@@ -176,6 +233,23 @@ async def test_update_campaign(
     )
     assert response_data(resp) == snapshot
     assert resp.json()["title"] == campaign.title  # not sent: unchanged
+
+
+async def test_move_a_campaign_to_another_client(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
+) -> None:
+    campaign = await make_campaign(db_session)
+    acme = await make_client(db_session, "Acme")
+    archived = await make_client(db_session, "Gone", status="archived")
+    url = f"{V2}/campaigns/{campaign.id}"
+    moved = await client.patch(url, json={"client_id": str(acme.id)})
+    refused = [
+        await client.patch(url, json={"client_id": value})
+        for value in (str(archived.id), UNKNOWN_ID, None)
+    ]
+    assert [response_data(r) for r in (moved, *refused)] == snapshot
+    final = (await client.get(url)).json()["client"]
+    assert final == {"id": str(acme.id), "name": "Acme"}
 
 
 @pytest.mark.parametrize(

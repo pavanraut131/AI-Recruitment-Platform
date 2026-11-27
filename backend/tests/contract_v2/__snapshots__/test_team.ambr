@@ -287,12 +287,12 @@
             'name': 'Acme',
           }),
           dict({
-            'id': '<uuid:2>',
+            'id': '<default-client>',
             'name': 'General',
           }),
         ]),
         'deactivated_at': '<datetime>',
-        'id': '<uuid:3>',
+        'id': '<uuid:2>',
         'joined_at': '<datetime>',
         'last_active_at': '<datetime>',
         'role': 'recruiter',
@@ -300,7 +300,7 @@
         'user': dict({
           'display_name': 'recruiter',
           'email': 'recruiter@example.com',
-          'id': '<uuid:4>',
+          'id': '<uuid:3>',
         }),
       }),
       'headers': dict({
@@ -341,12 +341,12 @@
             'name': 'Acme',
           }),
           dict({
-            'id': '<uuid:2>',
+            'id': '<default-client>',
             'name': 'General',
           }),
         ]),
         'deactivated_at': None,
-        'id': '<uuid:3>',
+        'id': '<uuid:2>',
         'joined_at': '<datetime>',
         'last_active_at': '<datetime>',
         'role': 'recruiter',
@@ -354,7 +354,7 @@
         'user': dict({
           'display_name': 'recruiter',
           'email': 'recruiter@example.com',
-          'id': '<uuid:4>',
+          'id': '<uuid:3>',
         }),
       }),
       'headers': dict({
@@ -370,7 +370,7 @@
             'clients': list([
             ]),
             'deactivated_at': None,
-            'id': '<uuid:5>',
+            'id': '<uuid:4>',
             'joined_at': '<datetime>',
             'last_active_at': '<datetime>',
             'role': 'admin',
@@ -378,7 +378,7 @@
             'user': dict({
               'display_name': 'admin',
               'email': 'admin@example.com',
-              'id': '<uuid:6>',
+              'id': '<uuid:5>',
             }),
           }),
           dict({
@@ -386,7 +386,7 @@
             'clients': list([
             ]),
             'deactivated_at': None,
-            'id': '<uuid:7>',
+            'id': '<uuid:6>',
             'joined_at': '<datetime>',
             'last_active_at': '<datetime>',
             'role': 'owner',
@@ -394,7 +394,7 @@
             'user': dict({
               'display_name': 'owner',
               'email': 'owner@example.com',
-              'id': '<uuid:8>',
+              'id': '<uuid:7>',
             }),
           }),
           dict({
@@ -405,12 +405,12 @@
                 'name': 'Acme',
               }),
               dict({
-                'id': '<uuid:2>',
+                'id': '<default-client>',
                 'name': 'General',
               }),
             ]),
             'deactivated_at': '<datetime>',
-            'id': '<uuid:3>',
+            'id': '<uuid:2>',
             'joined_at': '<datetime>',
             'last_active_at': '<datetime>',
             'role': 'recruiter',
@@ -418,7 +418,7 @@
             'user': dict({
               'display_name': 'recruiter',
               'email': 'recruiter@example.com',
-              'id': '<uuid:4>',
+              'id': '<uuid:3>',
             }),
           }),
           dict({
@@ -426,7 +426,7 @@
             'clients': list([
             ]),
             'deactivated_at': None,
-            'id': '<uuid:9>',
+            'id': '<uuid:8>',
             'joined_at': '<datetime>',
             'last_active_at': None,
             'role': 'admin',
@@ -434,7 +434,7 @@
             'user': dict({
               'display_name': 'viewer',
               'email': 'viewer@example.com',
-              'id': '<uuid:10>',
+              'id': '<uuid:9>',
             }),
           }),
         ]),
@@ -465,7 +465,7 @@
         'clients': list([
         ]),
         'deactivated_at': None,
-        'id': '<uuid:9>',
+        'id': '<uuid:8>',
         'joined_at': '<datetime>',
         'last_active_at': None,
         'role': 'admin',
@@ -473,7 +473,7 @@
         'user': dict({
           'display_name': 'viewer',
           'email': 'viewer@example.com',
-          'id': '<uuid:10>',
+          'id': '<uuid:9>',
         }),
       }),
       'headers': dict({
@@ -490,12 +490,12 @@
             'name': 'Acme',
           }),
           dict({
-            'id': '<uuid:2>',
+            'id': '<default-client>',
             'name': 'General',
           }),
         ]),
         'deactivated_at': None,
-        'id': '<uuid:3>',
+        'id': '<uuid:2>',
         'joined_at': '<datetime>',
         'last_active_at': '<datetime>',
         'role': 'recruiter',
@@ -503,7 +503,7 @@
         'user': dict({
           'display_name': 'recruiter',
           'email': 'recruiter@example.com',
-          'id': '<uuid:4>',
+          'id': '<uuid:3>',
         }),
       }),
       'headers': dict({

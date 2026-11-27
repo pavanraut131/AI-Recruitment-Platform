@@ -1,4 +1,5 @@
-"""Small async factories for test data: ``make_campaign``, ``make_resume``, ``make_candidate``.
+"""Small async factories for test data: ``make_client``, ``make_campaign``, ``make_resume``,
+``make_candidate``.
 
 Each one adds ORM rows to the given session, flushes them (so they are visible to the app, which
 shares the test's session, see ``tests/conftest.py``) and returns the main one. Defaults are
@@ -36,7 +37,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.hiring.models import Application, Campaign
+from app.modules.hiring.models import Application, Campaign, Client
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
 from app.platform.tenancy import DEFAULT_AGENCY_ID, DEFAULT_CLIENT_ID, agency_id_of
@@ -69,6 +70,21 @@ async def _save(db: AsyncSession, row: Any) -> Any:
     db.add(row)
     await db.flush()
     return row
+
+
+async def make_client(db: AsyncSession, name: str = "Acme Corp", **overrides: Any) -> Client:
+    """A client of the session's agency (active; ``created_at`` / ``updated_at`` at
+    :data:`BASE_TIME` unless given, so the oldest one is decided by the test)."""
+    fields: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "agency_id": agency_id_of(db),
+        "name": name,
+        "status": "active",
+        "created_at": BASE_TIME,
+        "updated_at": BASE_TIME,
+    }
+    fields.update(overrides)
+    return await _save(db, Client(**fields))
 
 
 async def make_campaign(db: AsyncSession, **overrides: Any) -> Campaign:

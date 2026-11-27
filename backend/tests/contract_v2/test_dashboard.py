@@ -1,4 +1,4 @@
-"""Contract: /api/v2/stats and /api/v2/home."""
+"""Contract: /api/v2/stats and /api/v2/home (and their ``client_id`` filter, E2-06)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.modules.talent.models import Person
 from app.platform.tenancy import DEFAULT_AGENCY_ID
 from tests.characterization.snapshot_utils import response_data
 from tests.contract_v2.data import V2, applicant
-from tests.factories import at, make_campaign, make_resume
+from tests.factories import at, make_campaign, make_client, make_resume
 
 
 async def _workspace(db: AsyncSession) -> None:
@@ -63,6 +63,19 @@ async def test_home(
     await _workspace(db_session)
     resp = await client.get(f"{V2}/home")
     assert response_data(resp) == snapshot
+
+
+async def test_stats_and_home_of_one_client(
+    client: AsyncClient, db_session: AsyncSession, snapshot: SnapshotAssertion
+) -> None:
+    """``client_id`` narrows both to that client's campaigns; the people stay agency-wide."""
+    await _workspace(db_session)  # every campaign of it is General's
+    acme = await make_client(db_session, "Acme")
+    acme_campaign = await make_campaign(db_session, title="Acme's", client_id=acme.id)
+    await applicant(db_session, acme_campaign, 9, name="Alan", score=95.0, category="strong_match")
+    stats = await client.get(f"{V2}/stats", params={"client_id": str(acme.id)})
+    home = await client.get(f"{V2}/home", params={"client_id": str(acme.id)})
+    assert [response_data(stats), response_data(home)] == snapshot
 
 
 async def test_home_empty(client: AsyncClient, snapshot: SnapshotAssertion) -> None:

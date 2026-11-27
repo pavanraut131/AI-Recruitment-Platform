@@ -9,7 +9,7 @@
     arranged through ``db_session`` must be flushed first (the factories do).
 ``users``
     :class:`Users`: creates users with memberships through ``identity.service`` (the same code
-    the operator command uses) and signs them in.
+    the operator command uses), limits a membership to some clients, and signs them in.
 ``mailbox`` (E2-07)
     :class:`Mailbox`: the emails the code queued, delivered through the real
     ``identity.send_email`` task with the console backend; ``mailbox.token(to)`` reads the
@@ -111,6 +111,34 @@ class Users:
             await service.ensure_membership(self.db, agency_id, user.id, role)
         await self.db.flush()
         return user.id
+
+    async def limit(
+        self,
+        user_id: uuid.UUID,
+        client_ids: list[uuid.UUID],
+        agency_id: uuid.UUID | None = None,
+    ) -> None:
+        """Limit the user's membership in the agency (default: the default agency) to these
+        clients (``all_clients`` false, spec §5.3; recruiters and viewers only). Written
+        directly, as the team endpoints (E2-07) will."""
+        from sqlalchemy import select
+
+        from app.modules.identity.models import Membership, MembershipClient
+        from app.platform.tenancy import DEFAULT_AGENCY_ID
+
+        membership = await self.db.scalar(
+            select(Membership).where(
+                Membership.agency_id == (agency_id or DEFAULT_AGENCY_ID),
+                Membership.user_id == user_id,
+            )
+        )
+        assert membership is not None
+        membership.all_clients = False
+        self.db.add_all(
+            MembershipClient(membership_id=membership.id, client_id=client_id)
+            for client_id in client_ids
+        )
+        await self.db.flush()
 
     async def login(
         self, email: str, password: str = PASSWORD, client: AsyncClient | None = None

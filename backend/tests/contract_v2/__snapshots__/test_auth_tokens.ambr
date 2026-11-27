@@ -22,6 +22,15 @@
             'role': 'recruiter',
           }),
         ]),
+        'permissions': list([
+          'workspace:read',
+          'campaign:write',
+          'resume:upload',
+          'application:review',
+          'application:delete',
+          'application:export',
+          'client:read',
+        ]),
         'role': 'recruiter',
         'user': dict({
           'display_name': 'Nina Shah',

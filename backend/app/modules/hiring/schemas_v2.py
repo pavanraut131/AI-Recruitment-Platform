@@ -1,4 +1,5 @@
-"""hiring resources of the ``/api/v2`` API (EPIC-01 spec §6): campaigns and applications.
+"""hiring resources of the ``/api/v2`` API (EPIC-01 spec §6, EPIC-02 §8): clients, campaigns
+and applications.
 
 Public, like ``schemas.py``: ``app.api`` and the other modules may import these (import-linter
 allows ``app.modules.<name>.schemas_v2``). They are kept apart from the v1 schemas so that the
@@ -24,6 +25,13 @@ from app.platform.pagination import Page
 class CampaignStatus(str, enum.Enum):
     active = "active"
     closed = "closed"
+    archived = "archived"
+
+
+class ClientStatus(str, enum.Enum):
+    """``archived`` clients are kept (campaigns refer to them) but hidden from pickers."""
+
+    active = "active"
     archived = "archived"
 
 
@@ -58,6 +66,7 @@ class ApplicationSort(str, enum.Enum):
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+ClientName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Description = Annotated[str, StringConstraints(max_length=5000)]
 Skill = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Skills = Annotated[list[Skill], Field(max_length=50)]
@@ -72,6 +81,46 @@ def omittable() -> Any:
     return Field(default=None)
 
 
+# ── Clients ───────────────────────────────────────────────────
+class Client(BaseModel):
+    """One of the agency's customers; every campaign is run for one client (EPIC-02 §3.1)."""
+
+    id: uuid.UUID
+    name: str = Field(description="Unique in the agency (ignoring case).")
+    status: ClientStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClientPage(Page[Client]):
+    pass
+
+
+class ClientRef(BaseModel):
+    """One of the agency's clients, by name (a campaign's client, a member's clients)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class ClientCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: ClientName
+
+
+class ClientUpdate(BaseModel):
+    """Only the fields sent are changed: rename, archive (``status: archived``) or restore
+    (``active``). Neither may be ``null``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: ClientName = omittable()
+    status: ClientStatus = omittable()
+
+
 # ── Campaigns ─────────────────────────────────────────────────
 class CampaignCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -81,11 +130,18 @@ class CampaignCreate(BaseModel):
     description: Description | None = None
     required_skills: Skills = []
     status: CampaignStatus = CampaignStatus.active
+    client_id: uuid.UUID | None = Field(
+        default=None,
+        description="The client the campaign is run for: an active client you have access to "
+        "(422 otherwise). Omitted or null: your default client, the agency's oldest active "
+        "client you have access to.",
+    )
 
 
 class CampaignUpdate(BaseModel):
     """Only the fields sent are changed. ``description`` may be ``null`` (cleared); the others
-    may be omitted but not ``null``."""
+    may be omitted but not ``null``. ``client_id`` moves the campaign to another active client
+    you have access to (422 otherwise)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -94,6 +150,7 @@ class CampaignUpdate(BaseModel):
     description: Description | None = None
     required_skills: Skills = omittable()
     status: CampaignStatus = omittable()
+    client_id: uuid.UUID = omittable()
 
 
 class CampaignCounts(BaseModel):
@@ -112,6 +169,7 @@ class Campaign(BaseModel):
     description: str | None
     required_skills: list[str]
     status: CampaignStatus
+    client: ClientRef = Field(description="The client the campaign is run for.")
     created_at: datetime
     updated_at: datetime
     last_activity_at: datetime = Field(
@@ -128,15 +186,6 @@ class CampaignRef(BaseModel):
     id: uuid.UUID
     title: str
     status: CampaignStatus
-
-
-class ClientRef(BaseModel):
-    """One of the agency's clients, by name."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    name: str
 
 
 # ── Campaign stats (Insights) ─────────────────────────────────

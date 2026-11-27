@@ -5,7 +5,9 @@ Thin, like ``router.py``: each endpoint calls one ``service`` function. Errors b
 problem details through the v2 application's handlers (``app.platform.problems``); every
 operation has an explicit, stable ``operation_id`` (the generated client's function names).
 Ingestion may call hiring, so these endpoints check the campaign themselves (404 for an unknown
-one, where v1 answers 200 with nothing: B7).
+one, where v1 answers 200 with nothing: B7), in the caller's scope: they follow the campaign's
+client (EPIC-02 §5.3). Uploading and retrying need ``resume:upload``; the resume list and the
+progress stream ``workspace:read`` (§8.3).
 """
 
 import uuid
@@ -15,7 +17,13 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from app.modules.identity.dependencies import access_scope, tenant_db
+from app.modules.identity.dependencies import (
+    Permission,
+    access_scope,
+    require_permission,
+    tenant_db,
+)
+from app.modules.identity.schemas import Principal
 from app.modules.ingestion import service
 from app.modules.ingestion.schemas_v2 import ResumePage, ResumeStatus, RetryResult, UploadResult
 from app.platform.pagination import PageParams
@@ -32,6 +40,9 @@ STATUS_CODES: dict[type[Exception], int] = {
     service.InvalidInputError: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
+READ = Depends(require_permission(Permission.workspace_read))
+UPLOAD = Depends(require_permission(Permission.resume_upload))
+
 
 @router.post(
     "/uploads",
@@ -45,6 +56,7 @@ async def upload_resumes(
     files: Annotated[list[UploadFile], File(description="PDF resumes (multipart field files).")],
     db: AsyncSession = Depends(tenant_db),
     scope: AccessScope = Depends(access_scope),
+    principal: Principal = UPLOAD,
 ) -> UploadResult:
     """Upload PDFs to a campaign. Each accepted file is stored and queued for processing; a
     file that is not a PDF, too large, or a duplicate of one already processed or in progress
@@ -52,7 +64,7 @@ async def upload_resumes(
     parsed is a 400: malformed, or over a parsing limit (a non-file field over 16 KiB, more than
     10 non-file fields, more files than the batch limit plus one)."""
     with errors_as_http(STATUS_CODES):
-        return await service.upload_resumes_v2(db, scope, campaign_id, files)
+        return await service.upload_resumes_v2(db, scope, campaign_id, files, principal.user_id)
 
 
 @router.get(
@@ -60,6 +72,7 @@ async def upload_resumes(
     operation_id="listCampaignResumes",
     response_model=ResumePage,
     responses=problem_responses(404, 422),
+    dependencies=[READ],
 )
 async def list_campaign_resumes(
     campaign_id: uuid.UUID,
@@ -85,6 +98,7 @@ async def list_campaign_resumes(
     operation_id="retryFailedResumes",
     response_model=RetryResult,
     responses=problem_responses(404, 422),
+    dependencies=[UPLOAD],
 )
 async def retry_failed_resumes(
     campaign_id: uuid.UUID,
@@ -110,6 +124,7 @@ async def retry_failed_resumes(
         },
         **problem_responses(404, 422),
     },
+    dependencies=[READ],
 )
 async def stream_campaign_events(
     campaign_id: uuid.UUID,

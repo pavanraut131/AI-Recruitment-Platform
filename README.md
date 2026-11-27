@@ -284,6 +284,14 @@ The seed creates two agencies and one account per role in each, all with the
 | Default agency (the seeded campaigns) | `owner@default.example` | `admin@default.example` | `recruiter@default.example` | `viewer@default.example` |
 | Northbank Talent (empty) | `owner@northbank.example` | `admin@northbank.example` | `recruiter@northbank.example` | `viewer@northbank.example` |
 
+Both agencies have a client named "General" to run campaigns for (more under `/api/v2/clients`).
+What each role may do is the permission matrix of the
+[E2 spec, §5.2](docs/specs/EPIC-02-identity-tenancy.md#52-permission-matrix)
+(`app.modules.identity.permissions`); `GET /api/v2/me` lists your `permissions` and
+`client_scope`. Recruiters and viewers can be limited to some clients (`all_clients: false` and
+`client_ids` on an invitation or `PATCH /api/v2/team/members/{id}`); they then see only those
+clients' campaigns, and every other campaign, application or client is a 404.
+
 The frontend has no login screen until E2-09, so the development stack runs with
 **`AUTH_REQUIRED=false`**: a request **without** a session cookie acts as the owner of the
 default agency (the dev Compose file defaults it to `false`; `.env.example` sets it). A request
