@@ -122,6 +122,9 @@ export class MockXHR {
   method = ""
   url = ""
   body: FormData | null = null
+  withCredentials = false
+  /** Request headers, by name as set. */
+  readonly headers: Record<string, string> = {}
   responseType = ""
   status = 0
   statusText = ""
@@ -147,6 +150,10 @@ export class MockXHR {
   open(method: string, url: string) {
     this.method = method
     this.url = url
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value
   }
 
   send(body: FormData) {
@@ -200,12 +207,14 @@ function fire(map: Map<string, Set<Listener>>, type: string, event: object) {
 export class MockEventSource {
   static instances: MockEventSource[] = []
   readonly url: string
+  readonly withCredentials: boolean
   closed = false
   onerror: ((event: Event) => void) | null = null
   private listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>()
 
-  constructor(url: string) {
+  constructor(url: string, init?: EventSourceInit) {
     this.url = url
+    this.withCredentials = init?.withCredentials ?? false
     MockEventSource.instances.push(this)
   }
 
