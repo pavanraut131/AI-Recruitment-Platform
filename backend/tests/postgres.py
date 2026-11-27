@@ -93,6 +93,12 @@ STATIC_TEST_ENV = {
     "CELERY_RESULT_BACKEND": "cache+memory://",
     "REDIS_URL": "redis://127.0.0.1:1/0",
     "MINIO_ENDPOINT": "127.0.0.1:1",
+    # Email (E2-07): the console backend keeps messages in memory (app.platform.email.outbox);
+    # SMTP would reach nothing. The links in emails point at a fixed frontend.
+    "EMAIL_BACKEND": "console",
+    "SMTP_HOST": "127.0.0.1",
+    "SMTP_PORT": "1",
+    "FRONTEND_URL": "http://localhost:3000",
 }
 
 _container: PostgresContainer | None = None

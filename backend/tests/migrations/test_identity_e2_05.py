@@ -34,6 +34,7 @@ from tests.migrations.test_expand_e0_14 import (  # noqa: F401 (scratch_db is a 
 BEFORE = "e2b02c7a4d19"
 REVISION = "e2c05b3f7a21"
 TABLES = {"users", "memberships", "membership_clients", "user_sessions", "audit_events"}
+LATER_TABLES = {"invitations", "password_reset_tokens"}  # E2-07, a later revision
 APP_ROLE = "hireflow_app"
 
 
@@ -137,7 +138,7 @@ def test_upgrade_downgrade_upgrade(scratch_db: str) -> None:  # noqa: F811
             assert _tables(conn) == before - TABLES
         command.upgrade(cfg, "head")  # with what follows it (E2-04): alembic check needs head
         with engine.begin() as conn:
-            assert _tables(conn) == before
+            assert _tables(conn) - LATER_TABLES == before
             assert conn.execute(text("SELECT count(*) FROM users")).scalar_one() == 0
             _fill(conn)
         command.check(cfg)  # raises if the models and the migrated schema differ

@@ -98,6 +98,38 @@ class Settings(BaseSettings):
     LOGIN_MAX_ATTEMPTS_PER_IP: int = 30
     LOGIN_RATE_LIMIT_WINDOW: timedelta = timedelta(minutes=15)
 
+    # ── Invitations, password reset and email (EPIC-02 §4.3, §4.4, §4.6; E2-07) ──
+    # The frontend's base URL: the links in emails point at it ({FRONTEND_URL}/accept-invite,
+    # /reset-password), with the token in the URL fragment.
+    FRONTEND_URL: str = "http://localhost:3000"
+    # An invitation link works this long; a password-reset link this long, once.
+    INVITATION_TTL: timedelta = timedelta(days=7)
+    PASSWORD_RESET_TTL: timedelta = timedelta(minutes=30)
+    # Password-reset requests per email and per client IP, per window (429 with Retry-After).
+    PASSWORD_RESET_MAX_PER_EMAIL: int = 3
+    PASSWORD_RESET_MAX_PER_IP: int = 10
+    PASSWORD_RESET_RATE_LIMIT_WINDOW: timedelta = timedelta(hours=1)
+    # The endpoints that take an emailed token (invitation preview and accept, reset confirm):
+    # attempts per client IP per window.
+    TOKEN_MAX_ATTEMPTS_PER_IP: int = 20
+    TOKEN_RATE_LIMIT_WINDOW: timedelta = timedelta(minutes=15)
+    # Invitation emails (new and resent) an agency may send per day: the product must not be
+    # usable to send spam.
+    INVITATIONS_MAX_PER_AGENCY_PER_DAY: int = 50
+    # identity.purge_expired (daily) deletes sessions and invitations this long after they
+    # ended; used or expired reset tokens go at once.
+    IDENTITY_PURGE_AFTER: timedelta = timedelta(days=30)
+    # "console" logs messages (development and test only: it logs the links, tokens included);
+    # "smtp" sends them through SMTP_HOST:SMTP_PORT (Mailpit in the Compose stack).
+    EMAIL_BACKEND: Literal["console", "smtp"] = "console"
+    EMAIL_FROM: str = "HireFlow AI <no-reply@hireflow.localhost>"
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 1025
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_STARTTLS: bool = False
+    SMTP_TIMEOUT: float = 10.0
+
     @model_validator(mode="after")
     def _require_gemini_key(self) -> Self:
         """Fail at start-up, not on the first resume, when Gemini is selected without a key."""
@@ -112,8 +144,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _check_deployment_safety(self) -> Self:
         """Outside development and test, refuse the settings that are only safe on a laptop
-        (EPIC-02 spec §10): a weak or template ``SECRET_KEY``, ``AUTH_REQUIRED=false`` and
-        ``SESSION_COOKIE_SECURE=false``."""
+        (EPIC-02 spec §10): a weak or template ``SECRET_KEY``, ``AUTH_REQUIRED=false``,
+        ``SESSION_COOKIE_SECURE=false`` and ``EMAIL_BACKEND=console`` (it logs the emailed
+        links, tokens included)."""
         if self.is_development:
             return self
         problems = []
@@ -127,6 +160,11 @@ class Settings(BaseSettings):
             problems.append("AUTH_REQUIRED=false is allowed only in development and test")
         if self.SESSION_COOKIE_SECURE is False:
             problems.append("SESSION_COOKIE_SECURE=false is allowed only in development and test")
+        if self.EMAIL_BACKEND == "console":
+            problems.append(
+                "EMAIL_BACKEND=console is allowed only in development and test (it logs the "
+                "links it would send); set EMAIL_BACKEND=smtp and the SMTP_* settings"
+            )
         if problems:
             raise ValueError(f"APP_ENV={self.APP_ENV}: " + "; ".join(problems))
         return self

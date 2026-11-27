@@ -10,6 +10,12 @@
 ``users``
     :class:`Users`: creates users with memberships through ``identity.service`` (the same code
     the operator command uses) and signs them in.
+``mailbox`` (E2-07)
+    :class:`Mailbox`: the emails the code queued, delivered through the real
+    ``identity.send_email`` task with the console backend; ``mailbox.token(to)`` reads the
+    token from the last link sent to an address.
+``browser`` (E2-07)
+    A second client with cookies of its own (the invitee next to the signed-in owner).
 
 ``AUTH_REQUIRED`` is ``true`` here (the default; the test environment does not set it). The
 password hash cost stays at its default so the timing tests see real Argon2 work.
@@ -17,20 +23,25 @@ password hash cost stays at its default so the timing tests see real Argon2 work
 
 from __future__ import annotations
 
+import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+
+from tests.fakes import CeleryRecorder
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from app.modules.identity.schemas import Role
+    from app.platform.email import EmailMessage
 
 # Never import ``app`` at the top of a conftest: pytest loads it before the session hook has
 # configured the environment (tests/conftest.py).
@@ -136,3 +147,64 @@ def problem(resp: httpx.Response) -> dict[str, Any]:
     assert resp.headers["content-type"] == "application/problem+json", resp.text
     body: dict[str, Any] = resp.json()
     return body
+
+
+# ── E2-07: emails, a second browser ───────────────────────────
+TOKEN_IN_LINK = re.compile(r"#token=([A-Za-z0-9_-]+)")
+
+
+@dataclass
+class Mailbox:
+    """The emails the code under test queued (``identity.send_email`` calls, recorded by the
+    ``celery_calls`` fixture), delivered through the real task with the console backend
+    (``app.platform.email.outbox``)."""
+
+    calls: CeleryRecorder
+    delivered: int = 0
+
+    def messages(self) -> list[EmailMessage]:
+        """Deliver what was queued since the last call; every message delivered so far."""
+        from app.modules.identity import tasks
+        from app.platform import email
+
+        queued = self.calls.for_task(tasks.SEND_EMAIL_TASK)
+        for call in queued[self.delivered :]:
+            tasks.send_email(**call.kwargs)  # runs the task body (console backend)
+        self.delivered = len(queued)
+        return list(email.outbox)
+
+    def last(self, to: str) -> EmailMessage:
+        sent = [m for m in self.messages() if m.to == to]
+        assert sent, f"no email to {to}"
+        return sent[-1]
+
+    def count(self, to: str) -> int:
+        return sum(1 for m in self.messages() if m.to == to)
+
+    def token(self, to: str) -> str:
+        """The token in the link of the last email to ``to``."""
+        match = TOKEN_IN_LINK.search(self.last(to).text)
+        assert match, "no #token= link in the email"
+        return match.group(1)
+
+
+@pytest.fixture
+def mailbox(celery_calls: CeleryRecorder) -> Iterator[Mailbox]:
+    from app.platform import email
+
+    email.outbox.clear()
+    yield Mailbox(celery_calls)
+    email.outbox.clear()
+
+
+@pytest_asyncio.fixture
+async def browser(app: FastAPI, auth_client: AsyncClient) -> AsyncIterator[AsyncClient]:
+    """Another browser (its own cookies) on the same app and database as ``auth_client``."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+
+async def anonymous_csrf(client: AsyncClient) -> dict[str, str]:
+    """``GET /auth/csrf`` (as the auth pages do) and the header with its token."""
+    token = (await client.get(f"{V2}/auth/csrf")).json()["csrf_token"]
+    return {"X-CSRF-Token": token}

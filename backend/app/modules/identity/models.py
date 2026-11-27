@@ -5,6 +5,8 @@
   :data:`app.platform.tenancy.DEFAULT_AGENCY_ID`): the tenants.
 - ``users``, ``memberships``, ``membership_clients``, ``user_sessions`` and ``audit_events``
   (E2-05, migration ``e2c05b3f7a21``).
+- ``invitations`` and ``password_reset_tokens`` (E2-07, migration ``e2d07c3f9b12``): emailed,
+  single-use tokens, stored as their SHA-256 only (spec §4.3).
 
 Every identity table is **global**, not under agency row-level security (spec §6.4): they are
 read before a tenant is known (sign-in by email, the session lookup on every request, the agency
@@ -39,7 +41,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.database import Base
@@ -243,4 +245,102 @@ class AuditEvent(Base):
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
     details: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+
+
+class Invitation(Base):
+    """An invitation to join an agency with a role (spec §4.3, E2-07).
+
+    The email carries a link with a 256-bit token in its URL fragment; only the token's SHA-256
+    is stored (``token_hash``), so this table yields no usable link. An invitation is **open**
+    until it is accepted or revoked, and at most one is open per address and agency (a new one
+    replaces it: the old one is revoked, its token stops working). It can be accepted while it
+    is open and before ``expires_at``. ``client_ids`` lists hiring's clients (no foreign key,
+    ADR 0003) when ``all_clients`` is false, and is empty otherwise.
+    """
+
+    __tablename__ = "invitations"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_invitations_token_hash"),
+        # One open invitation per address per agency (the list of pending invitations).
+        Index(
+            "uq_invitations_agency_id_email_open",
+            "agency_id",
+            "email",
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND revoked_at IS NULL"),
+        ),
+        CheckConstraint("email = lower(btrim(email))", name="ck_invitations_email_normalised"),
+        CheckConstraint(
+            "role IN ('owner', 'admin', 'recruiter', 'viewer')", name="ck_invitations_role"
+        ),
+        # As on memberships: owners and admins always see every client.
+        CheckConstraint(
+            "all_clients OR role IN ('recruiter', 'viewer')", name="ck_invitations_all_clients"
+        ),
+        # A client list exactly when access is limited to some clients.
+        CheckConstraint(
+            "all_clients = (cardinality(client_ids) = 0)", name="ck_invitations_client_ids"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agency_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agencies.id", name="fk_invitations_agency_id_agencies"),
+        nullable=False,
+    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    # app.modules.identity.schemas.Role
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    all_clients: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    client_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=False,
+        default=list,
+        server_default=text("'{}'::uuid[]"),
+    )
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # NULL when the inviter's account is gone, or for the development fallback owner.
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_invitations_invited_by_user_id_users", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id", name="fk_invitations_accepted_by_user_id_users", ondelete="SET NULL"
+        ),
+        nullable=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PasswordResetToken(Base):
+    """A password-reset link (spec §4.3, E2-07): single use, short-lived, stored as the SHA-256
+    of its 256-bit token. A new request for the user deletes their older unused tokens."""
+
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_password_reset_tokens_token_hash"),
+        Index("ix_password_reset_tokens_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_password_reset_tokens_user_id_users", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

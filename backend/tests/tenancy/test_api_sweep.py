@@ -6,8 +6,8 @@ The caller is **signed in for real** (E2-05: ``tests/identity/conftest.py``'s ``
 every request gets a fresh session that ``tenant_db`` binds to the principal's agency. Agency B
 has a campaign, an application, a Person and a resume, through a session bound to it.
 
-1. Every ``GET`` (lists, the detail URLs with A's ids, ``/me``, ``/agency``): no id of B anywhere
-   in any body.
+1. Every ``GET`` (lists, the detail URLs with A's ids, ``/me``, ``/agency``, the team): no id of
+   B anywhere in any body (B has a member and an invitation too, E2-07).
 2. Every operation with an id in its path, called with **B's** ids: ``404``, and B's rows are
    unchanged afterwards. Operations with a request body take it from :data:`BODIES`; one with a
    body that has no entry fails the test, so it is added here when it is added to the API.
@@ -17,6 +17,9 @@ has a campaign, an application, a Person and a resume, through a session bound t
 from __future__ import annotations
 
 import re
+import uuid
+from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from httpx import AsyncClient, Response
@@ -24,6 +27,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hiring.models import Application, Campaign
+from app.modules.identity import service as identity
+from app.modules.identity.models import Invitation, Membership
+from app.modules.identity.schemas import Role
 from app.modules.ingestion.models import Resume
 from app.modules.talent.models import Person
 from app.v2 import v2_app
@@ -55,6 +61,16 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/me/password"): {"json": {"current_password": PASSWORD, "new_password": "x" * 16}},
     ("PUT", "/me/active-agency"): {"json": {"agency_id": "{agency_id}"}},
     ("PATCH", "/agency"): {"json": {"name": "Agency A"}},
+    # E2-07. The team: A's caller is an owner, so only the agency check can refuse B's ids.
+    ("PATCH", "/team/members/{membership_id}"): {"json": {"role": "viewer"}},
+    ("POST", "/team/invitations"): {"json": {"email": "new@agency-a.example", "role": "viewer"}},
+    # Anonymous, by emailed token or address (no agency in the request).
+    ("POST", "/auth/password-reset"): {"json": {"email": EMAIL}},
+    ("POST", "/auth/password-reset/confirm"): {
+        "json": {"token": "t" * 43, "new_password": "x" * 16}
+    },
+    ("POST", "/auth/invitations/preview"): {"json": {"token": "t" * 43}},
+    ("POST", "/auth/invitations/accept"): {"json": {"token": "t" * 43}},
 }
 # Opened as a stream: the 404 for B's id is checked; A's own stream would not end.
 STREAMS = {"/campaigns/{campaign_id}/events"}
@@ -100,6 +116,55 @@ async def _people(db: AsyncSession, other: OtherAgency) -> tuple[Application, Ap
     return mine, theirs
 
 
+@dataclass(frozen=True)
+class TeamOfB:
+    user_id: uuid.UUID
+    membership_id: uuid.UUID
+    invitation_id: uuid.UUID
+
+
+async def _team_of_b(db: AsyncSession, other: OtherAgency) -> TeamOfB:
+    """A recruiter and an open invitation in agency B (identity's tables are global: written
+    through the test's session)."""
+    user = await identity.ensure_user(
+        db, "recruiter.b@agency-b.example", display_name="B's recruiter", password=PASSWORD
+    )
+    await identity.ensure_membership(db, other.agency_id, user.id, Role.recruiter)
+    membership = await db.scalar(
+        select(Membership.id).where(
+            Membership.agency_id == other.agency_id, Membership.user_id == user.id
+        )
+    )
+    invitation = Invitation(
+        id=uuid.uuid4(),
+        agency_id=other.agency_id,
+        email="invited.b@agency-b.example",
+        role="viewer",
+        all_clients=False,
+        client_ids=[other.client_id],
+        token_hash=identity.hash_token("b's invitation"),
+        expires_at=identity.utcnow() + timedelta(days=7),
+    )
+    db.add(invitation)
+    await db.flush()
+    assert membership is not None
+    return TeamOfB(user.id, membership, invitation.id)
+
+
+async def _b_team_state(db: AsyncSession, team: TeamOfB) -> tuple[object, ...]:
+    db.expire_all()
+    membership = await db.get(Membership, team.membership_id)
+    invitation = await db.get(Invitation, team.invitation_id)
+    assert membership is not None and invitation is not None
+    return (
+        membership.role,
+        membership.status,
+        invitation.token_hash,
+        invitation.expires_at,
+        invitation.revoked_at,
+    )
+
+
 async def _signed_in_as_a(users: Users) -> AsyncClient:
     """An owner of the default agency (A), signed in: ``users.client`` carries the cookies."""
     await users.user(EMAIL)
@@ -134,6 +199,7 @@ async def test_no_response_shows_another_agencys_ids(
 ) -> None:
     client = await _signed_in_as_a(users)
     mine, theirs = await _people(db_session, other_agency)
+    team = await _team_of_b(db_session, other_agency)
     ids = {
         "campaign_id": str(mine.campaign_id),
         "application_id": str(mine.id),
@@ -148,8 +214,11 @@ async def test_no_response_shows_another_agencys_ids(
             theirs.resume_id,
             other_agency.agency_id,
             other_agency.client_id,
+            team.user_id,
+            team.membership_id,
+            team.invitation_id,
         )
-    }
+    } | {"agency-b.example"}
 
     called = 0
     for method, path, _ in _operations():
@@ -168,12 +237,16 @@ async def test_every_operation_with_another_agencys_ids_is_not_found(
 ) -> None:
     client = await _signed_in_as_a(users)
     _, theirs = await _people(db_session, other_agency)
+    team = await _team_of_b(db_session, other_agency)
     ids = {
         "campaign_id": str(theirs.campaign_id),
         "application_id": str(theirs.id),
         "person_id": str(theirs.person_id),
+        "membership_id": str(team.membership_id),
+        "invitation_id": str(team.invitation_id),
     }
     before = await _b_counts(other_agency)
+    team_before = await _b_team_state(db_session, team)
 
     swept = []
     for method, path, _ in _operations():
@@ -183,8 +256,9 @@ async def test_every_operation_with_another_agencys_ids_is_not_found(
         assert resp.status_code == 404, (method, path, resp.status_code, resp.text)
         swept.append(f"{method} {path}")
 
-    assert len(swept) >= 15
+    assert len(swept) >= 20
     assert await _b_counts(other_agency) == before
+    assert await _b_team_state(db_session, team) == team_before
     notes = await other_agency.db.scalar(
         select(Application.notes).where(Application.id == ids["application_id"])
     )
@@ -208,4 +282,10 @@ async def test_another_agency_cannot_be_made_active(
 
 def test_the_sweep_knows_every_path_parameter() -> None:
     names = {match for _, path, _ in _operations() for match in re.findall(r"\{(\w+)\}", path)}
-    assert names == {"campaign_id", "application_id", "person_id"}
+    assert names == {
+        "campaign_id",
+        "application_id",
+        "person_id",
+        "membership_id",  # E2-07
+        "invitation_id",  # E2-07
+    }

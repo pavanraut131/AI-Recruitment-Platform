@@ -81,6 +81,18 @@ async def get_campaign(db: AsyncSession, campaign_id: uuid.UUID) -> Campaign | N
     return result.scalar_one_or_none()
 
 
+async def clients_by_ids(db: AsyncSession, client_ids: Sequence[uuid.UUID]) -> Sequence[Client]:
+    """The session's agency's clients with these ids (any status)."""
+    if not client_ids:
+        return []
+    result = await db.execute(
+        select(Client)
+        .where(Client.id == any_(uuid_array(client_ids)), tenant_filter(db, Client.agency_id))
+        .order_by(func.lower(Client.name), Client.id)
+    )
+    return result.scalars().all()
+
+
 async def delete_campaign(db: AsyncSession, campaign: Campaign) -> None:
     """Delete the campaign and flush; its applications go with it in the database
     (``applications.campaign_id ON DELETE CASCADE``), and their ``legacy_candidate_map`` rows

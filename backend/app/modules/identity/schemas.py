@@ -93,3 +93,66 @@ class Principal:
     @property
     def is_fallback(self) -> bool:
         return self.session is None
+
+
+# ── Team (E2-07) ──────────────────────────────────────────────
+class MemberStatus(str, enum.Enum):
+    """A membership's status: a deactivated member keeps their account but has no access to
+    the agency until reactivated."""
+
+    active = "active"
+    deactivated = "deactivated"
+
+
+class InvitationStatus(str, enum.Enum):
+    """An open invitation (not accepted, not revoked): ``pending`` until it expires, then
+    ``expired`` (resend it to renew it)."""
+
+    pending = "pending"
+    expired = "expired"
+
+
+@dataclass(frozen=True, slots=True)
+class TeamUser:
+    id: uuid.UUID
+    email: str
+    display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class TeamMember:
+    """A membership of the agency with its user. ``client_ids`` is empty when ``all_clients``
+    (the composition layer names the clients)."""
+
+    id: uuid.UUID
+    user: TeamUser
+    role: Role
+    all_clients: bool
+    client_ids: tuple[uuid.UUID, ...]
+    status: MemberStatus
+    last_active_at: datetime | None
+    joined_at: datetime
+    deactivated_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TeamInvitation:
+    """An open invitation of the agency."""
+
+    id: uuid.UUID
+    email: str
+    role: Role
+    all_clients: bool
+    client_ids: tuple[uuid.UUID, ...]
+    invited_by: TeamUser | None
+    status: InvitationStatus
+    expires_at: datetime
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ClientAccess:
+    """Which clients a membership or invitation gives: all of them, or ``client_ids``."""
+
+    all_clients: bool
+    client_ids: tuple[uuid.UUID, ...] = ()
