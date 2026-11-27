@@ -14,6 +14,10 @@ export const USERS = {
   /** The hero flow's user (spec §11.4: it runs as a recruiter), signed in once by `auth.setup.ts`. */
   recruiter: "recruiter@default.example",
   defaultAdmin: "admin@default.example",
+  /** Invites into the default agency (team.spec). */
+  defaultOwner: "owner@default.example",
+  /** The read-only role's checks (team.spec). */
+  defaultViewer: "viewer@default.example",
   northbankOwner: "owner@northbank.example",
   northbankAdmin: "admin@northbank.example",
   northbankRecruiter: "recruiter@northbank.example",
