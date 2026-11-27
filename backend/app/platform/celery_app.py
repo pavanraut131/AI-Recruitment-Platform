@@ -1,5 +1,10 @@
 """The Celery application, and :class:`TenantTask`, the base class of every task that touches
-tenant data (EPIC-02 spec §6.3)."""
+tenant data (EPIC-02 spec §6.3).
+
+Queues: ``extract_queue`` and ``ai_queue`` (the upload pipeline, their own workers) and
+``default`` (identity's email and purge tasks, E2-07; the ``worker_default`` Compose service).
+The **beat** schedule (the ``celery_beat`` service) runs ``identity.purge_expired`` once a day.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ import structlog
 from billiard.einfo import ExceptionInfo
 from celery import Celery, Task
 from celery.exceptions import Reject
+from celery.schedules import crontab
 from celery.signals import worker_init
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -26,10 +32,14 @@ celery_app = Celery(
     "resumeai",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    # Imported by worker processes at startup (a string, so platform imports no module). The
-    # task names below predate the module layout and are kept on purpose; see that module.
-    include=["app.modules.ingestion.tasks"],
+    # Imported by worker processes at startup (strings, so platform imports no module). The
+    # pipeline's task names predate the module layout and are kept on purpose; see that module.
+    include=["app.modules.ingestion.tasks", "app.modules.identity.tasks"],
 )
+
+DEFAULT_QUEUE = "default"
+PURGE_SCHEDULE = crontab(hour=3, minute=17)
+"""identity.purge_expired: daily, at a quiet time (UTC)."""
 
 celery_app.conf.update(
     # Serialization
@@ -43,6 +53,12 @@ celery_app.conf.update(
     task_routes={
         "workers.extract_task.extract_resume": {"queue": "extract_queue"},
         "workers.ai_task.process_candidate_ai": {"queue": "ai_queue"},
+        "identity.*": {"queue": DEFAULT_QUEUE},
+    },
+    task_default_queue=DEFAULT_QUEUE,
+    # Periodic tasks (the celery_beat service). Names are strings: platform imports no module.
+    beat_schedule={
+        "identity.purge_expired": {"task": "identity.purge_expired", "schedule": PURGE_SCHEDULE},
     },
     # Retry config
     task_acks_late=True,
