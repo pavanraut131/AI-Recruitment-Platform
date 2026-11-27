@@ -19,7 +19,7 @@ function renderLogin(props: Partial<Parameters<typeof Login>[0]> = {}) {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } })
   queryClient.setQueryData(queryKeys.home.all, { from: "an earlier session" })
-  renderWithProviders(<Login next="/campaigns" {...props} />, { queryClient })
+  renderWithProviders(<Login next="/campaigns" {...props} />, { queryClient, me: null })
   return queryClient
 }
 

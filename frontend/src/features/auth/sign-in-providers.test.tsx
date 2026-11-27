@@ -27,7 +27,7 @@ function renderButtons(props: Partial<SignInProvidersProps> = {}) {
     <div data-testid="slot">
       <SignInProviders next="/campaigns" {...props} />
     </div>,
-    { queryClient },
+    { queryClient, me: null },
   )
 }
 

@@ -20,7 +20,7 @@ const SIGNED_OUT = { "GET /me": () => problem(401, "Not signed in") }
 function renderPage() {
   const queryClient = makeQueryClient()
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } })
-  renderWithProviders(<AcceptInvitation />, { queryClient })
+  renderWithProviders(<AcceptInvitation />, { queryClient, me: null })
   return queryClient
 }
 
