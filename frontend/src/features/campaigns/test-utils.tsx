@@ -95,6 +95,7 @@ export function campaignFixture(overrides: Partial<Schema<"Campaign">> = {}): Sc
     description: "Build our APIs.",
     required_skills: ["Python", "PostgreSQL"],
     status: "active",
+    client: { id: "00000000-0000-4000-8000-00000000c001", name: "General" },
     created_at: "2026-11-10T09:00:00Z",
     updated_at: "2026-11-10T09:00:00Z",
     last_activity_at: "2026-11-17T09:00:00Z",

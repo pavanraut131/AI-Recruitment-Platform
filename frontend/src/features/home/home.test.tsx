@@ -24,6 +24,7 @@ function makeCampaign(overrides: Partial<Schema<"Campaign">> = {}): Schema<"Camp
     description: null,
     required_skills: ["Python"],
     status: "active",
+    client: { id: "00000000-0000-4000-8000-00000000c001", name: "General" },
     created_at: "2026-11-01T09:00:00Z",
     updated_at: "2026-11-01T09:00:00Z",
     last_activity_at: "2026-11-17T09:00:00Z",
