@@ -1,6 +1,7 @@
 "use client"
 
-import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react"
+import Link from "next/link"
+import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -19,9 +20,9 @@ import { useSignedInUser, useSignOut } from "@/lib/auth/session"
 /**
  * The signed-in user, at the foot of the sidebar (EPIC-02 §9.2; the D1
  * mock-up's avatar, name and role). Its menu shows the email, the agency
- * they are working in and their role there, and signs out: `POST
- * /auth/logout`, then the cache is cleared and the login page loads.
- * Choosing another agency is the sidebar header's switcher (E2-10).
+ * they are working in and their role there, links to their profile, and signs
+ * out: `POST /auth/logout`, then the cache is cleared and the login page
+ * loads. Choosing another agency is the sidebar header's switcher (E2-10).
  */
 export function UserMenu() {
   const me = useSignedInUser()
@@ -70,6 +71,12 @@ export function UserMenu() {
           </>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="px-2">
+          <Link href="/settings/profile">
+            <UserIcon />
+            Profile
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => signOut.mutate()} disabled={signOut.isPending} className="px-2">
           <LogOutIcon />
           {signOut.isPending ? "Signing out…" : "Sign out"}
